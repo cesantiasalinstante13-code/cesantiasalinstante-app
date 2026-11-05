@@ -69,14 +69,18 @@ for key in ['proposito', 'monto', 'monto_limpio', 'fondo', 'nombre', 'cedula', '
 
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# ---------- CONEXIÓN A GOOGLE DRIVE/DOCS ----------
+# ---------- CONEXIÓN A GOOGLE DRIVE/DOCS (LEE DESDE SECRETS) ----------
 SCOPES = ['https://www.googleapis.com/auth/drive', 'https://www.googleapis.com/auth/documents']
+
 try:
-    CREDS = Credentials.from_service_account_file('credentials.json', scopes=SCOPES)
+    # Extraemos las credenciales del secret y quitamos el link del spreadsheet para evitar conflictos
+    creds_dict = dict(st.secrets["connections"]["gsheets"])
+    creds_dict.pop("spreadsheet", None) 
+    CREDS = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
     DRIVE_SERVICE = build('drive', 'v3', credentials=CREDS)
     DOCS_SERVICE = build('docs', 'v1', credentials=CREDS)
 except Exception as e:
-    st.error(f"Error cargando credentials.json: {e}")
+    st.error(f"Error autenticando con Google Cloud: {e}")
 
 def generar_pdf(doc_id, datos):
     """Copia la plantilla, rellena los datos y exporta a PDF."""
@@ -110,8 +114,205 @@ def generar_pdf(doc_id, datos):
     return fh.getvalue()
 
 # ---------- PANTALLAS ----------
-# (Las pantallas landing, pregunta1, pregunta2, verificar_saldo, monto_exacto y resultados se mantienen igual)
-# ... [Aquí van las funciones render_landing, render_pregunta1, render_pregunta2, render_verificar_saldo, render_monto_exacto y render_resultados tal cual las tienes] ...
+def render_landing():
+    st.markdown("""
+    <div class="glass-container">
+        <div class="hero-icon">📄</div>
+        <div class="main-title">Tus <span>Cesantías</span><br>al Instante</div>
+        <div class="sub-title">Retira tu dinero en 4 pasos, sin abogados</div>
+    """, unsafe_allow_html=True)
+    st.markdown("""
+    <div class="benefit-grid">
+        <div class="benefit-card"><span class="icon">🎯</span><h4>1. Propósito</h4><p>Elige el motivo</p></div>
+        <div class="benefit-card"><span class="icon">🏦</span><h4>2. Fondo</h4><p>Selecciona tu fondo</p></div>
+        <div class="benefit-card"><span class="icon">📞</span><h4>3. Verifica</h4><p>Tu saldo disponible</p></div>
+        <div class="benefit-card"><span class="icon">💰</span><h4>4. Retira</h4><p>Monto exacto</p></div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    if st.button("Comenzar ahora →", use_container_width=True):
+        for key in ['proposito', 'monto', 'monto_limpio', 'fondo', 'nombre', 'cedula', 'telefono', 'email', 'empresa', 'nit', 'saldo_verificado', 'saldo_limpio', 'solicitud_guardada', 'pdf_bytes']:
+            st.session_state[key] = ""
+        st.session_state.step = 'pregunta1'
+        st.rerun()
+    st.markdown("</div>", unsafe_allow_html=True)
+
+def render_pregunta1():
+    st.markdown("""
+    <div class="glass-container">
+        <div class="step-text">Paso 1 de 4</div>
+        <div class="progress-container"><div class="progress-bar" style="width:25%;"></div></div>
+        <h3 style="color:#0A2540;font-weight:700;margin-bottom:1rem;">🎯 ¿Para qué quieres retirar?</h3>
+    """, unsafe_allow_html=True)
+    st.session_state.proposito = st.radio("", ["🏠 Mejora de Vivienda", "📚 Educación", "💼 Desempleo", "❓ Otro"], key="p1")
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("↩️ Atrás", use_container_width=True): st.session_state.step = 'landing'; st.rerun()
+    with col2:
+        if st.button("Siguiente →", use_container_width=True): st.session_state.step = 'pregunta2'; st.rerun()
+    st.markdown("</div>", unsafe_allow_html=True)
+
+def render_pregunta2():
+    st.markdown("""
+    <div class="glass-container">
+        <div class="step-text">Paso 2 de 4</div>
+        <div class="progress-container"><div class="progress-bar" style="width:50%;"></div></div>
+        <h3 style="color:#0A2540;font-weight:700;margin-bottom:1rem;">🏦 ¿En qué fondo estás?</h3>
+    """, unsafe_allow_html=True)
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    assets_dir = os.path.join(current_dir, "assets")
+    def get_logo_path(filename):
+        path = os.path.join(assets_dir, filename)
+        return path if os.path.exists(path) else None
+
+    fondos = [
+        {"key": "porv", "nombre": "Porvenir", "logo": "Porvenir_logo.png", "emoji": "🏦"},
+        {"key": "colf", "nombre": "Colfondos", "logo": "Colfondos_logo.png", "emoji": "🏢"},
+        {"key": "prot", "nombre": "Protección", "logo": "Proteccion_logo.png", "emoji": "🛡️"},
+        {"key": "fna", "nombre": "FNA", "logo": "FNA_logo.png", "emoji": "🏛️"},
+        {"key": "otro", "nombre": "Otro", "logo": None, "emoji": "❓"},
+    ]
+    columns = st.columns(5)
+    for idx, fondo in enumerate(fondos):
+        with columns[idx]:
+            logo_path = get_logo_path(fondo["logo"]) if fondo["logo"] else None
+            if logo_path:
+                with open(logo_path, "rb") as f:
+                    img_data = base64.b64encode(f.read()).decode()
+                st.markdown(f'<div style="display: flex; justify-content: center; align-items: center; height: 120px;"><img src="data:image/png;base64,{img_data}" style="max-width: 100px; max-height: 100px; object-fit: contain;"></div>', unsafe_allow_html=True)
+            else:
+                st.markdown(f'<p style="font-size:4rem;text-align:center;">{fondo["emoji"]}</p>', unsafe_allow_html=True)
+            st.markdown(f'<div style="text-align: center; font-weight: 600; color: #0A2540; margin: 8px 0; font-size: 0.9rem;">{fondo["nombre"]}</div>', unsafe_allow_html=True)
+            if st.button("Seleccionar", key=fondo["key"], use_container_width=True):
+                st.session_state.fondo = fondo["nombre"]
+                st.session_state.step = 'verificar_saldo'
+                st.rerun()
+
+    if st.button("↩️ Atrás", use_container_width=True): st.session_state.step = 'pregunta1'; st.rerun()
+    st.markdown("</div>", unsafe_allow_html=True)
+
+def render_verificar_saldo():
+    st.markdown("""
+    <div class="glass-container">
+        <div class="step-text">Paso 3 de 4</div>
+        <div class="progress-container"><div class="progress-bar" style="width:75%;"></div></div>
+        <h3 style="color:#0A2540;font-weight:700;margin-bottom:0.5rem;">📞 Verifica tu saldo</h3>
+    """, unsafe_allow_html=True)
+    numeros = {"Porvenir": "01 8000 111 222", "Colfondos": "01 8000 123 456", "Protección": "01 8000 789 012", "FNA": "01 8000 456 789", "Otro": "01 8000 000 000"}
+    numero = numeros.get(st.session_state.fondo, "01 8000 000 000")
+    st.markdown(f'<div class="phone-number"><span>📱 {numero}</span></div>', unsafe_allow_html=True)
+    st.info("Marca, presiona 1, digita tu cédula y escucha tu saldo.")
+    
+    saldo_raw = st.text_input("💰 Saldo exacto", placeholder="Ej: 10000000")
+    if saldo_raw:
+        limpio = re.sub(r'[^0-9]', '', saldo_raw)
+        if limpio: st.success(f"✅ Saldo: **{f'{int(limpio):,}'.replace(',', '.')}**")
+        
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("↩️ Atrás", use_container_width=True): st.session_state.step = 'pregunta2'; st.rerun()
+    with col2:
+        if st.button("Siguiente →", use_container_width=True):
+            if saldo_raw:
+                st.session_state.saldo_limpio = re.sub(r'[^0-9]', '', saldo_raw)
+                st.session_state.saldo_verificado = f"${f'{int(st.session_state.saldo_limpio):,}'.replace(',', '.')}"
+                st.session_state.step = 'monto_exacto'; st.rerun()
+            else: st.error("Ingresa el saldo.")
+    st.markdown("</div>", unsafe_allow_html=True)
+
+def render_monto_exacto():
+    st.markdown("""
+    <div class="glass-container">
+        <div class="step-text">Paso 4 de 4</div>
+        <div class="progress-container"><div class="progress-bar" style="width:100%;"></div></div>
+        <h3 style="color:#0A2540;font-weight:700;margin-bottom:1rem;">💰 Monto y tus datos</h3>
+    """, unsafe_allow_html=True)
+    
+    if st.session_state.saldo_verificado:
+        st.info(f"💰 Saldo disponible: **{st.session_state.saldo_verificado}**")
+
+    monto_raw = st.text_input("Monto exacto a retirar", value=st.session_state.get('monto_raw_display', ''), key="monto_raw_widget")
+    if monto_raw:
+        limpio = re.sub(r'[^0-9]', '', monto_raw)
+        if limpio: st.success(f"✅ Monto a retirar: **{f'{int(limpio):,}'.replace(',', '.')}**")
+
+    st.markdown("### 📋 Tus datos personales")
+    col1, col2 = st.columns(2)
+    with col1:
+        telefono = st.text_input("📱 WhatsApp", value=st.session_state.get('telefono_display', ''), key="telefono_widget")
+        nombre = st.text_input("👤 Nombre completo", value=st.session_state.get('nombre_display', ''), key="nombre_widget")
+        cedula = st.text_input("🆔 Cédula", value=st.session_state.get('cedula_display', ''), key="cedula_widget")
+    with col2:
+        email = st.text_input("📧 Correo", value=st.session_state.get('email_display', ''), key="email_widget")
+        
+        lista_empresas = []
+        df_empresas = pd.DataFrame()
+        try:
+            df_empresas = conn.read(worksheet="Empresas", ttl=0).dropna(how="all")
+            lista_empresas = df_empresas["Nombre_Empresa"].tolist()
+        except Exception as e:
+            st.error(f"Error cargando empresas: {e}")
+
+        empresa_seleccionada = st.selectbox("🏢 Empresa", [""] + lista_empresas, key="empresa_widget")
+        
+        nit_auto = ""
+        if empresa_seleccionada:
+            filtro = df_empresas["Nombre_Empresa"].astype(str).str.strip() == empresa_seleccionada.strip()
+            if filtro.any():
+                nit_auto = str(df_empresas.loc[filtro, "NIT"].iloc[0]).strip()
+                
+        st.text_input("📋 NIT de la empresa", value=nit_auto, disabled=True, key=f"nit_input_{empresa_seleccionada}")
+
+    col_btn1, col_btn2 = st.columns(2)
+    with col_btn1:
+        if st.button("↩️ Atrás", use_container_width=True): st.session_state.step = 'verificar_saldo'; st.rerun()
+    with col_btn2:
+        if st.button("Siguiente →", use_container_width=True):
+            monto_raw_val = st.session_state.monto_raw_widget
+            telefono_val = st.session_state.telefono_widget
+            nombre_val = st.session_state.nombre_widget
+            cedula_val = st.session_state.cedula_widget
+            email_val = st.session_state.email_widget
+            
+            if not monto_raw_val or not all([telefono_val, nombre_val, cedula_val, email_val, empresa_seleccionada]):
+                st.error("Completa todos los datos y selecciona una empresa."); st.stop()
+            
+            limpio = re.sub(r'[^0-9]', '', monto_raw_val)
+            if st.session_state.saldo_limpio and int(limpio) > int(st.session_state.saldo_limpio):
+                st.error("El monto supera el saldo."); st.stop()
+
+            st.session_state.monto = f"{int(limpio):,}".replace(',', '.')
+            st.session_state.monto_limpio = limpio
+            st.session_state.telefono = telefono_val
+            st.session_state.nombre = nombre_val
+            st.session_state.cedula = cedula_val
+            st.session_state.email = email_val
+            st.session_state.empresa = empresa_seleccionada
+            st.session_state.nit = nit_auto
+            
+            st.session_state.step = 'resultados'; st.rerun()
+    st.markdown("</div>", unsafe_allow_html=True)
+
+def render_resultados():
+    st.markdown("""
+    <div class="glass-container">
+        <h3 style="color:#0A2540;font-weight:700;">✅ ¡Listo! Resumen</h3>
+    """, unsafe_allow_html=True)
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown(f"**🎯 Motivo:** {st.session_state.proposito}")
+        st.markdown(f"**🏦 Fondo:** {st.session_state.fondo}")
+        st.markdown(f"**💰 Monto a retirar:** {st.session_state.monto}")
+    with col2:
+        st.markdown(f"**👤 Nombre:** {st.session_state.nombre}")
+        st.markdown(f"**🏢 Empresa:** {st.session_state.empresa}")
+        st.markdown(f"**📋 NIT:** {st.session_state.nit}")
+
+    if st.button("📄 Generar y Descargar Carta", use_container_width=True):
+        st.session_state.step = 'generando'; st.rerun()
+    if st.button("↩️ Atrás", use_container_width=True):
+        st.session_state.step = 'monto_exacto'; st.rerun()
+    st.markdown("</div>", unsafe_allow_html=True)
 
 def render_generando():
     st.markdown("""
@@ -120,7 +321,6 @@ def render_generando():
         <p style="color:#64748B;">Buscando tu plantilla y generando tu carta.</p>
     """, unsafe_allow_html=True)
 
-    # 1. Guardar en Google Sheets (solo una vez)
     if not st.session_state.solicitud_guardada:
         solicitud_id = f"SOL-{datetime.now().strftime('%Y%m%d%H%M%S')}"
         fecha_actual = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -149,10 +349,8 @@ def render_generando():
                 st.rerun()
             st.stop()
 
-    # 2. Generar PDF si no existe
     if not st.session_state.pdf_bytes:
         try:
-            # Obtener el Doc_ID de la hoja Empresas
             df_empresas = conn.read(worksheet="Empresas", ttl=0).dropna(how="all")
             fila = df_empresas[df_empresas["Nombre_Empresa"] == st.session_state.empresa].iloc[0]
             doc_id = str(fila["Doc_ID"]).strip()
@@ -172,7 +370,6 @@ def render_generando():
                 st.rerun()
             st.stop()
 
-    # 3. Mostrar éxito y botón de descarga
     st.success("✅ ¡Tu carta está lista!")
     st.download_button(
         label="⬇️ Descargar Carta en PDF",
@@ -182,20 +379,27 @@ def render_generando():
         use_container_width=True
     )
 
-    st.markdown(f"""
-    <div style="background:#E8F5E9; padding:1rem; border-radius:16px; border-left:4px solid #25D366; margin-top: 1rem;">
-        <strong>📱 Mensaje simulado de WhatsApp:</strong><br>
-        "Hola {st.session_state.nombre}, hemos recibido tu solicitud. En un máximo de 24 horas hábiles te estaremos enviando tu carta. Estamos aquí para cualquier duda."
-    </div>
-    """, unsafe_allow_html=True)
-
-    if st.button("Avanzar 24 Horas (Simulación) →", use_container_width=True):
-        st.session_state.step = 'whatsapp_entrega'
-        st.rerun()
+    if st.button("Continuar al Pago →", use_container_width=True):
+        st.session_state.step = 'pago'; st.rerun()
 
     st.markdown("</div>", unsafe_allow_html=True)
 
-# (La función render_whatsapp_entrega se mantiene igual, pero el enlace de descarga puede apuntar al PDF generado si lo deseas)
+def render_pago():
+    st.markdown("""
+    <div class="glass-container">
+        <h3 style="color:#0A2540;font-weight:700;">💳 Pago con Nequi</h3>
+        <p style="color:#64748B;">Realiza el pago de <strong>$20.000 COP</strong> al número:</p>
+        <div class="phone-number" style="background:linear-gradient(135deg,#7B2FBE,#9B4DCA);">
+            📱 312 679 3911
+        </div>
+    """, unsafe_allow_html=True)
+
+    if st.button("✅ Ya pagué, finalizar", use_container_width=True):
+        st.session_state.step = 'landing'
+        st.success("¡Gracias por tu pago! Proceso finalizado.")
+        st.rerun()
+
+    st.markdown("</div>", unsafe_allow_html=True)
 
 # ---------- MAIN ----------
 def main():
@@ -206,7 +410,6 @@ def main():
     elif st.session_state.step == 'monto_exacto': render_monto_exacto()
     elif st.session_state.step == 'resultados': render_resultados()
     elif st.session_state.step == 'generando': render_generando()
-    elif st.session_state.step == 'whatsapp_entrega': render_whatsapp_entrega()
     elif st.session_state.step == 'pago': render_pago()
     else: render_landing()
 
