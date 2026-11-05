@@ -4,11 +4,10 @@ from datetime import datetime
 import os
 import base64
 import re
-import io
 from streamlit_gsheets import GSheetsConnection
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseDownload
+from weasyprint import HTML
 
 # ---------- CONFIG ----------
 st.set_page_config(page_title="Cesantías al Instante", layout="centered")
@@ -62,56 +61,58 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ---------- ESTADO ----------
-if 'step' not in st.session_state: st.session_state.step = 'landing'
+# ---------- ESTADO INICIAL ----------
+if 'step' not in st.session_state: 
+    st.session_state.step = 'landing'
 for key in ['proposito', 'monto', 'monto_limpio', 'fondo', 'nombre', 'cedula', 'telefono', 'email', 'empresa', 'nit', 'saldo_verificado', 'saldo_limpio', 'solicitud_guardada', 'pdf_bytes']:
-    if key not in st.session_state: st.session_state[key] = ""
+    if key not in st.session_state: 
+        st.session_state[key] = ""
 
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# ---------- CONEXIÓN A GOOGLE DRIVE/DOCS (LEE DESDE SECRETS) ----------
+# ---------- CONEXIÓN A GOOGLE DRIVE/DOCS ----------
 SCOPES = ['https://www.googleapis.com/auth/drive', 'https://www.googleapis.com/auth/documents']
-
 try:
-    # Extraemos las credenciales del secret y quitamos el link del spreadsheet para evitar conflictos
     creds_dict = dict(st.secrets["connections"]["gsheets"])
-    creds_dict.pop("spreadsheet", None) 
+    creds_dict.pop("spreadsheet", None)
     CREDS = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
-    DRIVE_SERVICE = build('drive', 'v3', credentials=CREDS)
     DOCS_SERVICE = build('docs', 'v1', credentials=CREDS)
 except Exception as e:
     st.error(f"Error autenticando con Google Cloud: {e}")
 
-def generar_pdf(doc_id, datos):
-    """Copia la plantilla, rellena los datos y exporta a PDF."""
-    # 1. Copiar la plantilla
-    copy_title = f"Carta_{datos['nombre']}_{datos['cedula']}"
-    body = {'name': copy_title}
-    copia = DRIVE_SERVICE.files().copy(fileId=doc_id, body=body).execute()
-    copia_id = copia.get('id')
-
-    # 2. Reemplazar el texto
-    requests = [
-        {'replaceAllText': {'containsText': {'text': '{{NOMBRE}}', 'matchCase': True}, 'replaceText': datos['nombre']}},
-        {'replaceAllText': {'containsText': {'text': '{{CEDULA}}', 'matchCase': True}, 'replaceText': datos['cedula']}},
-        {'replaceAllText': {'containsText': {'text': '{{MONTO}}', 'matchCase': True}, 'replaceText': datos['monto']}},
-        {'replaceAllText': {'containsText': {'text': '{{FONDO}}', 'matchCase': True}, 'replaceText': datos['fondo']}},
-        {'replaceAllText': {'containsText': {'text': '{{MOTIVO}}', 'matchCase': True}, 'replaceText': datos['motivo']}}
-    ]
-    DOCS_SERVICE.documents().batchUpdate(documentId=copia_id, body={'requests': requests}).execute()
-
-    # 3. Exportar a PDF
-    request_pdf = DRIVE_SERVICE.files().export_media(fileId=copia_id, mimeType='application/pdf')
-    fh = io.BytesIO()
-    downloader = MediaIoBaseDownload(fh, request_pdf)
-    done = False
-    while not done:
-        _, done = downloader.next_chunk()
-
-    # 4. Borrar la copia temporal
-    DRIVE_SERVICE.files().delete(fileId=copia_id).execute()
-
-    return fh.getvalue()
+def generar_pdf_desde_template(doc_id, datos):
+    """Lee el documento, reemplaza los marcadores y genera un PDF en memoria."""
+    # 1. Obtener el contenido del documento
+    doc = DOCS_SERVICE.documents().get(documentId=doc_id).execute()
+    
+    # 2. Extraer el texto
+    text = ""
+    for elem in doc.get('body', {}).get('content', []):
+        if 'paragraph' in elem:
+            for run in elem['paragraph'].get('elements', []):
+                if 'textRun' in run:
+                    text += run['textRun'].get('content', '')
+    
+    # 3. Reemplazar los marcadores
+    text = text.replace('{{NOMBRE}}', datos['nombre'])
+    text = text.replace('{{CEDULA}}', datos['cedula'])
+    text = text.replace('{{MONTO}}', datos['monto'])
+    text = text.replace('{{FONDO}}', datos['fondo'])
+    text = text.replace('{{MOTIVO}}', datos['motivo'])
+    
+    # 4. Crear un HTML sencillo con el texto (puedes personalizar los estilos)
+    html_content = f"""
+    <html>
+    <head><meta charset="utf-8"></head>
+    <body style="font-family: Arial, sans-serif; margin: 40px; line-height: 1.6;">
+        <pre style="white-space: pre-wrap;">{text}</pre>
+    </body>
+    </html>
+    """
+    
+    # 5. Generar el PDF con WeasyPrint
+    pdf_bytes = HTML(string=html_content).write_pdf()
+    return pdf_bytes
 
 # ---------- PANTALLAS ----------
 def render_landing():
@@ -308,7 +309,7 @@ def render_resultados():
         st.markdown(f"**🏢 Empresa:** {st.session_state.empresa}")
         st.markdown(f"**📋 NIT:** {st.session_state.nit}")
 
-    if st.button("📄 Generar y Descargar Carta", use_container_width=True):
+    if st.button("📄 Continuar con pago →", use_container_width=True):
         st.session_state.step = 'generando'; st.rerun()
     if st.button("↩️ Atrás", use_container_width=True):
         st.session_state.step = 'monto_exacto'; st.rerun()
@@ -318,12 +319,13 @@ def render_generando():
     st.markdown("""
     <div class="glass-container" style="text-align:center;">
         <h3 style="color:#0A2540;font-weight:700;">🔄 Procesando...</h3>
-        <p style="color:#64748B;">Buscando tu plantilla y generando tu carta.</p>
+        <p style="color:#64748B;">Guardando tu solicitud y generando tu carta.</p>
     """, unsafe_allow_html=True)
 
     if not st.session_state.solicitud_guardada:
         solicitud_id = f"SOL-{datetime.now().strftime('%Y%m%d%H%M%S')}"
         fecha_actual = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
         try:
             existing_data = conn.read(worksheet="Solicitudes", ttl=0).dropna(how="all")
             nuevo_dato = pd.DataFrame([{
@@ -345,8 +347,7 @@ def render_generando():
             st.session_state.solicitud_guardada = True
         except Exception as e:
             st.error(f"Error guardando en Google Sheets: {e}")
-            if st.button("Reintentar"):
-                st.rerun()
+            if st.button("Reintentar"): st.rerun()
             st.stop()
 
     if not st.session_state.pdf_bytes:
@@ -362,26 +363,40 @@ def render_generando():
                 "fondo": st.session_state.fondo,
                 "motivo": st.session_state.proposito
             }
-            pdf = generar_pdf(doc_id, datos)
+            pdf = generar_pdf_desde_template(doc_id, datos)
             st.session_state.pdf_bytes = pdf
         except Exception as e:
             st.error(f"Error al generar el PDF: {e}")
-            if st.button("Reintentar"):
-                st.rerun()
+            if st.button("Reintentar"): st.rerun()
             st.stop()
 
-    st.success("✅ ¡Tu carta está lista!")
-    st.download_button(
-        label="⬇️ Descargar Carta en PDF",
-        data=st.session_state.pdf_bytes,
-        file_name=f"Carta_{st.session_state.nombre}.pdf",
-        mime="application/pdf",
-        use_container_width=True
-    )
+    st.success(f"✅ ¡Solicitud {st.session_state.nombre} guardada exitosamente!")
+    st.markdown(f"""
+    <div style="background:#E8F5E9; padding:1rem; border-radius:16px; border-left:4px solid #25D366; margin-top: 1rem;">
+        <strong>📱 Mensaje simulado de WhatsApp:</strong><br>
+        "Hola {st.session_state.nombre}, hemos recibido tu solicitud. En un máximo de 24 horas hábiles te estaremos enviando tu carta. Estamos aquí para cualquier duda."
+    </div>
+    """, unsafe_allow_html=True)
+    
+    if st.button("Avanzar 24 Horas (Simulación) →", use_container_width=True):
+        st.session_state.step = 'whatsapp_entrega'; st.rerun()
+    st.markdown("</div>", unsafe_allow_html=True)
+
+def render_whatsapp_entrega():
+    st.markdown("""
+    <div class="glass-container" style="text-align:center;">
+        <h3 style="color:#0A2540;font-weight:700;">📱 24 Horas Después...</h3>
+    """, unsafe_allow_html=True)
+
+    st.markdown(f"""
+    <div style="background:#E8F5E9; padding:1rem; border-radius:16px; border-left:4px solid #25D366; margin: 1rem 0;">
+        <strong>📱 Nuevo mensaje de WhatsApp:</strong><br>
+        "¡Hola {st.session_state.nombre}! Tu carta está lista. Aquí tienes el link de descarga: <a href='#'>Descargar Carta PDF</a>. ¡Gracias por confiar en nosotros!"
+    </div>
+    """, unsafe_allow_html=True)
 
     if st.button("Continuar al Pago →", use_container_width=True):
         st.session_state.step = 'pago'; st.rerun()
-
     st.markdown("</div>", unsafe_allow_html=True)
 
 def render_pago():
@@ -410,6 +425,7 @@ def main():
     elif st.session_state.step == 'monto_exacto': render_monto_exacto()
     elif st.session_state.step == 'resultados': render_resultados()
     elif st.session_state.step == 'generando': render_generando()
+    elif st.session_state.step == 'whatsapp_entrega': render_whatsapp_entrega()
     elif st.session_state.step == 'pago': render_pago()
     else: render_landing()
 
