@@ -53,8 +53,6 @@ st.markdown("""
     .result-card { background: white; padding: 1.5rem; border-radius: 20px; border-left: 6px solid #00C853; box-shadow: 0 4px 16px rgba(0,0,0,0.04); margin: 1rem 0; }
     .price-tag { background: linear-gradient(135deg, #0066FF, #00C853); color: white; padding: 0.6rem 2rem; border-radius: 60px; display: inline-block; font-weight: 800; font-size: 2rem; margin: 0.5rem 0; box-shadow: 0 8px 20px rgba(0, 102, 255, 0.2); }
     .phone-number { background: #0A2540; color: white; padding: 1rem; border-radius: 20px; text-align: center; font-size: 2rem; font-weight: 800; letter-spacing: 1px; margin: 0.5rem 0; box-shadow: 0 8px 24px rgba(10, 37, 64, 0.15); display: flex; align-items: center; justify-content: center; gap: 0.5rem; }
-    .phone-number .copy-btn { background: rgba(255,255,255,0.15); border: none; color: white; padding: 0.3rem 0.8rem; border-radius: 30px; font-size: 0.8rem; cursor: pointer; transition: all 0.2s; }
-    .phone-number .copy-btn:hover { background: rgba(255,255,255,0.25); }
     .verified-badge { background: #00C853; color: white; padding: 0.2rem 0.8rem; border-radius: 30px; font-size: 0.75rem; font-weight: 700; display: inline-block; }
     @media (max-width: 480px) {
         .glass-container { padding: 1.5rem 1rem; border-radius: 24px; margin: 0.5rem 0.5rem; }
@@ -65,10 +63,12 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ---------- ESTADO ----------
-if 'step' not in st.session_state: st.session_state.step = 'landing'
-for key in ['proposito', 'monto', 'monto_limpio', 'fondo', 'nombre', 'cedula', 'telefono', 'email', 'empresa', 'nit', 'saldo_verificado', 'saldo_limpio']:
-    if key not in st.session_state: st.session_state[key] = ""
+# ---------- ESTADO INICIAL ----------
+if 'step' not in st.session_state: 
+    st.session_state.step = 'landing'
+for key in ['proposito', 'monto', 'monto_limpio', 'fondo', 'nombre', 'cedula', 'telefono', 'email', 'empresa', 'nit', 'saldo_verificado', 'saldo_limpio', 'solicitud_guardada']:
+    if key not in st.session_state: 
+        st.session_state[key] = ""
 
 conn = st.connection("gsheets", type=GSheetsConnection)
 
@@ -88,7 +88,11 @@ def render_landing():
         <div class="benefit-card"><span class="icon">💰</span><h4>4. Retira</h4><p>Monto exacto</p></div>
     </div>
     """, unsafe_allow_html=True)
+    
     if st.button("Comenzar ahora →", use_container_width=True):
+        # LIMPIAR TODO EL ESTADO PARA UNA NUEVA SOLICITUD
+        for key in ['proposito', 'monto', 'monto_limpio', 'fondo', 'nombre', 'cedula', 'telefono', 'email', 'empresa', 'nit', 'saldo_verificado', 'saldo_limpio', 'solicitud_guardada']:
+            st.session_state[key] = ""
         st.session_state.step = 'pregunta1'
         st.rerun()
     st.markdown("</div>", unsafe_allow_html=True)
@@ -202,7 +206,7 @@ def render_monto_exacto():
     with col2:
         email = st.text_input("📧 Correo", value=st.session_state.get('email_display', ''), key="email_widget")
         
-        # --- DROPDOWN DE EMPRESAS AQUI ---
+        # --- DROPDOWN DE EMPRESAS ---
         lista_empresas = []
         df_empresas = pd.DataFrame()
         try:
@@ -211,10 +215,8 @@ def render_monto_exacto():
         except Exception as e:
             st.error(f"Error cargando empresas: {e}")
 
-        # Seleccionar Empresa
         empresa_seleccionada = st.selectbox("🏢 Empresa", [""] + lista_empresas, key="empresa_widget")
         
-        # Autocompletar NIT
         nit_auto = ""
         if empresa_seleccionada:
             filtro = df_empresas["Nombre_Empresa"].astype(str).str.strip() == empresa_seleccionada.strip()
@@ -222,7 +224,7 @@ def render_monto_exacto():
                 nit_auto = str(df_empresas.loc[filtro, "NIT"].iloc[0]).strip()
                 
         st.text_input("📋 NIT de la empresa", value=nit_auto, disabled=True, key=f"nit_input_{empresa_seleccionada}")
-        # ---------------------------------
+        # ---------------------------
 
     col_btn1, col_btn2 = st.columns(2)
     with col_btn1:
@@ -242,7 +244,6 @@ def render_monto_exacto():
             if st.session_state.saldo_limpio and int(limpio) > int(st.session_state.saldo_limpio):
                 st.error("El monto supera el saldo."); st.stop()
 
-            # Guardar en variables de sesión
             st.session_state.monto = f"{int(limpio):,}".replace(',', '.')
             st.session_state.monto_limpio = limpio
             st.session_state.telefono = telefono_val
@@ -283,8 +284,8 @@ def render_generando():
         <p style="color:#64748B;">Guardando tu solicitud y generando tu carta.</p>
     """, unsafe_allow_html=True)
 
-    # Lógica de guardado en Google Sheets
-    if 'solicitud_guardada' not in st.session_state:
+    # Evitar doble guardado si se recarga la página
+    if not st.session_state.solicitud_guardada:
         solicitud_id = f"SOL-{datetime.now().strftime('%Y%m%d%H%M%S')}"
         fecha_actual = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
@@ -316,7 +317,6 @@ def render_generando():
                 st.rerun()
             st.stop()
 
-    # Simulación de WhatsApp
     st.success(f"✅ ¡Solicitud {st.session_state.nombre} guardada exitosamente!")
     st.markdown(f"""
     <div style="background:#E8F5E9; padding:1rem; border-radius:16px; border-left:4px solid #25D366; margin-top: 1rem;">
@@ -358,7 +358,6 @@ def render_pago():
 
     if st.button("✅ Ya pagué, finalizar", use_container_width=True):
         st.session_state.step = 'landing'
-        st.session_state.solicitud_guardada = False
         st.success("¡Gracias por tu pago! Proceso finalizado.")
         st.rerun()
 
