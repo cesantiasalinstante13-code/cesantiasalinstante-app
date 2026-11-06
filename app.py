@@ -5,12 +5,14 @@ import os
 import base64
 import re
 from streamlit_gsheets import GSheetsConnection
-from google.oauth2.service_account import Credentials
-from googleapiclient.discovery import build
-from weasyprint import HTML
 
 # ---------- CONFIG ----------
-st.set_page_config(page_title="Cesantías al Instante", layout="centered")
+st.set_page_config(
+    page_title="Tus Cesantías al Instante",
+    page_icon="📄",
+    layout="centered",
+    initial_sidebar_state="collapsed"
+)
 
 # ---------- CSS PREMIUM ----------
 st.markdown("""
@@ -64,55 +66,11 @@ st.markdown("""
 # ---------- ESTADO INICIAL ----------
 if 'step' not in st.session_state: 
     st.session_state.step = 'landing'
-for key in ['proposito', 'monto', 'monto_limpio', 'fondo', 'nombre', 'cedula', 'telefono', 'email', 'empresa', 'nit', 'saldo_verificado', 'saldo_limpio', 'solicitud_guardada', 'pdf_bytes']:
+for key in ['proposito', 'monto', 'monto_limpio', 'fondo', 'nombre', 'cedula', 'telefono', 'email', 'empresa', 'nit', 'saldo_verificado', 'saldo_limpio', 'solicitud_guardada']:
     if key not in st.session_state: 
         st.session_state[key] = ""
 
 conn = st.connection("gsheets", type=GSheetsConnection)
-
-# ---------- CONEXIÓN A GOOGLE DRIVE/DOCS ----------
-SCOPES = ['https://www.googleapis.com/auth/drive', 'https://www.googleapis.com/auth/documents']
-try:
-    creds_dict = dict(st.secrets["connections"]["gsheets"])
-    creds_dict.pop("spreadsheet", None)
-    CREDS = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
-    DOCS_SERVICE = build('docs', 'v1', credentials=CREDS)
-except Exception as e:
-    st.error(f"Error autenticando con Google Cloud: {e}")
-
-def generar_pdf_desde_template(doc_id, datos):
-    """Lee el documento, reemplaza los marcadores y genera un PDF en memoria."""
-    # 1. Obtener el contenido del documento
-    doc = DOCS_SERVICE.documents().get(documentId=doc_id).execute()
-    
-    # 2. Extraer el texto
-    text = ""
-    for elem in doc.get('body', {}).get('content', []):
-        if 'paragraph' in elem:
-            for run in elem['paragraph'].get('elements', []):
-                if 'textRun' in run:
-                    text += run['textRun'].get('content', '')
-    
-    # 3. Reemplazar los marcadores
-    text = text.replace('{{NOMBRE}}', datos['nombre'])
-    text = text.replace('{{CEDULA}}', datos['cedula'])
-    text = text.replace('{{MONTO}}', datos['monto'])
-    text = text.replace('{{FONDO}}', datos['fondo'])
-    text = text.replace('{{MOTIVO}}', datos['motivo'])
-    
-    # 4. Crear un HTML sencillo con el texto (puedes personalizar los estilos)
-    html_content = f"""
-    <html>
-    <head><meta charset="utf-8"></head>
-    <body style="font-family: Arial, sans-serif; margin: 40px; line-height: 1.6;">
-        <pre style="white-space: pre-wrap;">{text}</pre>
-    </body>
-    </html>
-    """
-    
-    # 5. Generar el PDF con WeasyPrint
-    pdf_bytes = HTML(string=html_content).write_pdf()
-    return pdf_bytes
 
 # ---------- PANTALLAS ----------
 def render_landing():
@@ -132,7 +90,8 @@ def render_landing():
     """, unsafe_allow_html=True)
     
     if st.button("Comenzar ahora →", use_container_width=True):
-        for key in ['proposito', 'monto', 'monto_limpio', 'fondo', 'nombre', 'cedula', 'telefono', 'email', 'empresa', 'nit', 'saldo_verificado', 'saldo_limpio', 'solicitud_guardada', 'pdf_bytes']:
+        # LIMPIAR TODO EL ESTADO PARA UNA NUEVA SOLICITUD
+        for key in ['proposito', 'monto', 'monto_limpio', 'fondo', 'nombre', 'cedula', 'telefono', 'email', 'empresa', 'nit', 'saldo_verificado', 'saldo_limpio', 'solicitud_guardada']:
             st.session_state[key] = ""
         st.session_state.step = 'pregunta1'
         st.rerun()
@@ -160,6 +119,7 @@ def render_pregunta2():
         <div class="progress-container"><div class="progress-bar" style="width:50%;"></div></div>
         <h3 style="color:#0A2540;font-weight:700;margin-bottom:1rem;">🏦 ¿En qué fondo estás?</h3>
     """, unsafe_allow_html=True)
+    
     current_dir = os.path.dirname(os.path.abspath(__file__))
     assets_dir = os.path.join(current_dir, "assets")
     def get_logo_path(filename):
@@ -246,6 +206,7 @@ def render_monto_exacto():
     with col2:
         email = st.text_input("📧 Correo", value=st.session_state.get('email_display', ''), key="email_widget")
         
+        # --- DROPDOWN DE EMPRESAS ---
         lista_empresas = []
         df_empresas = pd.DataFrame()
         try:
@@ -263,6 +224,7 @@ def render_monto_exacto():
                 nit_auto = str(df_empresas.loc[filtro, "NIT"].iloc[0]).strip()
                 
         st.text_input("📋 NIT de la empresa", value=nit_auto, disabled=True, key=f"nit_input_{empresa_seleccionada}")
+        # ---------------------------
 
     col_btn1, col_btn2 = st.columns(2)
     with col_btn1:
@@ -322,12 +284,14 @@ def render_generando():
         <p style="color:#64748B;">Guardando tu solicitud y generando tu carta.</p>
     """, unsafe_allow_html=True)
 
+    # Evitar doble guardado si se recarga la página
     if not st.session_state.solicitud_guardada:
         solicitud_id = f"SOL-{datetime.now().strftime('%Y%m%d%H%M%S')}"
         fecha_actual = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
         try:
             existing_data = conn.read(worksheet="Solicitudes", ttl=0).dropna(how="all")
+            
             nuevo_dato = pd.DataFrame([{
                 "solicitud_id": solicitud_id,
                 "fecha": fecha_actual,
@@ -342,32 +306,15 @@ def render_generando():
                 "monto": st.session_state.monto,
                 "estado": "Pendiente"
             }])
+            
             updated_df = pd.concat([existing_data, nuevo_dato], ignore_index=True)
             conn.update(worksheet="Solicitudes", data=updated_df)
             st.session_state.solicitud_guardada = True
+            
         except Exception as e:
             st.error(f"Error guardando en Google Sheets: {e}")
-            if st.button("Reintentar"): st.rerun()
-            st.stop()
-
-    if not st.session_state.pdf_bytes:
-        try:
-            df_empresas = conn.read(worksheet="Empresas", ttl=0).dropna(how="all")
-            fila = df_empresas[df_empresas["Nombre_Empresa"] == st.session_state.empresa].iloc[0]
-            doc_id = str(fila["Doc_ID"]).strip()
-
-            datos = {
-                "nombre": st.session_state.nombre,
-                "cedula": st.session_state.cedula,
-                "monto": st.session_state.monto,
-                "fondo": st.session_state.fondo,
-                "motivo": st.session_state.proposito
-            }
-            pdf = generar_pdf_desde_template(doc_id, datos)
-            st.session_state.pdf_bytes = pdf
-        except Exception as e:
-            st.error(f"Error al generar el PDF: {e}")
-            if st.button("Reintentar"): st.rerun()
+            if st.button("Reintentar"):
+                st.rerun()
             st.stop()
 
     st.success(f"✅ ¡Solicitud {st.session_state.nombre} guardada exitosamente!")
