@@ -398,7 +398,7 @@ if 'step' not in st.session_state:
 for key in [
     'proposito', 'monto', 'monto_limpio', 'fondo',
     'nombre', 'cedula', 'telefono', 'email', 'empresa',
-    'nit', 'ciudad', 'departamento', 'saldo_verificado', 'saldo_limpio',
+    'nit', 'ciudad', 'departamento', 'empresa_manual', 'nit_manual', 'saldo_verificado', 'saldo_limpio',
     'solicitud_guardada', 'doc_id_plantilla',
     'nombre_plantilla', 'plantilla_url',
     'doc_id_copia', 'url_copia', 'solicitud_id', 'documento_rellenado',
@@ -918,7 +918,7 @@ def rellenar_plantilla_google_docs(document_id, valores):
         solicitudes.append({
             "replaceAllText": {
                 "containsText": {"text": marcador, "matchCase": True},
-                "replaceText": str(valor or "")
+                "replaceText": str(valor or "").upper()
             }
         })
 
@@ -986,7 +986,44 @@ def exportar_google_doc_a_pdf(document_id, solicitud_id, nombre_persona):
 
 
 # ---------- PANTALLAS ----------
+def obtener_logo_app_path():
+    """Busca el logo propio de Cesantías al Instante, no los logos de los fondos."""
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    carpetas = [
+        os.path.join(base_dir, "assets"),
+        os.path.join(base_dir, "assets", "logos"),
+        base_dir,
+    ]
+    nombres_preferidos = [
+        "logo_cesantias_al_instante",
+        "cesantias_al_instante",
+        "logo_cesantias",
+        "logo_app_cesantias",
+    ]
+    extensiones = [".png", ".jpg", ".jpeg", ".webp"]
+    for carpeta in carpetas:
+        for nombre in nombres_preferidos:
+            for extension in extensiones:
+                ruta = os.path.join(carpeta, nombre + extension)
+                if os.path.isfile(ruta):
+                    return ruta
+        # También acepta variantes de nombre, pero exige identificar la marca.
+        if os.path.isdir(carpeta):
+            for archivo in os.listdir(carpeta):
+                nombre_archivo, extension = os.path.splitext(archivo)
+                nombre_lower = nombre_archivo.lower()
+                if (extension.lower() in extensiones
+                        and "logo" in nombre_lower
+                        and ("cesantia" in nombre_lower or "instante" in nombre_lower)):
+                    return os.path.join(carpeta, archivo)
+    return None
+
+
 def render_landing():
+    logo_app = obtener_logo_app_path()
+    if logo_app:
+        st.image(logo_app, width=190)
+
     st.markdown("""
     <div class="glass-container">
         <div class="hero-icon">📄</div>
@@ -1024,7 +1061,7 @@ def render_landing():
         for key in [
             'proposito', 'monto', 'monto_limpio', 'fondo',
             'nombre', 'cedula', 'telefono', 'email', 'empresa',
-            'nit', 'ciudad', 'departamento', 'saldo_verificado', 'saldo_limpio',
+            'nit', 'ciudad', 'departamento', 'empresa_manual', 'nit_manual', 'saldo_verificado', 'saldo_limpio',
             'solicitud_guardada', 'doc_id_plantilla',
             'nombre_plantilla', 'plantilla_url',
             'doc_id_copia', 'url_copia', 'solicitud_id', 'documento_rellenado',
@@ -1034,6 +1071,8 @@ def render_landing():
         # Limpiar también los widgets del lugar de firma para la próxima solicitud.
         st.session_state["ciudad_widget"] = ""
         st.session_state["departamento_widget"] = ""
+        st.session_state["empresa_manual_widget"] = ""
+        st.session_state["nit_manual_widget"] = ""
 
         st.session_state.step = 'pregunta1'
         st.rerun()
@@ -1249,6 +1288,18 @@ def render_verificar_saldo():
     st.markdown("</div>", unsafe_allow_html=True)
 
 
+def limpiar_telefono_widget():
+    """Mantiene el WhatsApp compuesto únicamente por dígitos."""
+    valor = str(st.session_state.get("telefono_widget", ""))
+    st.session_state.telefono_widget = re.sub(r"\D", "", valor)[:10]
+
+
+def limpiar_cedula_widget():
+    """Mantiene la cédula compuesta únicamente por dígitos, sin límite fijo."""
+    valor = str(st.session_state.get("cedula_widget", ""))
+    st.session_state.cedula_widget = re.sub(r"\D", "", valor)
+
+
 def render_monto_exacto():
     st.markdown("""
     <div class="glass-container">
@@ -1289,7 +1340,8 @@ def render_monto_exacto():
         telefono = st.text_input(
             "📱 WhatsApp",
             value=st.session_state.get('telefono_display', ''),
-            key="telefono_widget"
+            key="telefono_widget",
+            on_change=limpiar_telefono_widget
         )
 
         nombre = st.text_input(
@@ -1301,7 +1353,8 @@ def render_monto_exacto():
         cedula = st.text_input(
             "🆔 Cédula",
             value=st.session_state.get('cedula_display', ''),
-            key="cedula_widget"
+            key="cedula_widget",
+            on_change=limpiar_cedula_widget
         )
 
     with col2:
@@ -1311,7 +1364,7 @@ def render_monto_exacto():
             key="email_widget"
         )
 
-        # ---------- DROPDOWN DE EMPRESAS ----------
+        # ---------- EMPRESA Y NIT ----------
         lista_empresas = []
         df_empresas = pd.DataFrame()
 
@@ -1321,27 +1374,58 @@ def render_monto_exacto():
                 ttl=0
             ).dropna(how="all")
 
+            if "Nombre_Empresa" not in df_empresas.columns:
+                raise ValueError("La hoja Empresas debe tener la columna Nombre_Empresa.")
+
             lista_empresas = (
                 df_empresas["Nombre_Empresa"]
                 .dropna()
                 .astype(str)
+                .str.strip()
                 .tolist()
             )
+            lista_empresas = [
+                nombre for nombre in lista_empresas
+                if nombre and nombre.casefold() != "otra"
+            ]
 
         except Exception as e:
             st.error(f"Error cargando empresas: {e}")
 
         empresa_seleccionada = st.selectbox(
             "🏢 Empresa",
-            [""] + lista_empresas,
+            [""] + lista_empresas + ["Otra"],
             key="empresa_widget"
         )
 
         nit_auto = ""
         doc_id_auto = ""
+        empresa_valor = empresa_seleccionada
 
-        if empresa_seleccionada and not df_empresas.empty:
+        if empresa_seleccionada == "Otra":
+            empresa_valor = st.text_input(
+                "Nombre de la empresa",
+                placeholder="Escribe el nombre de tu empresa",
+                key="empresa_manual_widget"
+            ).strip()
+            nit_auto = st.text_input(
+                "NIT de la empresa",
+                placeholder="Escribe el NIT de tu empresa",
+                key="nit_manual_widget"
+            ).strip()
 
+            # Si existe una fila llamada 'Otra' en la hoja Empresas,
+            # se utiliza su Doc_ID como plantilla general para empresas no listadas.
+            if not df_empresas.empty and "Doc_ID" in df_empresas.columns:
+                filas_otra = df_empresas[
+                    df_empresas["Nombre_Empresa"].astype(str).str.strip().str.casefold() == "otra"
+                ]
+                if not filas_otra.empty:
+                    valor_doc = filas_otra["Doc_ID"].iloc[0]
+                    doc_id_auto = "" if pd.isna(valor_doc) else str(valor_doc).strip()
+
+        elif empresa_seleccionada and not df_empresas.empty:
+            empresa_valor = empresa_seleccionada
             filtro_empresa = (
                 df_empresas["Nombre_Empresa"]
                 .astype(str)
@@ -1350,111 +1434,57 @@ def render_monto_exacto():
             )
 
             if filtro_empresa.any():
+                fila_empresa = df_empresas.loc[filtro_empresa].iloc[0]
 
                 if "Doc_ID" in df_empresas.columns:
-                    valor_doc = df_empresas.loc[
-                        filtro_empresa,
-                        "Doc_ID"
-                    ].iloc[0]
-
-                    doc_id_auto = (
-                        ""
-                        if pd.isna(valor_doc)
-                        else str(valor_doc).strip()
-                    )
+                    valor_doc = fila_empresa.get("Doc_ID", "")
+                    doc_id_auto = "" if pd.isna(valor_doc) else str(valor_doc).strip()
 
                 if "NIT" in df_empresas.columns:
-                    valor_nit = df_empresas.loc[
-                        filtro_empresa,
-                        "NIT"
-                    ].iloc[0]
+                    valor_nit = fila_empresa.get("NIT", "")
+                    nit_auto = "" if pd.isna(valor_nit) else str(valor_nit).strip()
 
-                    nit_auto = (
-                        ""
-                        if pd.isna(valor_nit)
-                        else str(valor_nit).strip()
-                    )
+            if nit_auto:
+                st.caption(f"NIT: {nit_auto}")
 
-        # ---------- IDENTIFICAR PLANTILLA ----------
-        if empresa_seleccionada:
-
-            if doc_id_auto:
-                try:
-                    info_plantilla = obtener_info_plantilla(
-                        doc_id_auto
-                    )
-
-                    st.session_state.doc_id_plantilla = (
-                        info_plantilla["id"]
-                    )
-
-                    st.session_state.nombre_plantilla = (
-                        info_plantilla.get(
-                            "name",
-                            "Documento sin nombre"
-                        )
-                    )
-
-                    st.session_state.plantilla_url = (
-                        info_plantilla.get("webViewLink", "")
-                    )
-
-                    st.success(
-                        f"✅ Plantilla encontrada: "
-                        f"**{st.session_state.nombre_plantilla}**"
-                    )
-
-                    st.caption(
-                        f"ID de plantilla: "
-                        f"{st.session_state.doc_id_plantilla}"
-                    )
-
-                except Exception as e:
-                    st.session_state.doc_id_plantilla = ""
-                    st.session_state.nombre_plantilla = ""
-                    st.session_state.plantilla_url = ""
-
-                    st.error(
-                        f"No se pudo encontrar la plantilla "
-                        f"de esta empresa: {e}"
-                    )
-
-            else:
+        # Buscar y validar la plantilla de forma silenciosa. No mostrar
+        # mensajes de 'plantilla encontrada' ni IDs al usuario.
+        if doc_id_auto:
+            try:
+                info_plantilla = obtener_info_plantilla(doc_id_auto)
+                st.session_state.doc_id_plantilla = info_plantilla["id"]
+                st.session_state.nombre_plantilla = info_plantilla.get("name", "Documento sin nombre")
+                st.session_state.plantilla_url = info_plantilla.get("webViewLink", "")
+            except Exception:
                 st.session_state.doc_id_plantilla = ""
                 st.session_state.nombre_plantilla = ""
                 st.session_state.plantilla_url = ""
-
-                st.warning(
-                    "Esta empresa no tiene un Doc_ID configurado "
-                    "en la hoja Empresas."
-                )
-
         else:
             st.session_state.doc_id_plantilla = ""
             st.session_state.nombre_plantilla = ""
             st.session_state.plantilla_url = ""
 
-        st.text_input(
-            "📋 NIT de la empresa",
-            value=nit_auto,
-            disabled=True,
-            key=f"nit_input_{empresa_seleccionada}"
-        )
-
     st.markdown("### 📍 Lugar de firma de la carta")
-    col_ciudad, col_departamento = st.columns(2)
-    with col_ciudad:
-        ciudad_valor = st.text_input(
-            "Ciudad",
-            placeholder="Ej. Bogotá",
-            key="ciudad_widget"
-        )
-    with col_departamento:
-        departamento_valor = st.text_input(
-            "Departamento",
-            placeholder="Ej. Cundinamarca",
-            key="departamento_widget"
-        )
+    departamentos_colombia = [
+        "Amazonas", "Antioquia", "Arauca", "Atlántico", "Bogotá, D.C.",
+        "Bolívar", "Boyacá", "Caldas", "Caquetá", "Casanare", "Cauca",
+        "Cesar", "Chocó", "Córdoba", "Cundinamarca", "Guainía",
+        "Guaviare", "Huila", "La Guajira", "Magdalena", "Meta",
+        "Nariño", "Norte de Santander", "Putumayo", "Quindío",
+        "Risaralda", "San Andrés y Providencia", "Santander", "Sucre",
+        "Tolima", "Valle del Cauca", "Vaupés", "Vichada"
+    ]
+    departamento_valor = st.selectbox(
+        "Departamento",
+        [""] + departamentos_colombia,
+        key="departamento_widget",
+        index=0
+    )
+    ciudad_valor = st.text_input(
+        "Ciudad",
+        placeholder="Escribe el nombre de tu ciudad",
+        key="ciudad_widget"
+    )
 
     # ---------- BOTONES ----------
     col_btn1, col_btn2 = st.columns(2)
@@ -1479,6 +1509,8 @@ def render_monto_exacto():
                 cedula_val,
                 email_val,
                 empresa_seleccionada,
+                empresa_valor,
+                nit_auto,
                 ciudad_valor,
                 departamento_valor
             ]):
@@ -1489,9 +1521,26 @@ def render_monto_exacto():
 
             if not st.session_state.doc_id_plantilla:
                 st.error(
-                    "No se puede continuar: primero debe existir "
-                    "una plantilla válida (Doc_ID) para la empresa seleccionada."
+                    "No se puede continuar porque no hay una plantilla asignada. "
+                    "Para empresas no listadas, agrega en la hoja Empresas una fila "
+                    "llamada 'Otra' con el Doc_ID de la plantilla general."
                 )
+                st.stop()
+
+            telefono_val = re.sub(r"\D", "", str(telefono_val))
+            cedula_val = re.sub(r"\D", "", str(cedula_val))
+            email_val = str(email_val).strip()
+
+            if len(telefono_val) != 10:
+                st.error("El WhatsApp debe tener exactamente 10 dígitos.")
+                st.stop()
+
+            if not cedula_val:
+                st.error("La cédula debe contener únicamente números.")
+                st.stop()
+
+            if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email_val):
+                st.error("Ingresa un correo válido, con @ y un punto después del @.")
                 st.stop()
 
             limpio = re.sub(r'[^0-9]', '', monto_raw_val)
@@ -1516,7 +1565,7 @@ def render_monto_exacto():
             st.session_state.nombre = nombre_val
             st.session_state.cedula = cedula_val
             st.session_state.email = email_val
-            st.session_state.empresa = empresa_seleccionada
+            st.session_state.empresa = empresa_valor
             st.session_state.nit = nit_auto
             st.session_state.ciudad = ciudad_valor.strip()
             st.session_state.departamento = departamento_valor.strip()
@@ -1614,7 +1663,9 @@ def render_generando():
                 "empresa": st.session_state.empresa,
                 "fondo": st.session_state.fondo,
                 "motivo": st.session_state.proposito,
-                "monto": st.session_state.monto,
+                # Guardar solo los dígitos como texto para evitar que la
+                # configuración regional/formato de Sheets cambie 900000 a 900.
+                "monto": str(st.session_state.monto_limpio),
                 "ciudad": st.session_state.ciudad,
                 "departamento": st.session_state.departamento,
                 "estado": "Pendiente"
@@ -1744,22 +1795,6 @@ def render_generando():
     st.success(
         f"✅ Solicitud {st.session_state.solicitud_id} "
         f"guardada. Se generaron el documento editable y su PDF."
-    )
-
-    st.markdown(
-        f"**Plantilla original:** "
-        f"{st.session_state.nombre_plantilla}"
-    )
-
-    st.markdown(
-        f"**ID de la copia:** "
-        f"{st.session_state.doc_id_copia}"
-    )
-
-    st.markdown(
-        f"**Nombre de la copia:** "
-        f"Solicitud_{st.session_state.solicitud_id}_"
-        f"{st.session_state.nombre}"
     )
 
     if st.session_state.url_copia:
