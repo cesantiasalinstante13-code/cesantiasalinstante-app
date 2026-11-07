@@ -10,10 +10,12 @@ import hashlib
 import secrets
 import time
 from threading import Lock
+from io import BytesIO
 from streamlit_gsheets import GSheetsConnection
 from google.oauth2.credentials import Credentials as UserCredentials
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseUpload
 
 GOOGLE_DRIVE_SCOPE = "https://www.googleapis.com/auth/drive"
 
@@ -266,7 +268,8 @@ for key in [
     'nit', 'ciudad', 'departamento', 'saldo_verificado', 'saldo_limpio',
     'solicitud_guardada', 'doc_id_plantilla',
     'nombre_plantilla', 'plantilla_url',
-    'doc_id_copia', 'url_copia', 'solicitud_id', 'documento_rellenado'
+    'doc_id_copia', 'url_copia', 'solicitud_id', 'documento_rellenado',
+    'pdf_id', 'pdf_url', 'pdf_generado'
 ]:
     if key not in st.session_state:
         st.session_state[key] = ""
@@ -793,6 +796,62 @@ def rellenar_plantilla_google_docs(document_id, valores):
     return resultado
 
 
+def exportar_google_doc_a_pdf(document_id, solicitud_id, nombre_persona):
+    """Exporta la copia rellenada a PDF y guarda/actualiza el PDF en la carpeta de solicitudes.
+
+    Si Streamlit reintenta el proceso, reutiliza el PDF de esa solicitud en vez
+    de crear archivos duplicados.
+    """
+    servicio = obtener_servicio_drive()
+    folder_id = obtener_id_carpeta_solicitudes()
+
+    nombre_seguro = re.sub(
+        r"[^A-Za-z0-9ÁÉÍÓÚáéíóúÑñ_-]+",
+        "_",
+        str(nombre_persona)
+    ).strip("_")
+    nombre_pdf = f"Solicitud_{solicitud_id}_{nombre_seguro}.pdf"[:180]
+    nombre_pdf_q = nombre_pdf.replace("\\", "\\\\").replace("'", "\\'")
+
+    # Google Docs exporta directamente a PDF conservando el diseño del documento.
+    contenido_pdf = servicio.files().export(
+        fileId=document_id,
+        mimeType="application/pdf"
+    ).execute()
+
+    media = MediaIoBaseUpload(
+        BytesIO(contenido_pdf),
+        mimetype="application/pdf",
+        resumable=False
+    )
+
+    # Buscar primero si ya existe el PDF de esta solicitud para evitar duplicados.
+    encontrados = servicio.files().list(
+        q=f"name = '{nombre_pdf_q}' and '{folder_id}' in parents and trashed = false",
+        pageSize=10,
+        fields="files(id,name,webViewLink)"
+    ).execute().get("files", [])
+
+    if encontrados:
+        archivo_pdf = servicio.files().update(
+            fileId=encontrados[0]["id"],
+            media_body=media,
+            fields="id,name,webViewLink"
+        ).execute()
+    else:
+        archivo_pdf = servicio.files().create(
+            body={
+                "name": nombre_pdf,
+                "mimeType": "application/pdf",
+                "parents": [folder_id]
+            },
+            media_body=media,
+            fields="id,name,webViewLink"
+        ).execute()
+
+    return archivo_pdf
+
+
 # ---------- PANTALLAS ----------
 def render_landing():
     st.markdown("""
@@ -835,7 +894,8 @@ def render_landing():
             'nit', 'ciudad', 'departamento', 'saldo_verificado', 'saldo_limpio',
             'solicitud_guardada', 'doc_id_plantilla',
             'nombre_plantilla', 'plantilla_url',
-            'doc_id_copia', 'url_copia', 'solicitud_id', 'documento_rellenado'
+            'doc_id_copia', 'url_copia', 'solicitud_id', 'documento_rellenado',
+            'pdf_id', 'pdf_url', 'pdf_generado'
         ]:
             st.session_state[key] = ""
         # Limpiar también los widgets del lugar de firma para la próxima solicitud.
@@ -1513,9 +1573,7 @@ def render_generando():
                 "{{MOTIVO_RETIRO}}": motivo,
                 "{{CIUDAD}}": st.session_state.ciudad,
                 "{{DEPARTAMENTO}}": st.session_state.departamento,
-                "{{FECHA}}": fecha_documento,
-                "{{EMPRESA}}": st.session_state.empresa,
-                "{{NIT_EMPRESA}}": st.session_state.nit
+                "{{FECHA}}": fecha_documento
             }
             rellenar_plantilla_google_docs(
                 st.session_state.doc_id_copia,
@@ -1535,10 +1593,37 @@ def render_generando():
                 st.rerun()
             st.stop()
 
+    # ---------- EXPORTAR PDF EN LA MISMA CARPETA ----------
+    if not st.session_state.pdf_generado:
+        try:
+            archivo_pdf = exportar_google_doc_a_pdf(
+                st.session_state.doc_id_copia,
+                st.session_state.solicitud_id,
+                st.session_state.nombre
+            )
+            st.session_state.pdf_id = archivo_pdf["id"]
+            st.session_state.pdf_url = archivo_pdf.get(
+                "webViewLink",
+                f"https://drive.google.com/file/d/{archivo_pdf['id']}/view"
+            )
+            st.session_state.pdf_generado = True
+        except Exception as e:
+            st.error(
+                "El documento Google Docs quedó creado y rellenado, pero no se pudo "
+                f"generar o guardar el PDF. Detalle: {e}"
+            )
+            st.info(
+                "El documento editable permanece en Solicitudes_Cesantias. "
+                "Puedes reintentar la generación del PDF sin crear otra copia del documento."
+            )
+            if st.button("Reintentar generación del PDF"):
+                st.rerun()
+            st.stop()
+
     # ---------- CONFIRMACIÓN ----------
     st.success(
         f"✅ Solicitud {st.session_state.solicitud_id} "
-        f"guardada y documento generado con los datos de la solicitud."
+        f"guardada. Se generaron el documento editable y su PDF."
     )
 
     st.markdown(
@@ -1559,8 +1644,14 @@ def render_generando():
 
     if st.session_state.url_copia:
         st.markdown(
-            f"[Abrir copia en Google Drive]"
+            f"[Abrir documento Google Docs]"
             f"({st.session_state.url_copia})"
+        )
+
+    if st.session_state.pdf_url:
+        st.markdown(
+            f"[📄 Abrir o descargar PDF]"
+            f"({st.session_state.pdf_url})"
         )
 
     st.markdown(f"""
