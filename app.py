@@ -388,6 +388,93 @@ st.markdown("""
     }
 
 </style>
+<style>
+    /* ---------- REDISEÑO FINTECH: CAPA VISUAL ---------- */
+    :root {
+        --brand-navy:#082B66; --brand-blue:#0874D1; --brand-cyan:#10BCEB;
+        --brand-gold:#FFB51B; --brand-ink:#142B45; --brand-muted:#5B6F86;
+        --brand-line:#D9E6F2;
+    }
+    html, body, [class*="css"], .stApp { font-family:'Inter',sans-serif!important; }
+    .stApp {
+        background:radial-gradient(circle at 8% 4%,rgba(16,188,235,.13),transparent 25rem),
+        radial-gradient(circle at 95% 28%,rgba(8,116,209,.10),transparent 28rem),
+        linear-gradient(145deg,#F7FAFE 0%,#EAF3FB 100%)!important;
+        color:var(--brand-ink)!important;
+    }
+    .main .block-container { max-width:1060px; padding:1.2rem 1.35rem 3rem; }
+    .brand-header { max-width:980px; margin:.15rem auto 1rem; padding:.7rem 1.1rem;
+        display:flex; align-items:center; justify-content:space-between; gap:1rem;
+        background:rgba(255,255,255,.9); border:1px solid var(--brand-line);
+        border-radius:22px; box-shadow:0 10px 30px rgba(8,43,102,.07); }
+    .brand-logo-wrap { display:flex; align-items:center; min-width:0; }
+    .brand-logo-wrap img { display:block; max-height:72px; width:auto; max-width:100%; object-fit:contain; }
+    .brand-trust { display:flex; align-items:center; gap:.45rem; color:var(--brand-navy); font-size:.8rem; font-weight:800; white-space:nowrap; }
+    .brand-trust span { display:inline-flex; width:29px; height:29px; border-radius:50%; align-items:center; justify-content:center; color:#fff; background:linear-gradient(135deg,var(--brand-blue),var(--brand-cyan)); }
+    .journey-wrap { max-width:980px; margin:0 auto 1.1rem; padding:.75rem 1rem .6rem; background:rgba(255,255,255,.8); border:1px solid var(--brand-line); border-radius:18px; }
+    .journey { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:.3rem; }
+    .journey-step { display:flex; flex-direction:column; align-items:center; gap:.32rem; text-align:center; color:#8798AA; font-size:.7rem; font-weight:750; }
+    .journey-dot { width:30px; height:30px; display:flex; align-items:center; justify-content:center; border-radius:50%; background:#E5EDF5; color:#52677E; font-size:.78rem; font-weight:900; border:2px solid white; box-shadow:0 0 0 1px var(--brand-line); }
+    .journey-step.active { color:var(--brand-navy); }
+    .journey-step.active .journey-dot { color:#fff; background:linear-gradient(135deg,var(--brand-blue),var(--brand-cyan)); box-shadow:0 4px 14px rgba(8,116,209,.24); }
+    .journey-step.done { color:#1687B8; }
+    .journey-step.done .journey-dot { color:#fff; background:#13B9D8; }
+    .glass-container { position:relative; overflow:hidden; max-width:980px; margin:.7rem auto 1rem;
+        padding:clamp(1.1rem,3vw,2.35rem); border-radius:28px; background:rgba(255,255,255,.97);
+        border:1px solid #D6E5F3; box-shadow:0 18px 55px rgba(8,43,102,.10); }
+    .glass-container:after { content:""; position:absolute; z-index:0; pointer-events:none; width:220px; height:220px; right:-145px; bottom:-165px; border-radius:50%; border:24px solid rgba(16,188,235,.10); }
+    .glass-container > * { position:relative; z-index:1; }
+    .main-title { font-size:clamp(2.15rem,5vw,3.6rem); line-height:1.03; letter-spacing:-.05em; font-weight:900; color:var(--brand-navy); }
+    .main-title span { color:var(--brand-cyan); background:none; -webkit-text-fill-color:var(--brand-cyan); }
+    .sub-title { max-width:680px; color:var(--brand-muted)!important; font-size:1.07rem; line-height:1.55; }
+    .hero-kicker { display:inline-flex; align-items:center; gap:.4rem; padding:.42rem .8rem; border-radius:999px; background:#E8F7FD; color:#0875B8; font-size:.76rem; font-weight:850; letter-spacing:.04em; text-transform:uppercase; }
+    .hero-trust-row { display:flex; flex-wrap:wrap; gap:.5rem; margin:1rem 0 1.2rem; }
+    .hero-trust-pill { display:inline-flex; align-items:center; gap:.35rem; padding:.52rem .78rem; border-radius:999px; background:#F0F7FC; color:var(--brand-navy); border:1px solid #DCEAF5; font-size:.8rem; font-weight:750; }
+    .benefit-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:.75rem; margin:1.35rem 0; }
+    .benefit-card { min-width:0; padding:1rem .6rem; border-radius:18px; text-align:center; background:linear-gradient(180deg,#fff,#F5FAFE); border:1px solid var(--brand-line); box-shadow:0 7px 20px rgba(8,43,102,.055); transition:transform .2s,box-shadow .2s; }
+    .benefit-card:hover { transform:translateY(-3px); box-shadow:0 12px 26px rgba(8,43,102,.11); }
+    .benefit-card .icon { width:46px; height:46px; display:inline-flex; align-items:center; justify-content:center; border-radius:14px; margin-bottom:.5rem; color:white; background:linear-gradient(145deg,var(--brand-blue),var(--brand-cyan)); font-size:1.45rem; }
+    .benefit-card h4 { margin:0; color:var(--brand-navy); font-size:.9rem; font-weight:850; }
+    .benefit-card p { margin:.28rem 0 0; color:var(--brand-muted)!important; font-size:.75rem; line-height:1.35; }
+    [data-testid="stVerticalBlockBorderWrapper"] { border:1px solid var(--brand-line)!important; border-radius:20px!important; background:linear-gradient(180deg,#fff,#F7FBFE)!important; box-shadow:0 8px 22px rgba(8,43,102,.055)!important; }
+    .stRadio > div > label { border:2px solid #DCEAF5!important; border-radius:18px!important; background:#fff!important; color:var(--brand-navy)!important; font-weight:750!important; box-shadow:0 4px 12px rgba(8,43,102,.04)!important; }
+    .stRadio > div > label:hover { border-color:var(--brand-blue)!important; background:#F0F8FE!important; }
+    .stRadio > div > label[data-checked="true"] { border-color:var(--brand-blue)!important; background:#EAF6FE!important; }
+    [data-testid="stWidgetLabel"] p, [data-testid="stWidgetLabel"] label, [data-testid="stWidgetLabel"] span,
+    [data-testid="stTextInput"] label, [data-testid="stSelectbox"] label { color:var(--brand-navy)!important; font-weight:750!important; opacity:1!important; }
+    [data-testid="stTextInput"] input, [data-testid="stNumberInput"] input, [data-testid="stTextArea"] textarea,
+    [data-testid="stSelectbox"] [data-baseweb="select"] > div { min-height:47px; border:1.5px solid #C9DCEC!important; border-radius:13px!important; background:#fff!important; color:var(--brand-ink)!important; }
+    [data-testid="stTextInput"] input:focus, [data-testid="stTextArea"] textarea:focus { border-color:var(--brand-blue)!important; box-shadow:0 0 0 3px rgba(8,116,209,.12)!important; }
+    [data-testid="stTextInput"] input::placeholder, [data-testid="stTextArea"] textarea::placeholder { color:#8293A6!important; opacity:1!important; }
+    [data-testid="stTextInput"] input, [data-testid="stSelectbox"] [data-baseweb="select"] *, [data-baseweb="popover"] [role="option"] * { color:var(--brand-ink)!important; opacity:1!important; }
+    [data-testid="stCaptionContainer"] p, .stCaption { color:var(--brand-muted)!important; opacity:1!important; }
+    .stButton > button, [data-testid="stDownloadButton"] button, [data-testid="stLinkButton"] a { min-height:47px; border:0!important; border-radius:14px!important; padding:.72rem 1.15rem!important; color:white!important; background:linear-gradient(110deg,var(--brand-navy),var(--brand-blue) 68%,#0A9DD7)!important; font-weight:800!important; font-size:.98rem!important; box-shadow:0 8px 20px rgba(8,74,151,.19)!important; transition:transform .18s,box-shadow .18s!important; }
+    .stButton > button:hover, [data-testid="stDownloadButton"] button:hover { transform:translateY(-2px); box-shadow:0 12px 25px rgba(8,74,151,.25)!important; }
+    div.st-key-landing_start button { color:#082B66!important; background:linear-gradient(110deg,#FFD34F,#FFB51B)!important; box-shadow:0 10px 24px rgba(255,181,27,.28)!important; font-size:1.08rem!important; }
+    .step-text, .progress-container { display:none!important; }
+    .result-card { background:linear-gradient(135deg,#fff,#F0F8FE); padding:1.35rem; border-radius:20px; border:1px solid var(--brand-line); border-left:5px solid var(--brand-cyan); box-shadow:0 8px 22px rgba(8,43,102,.07); margin:1rem 0; }
+    .price-tag { display:inline-block; padding:.65rem 1.5rem; border-radius:15px; color:#fff; background:linear-gradient(120deg,var(--brand-navy),var(--brand-blue),var(--brand-cyan)); font-weight:900; font-size:clamp(1.5rem,4vw,2.1rem); }
+    .phone-number { display:flex; align-items:center; justify-content:center; gap:.5rem; padding:1rem; margin:.6rem 0; border-radius:17px; color:#fff; background:linear-gradient(120deg,var(--brand-navy),var(--brand-blue),var(--brand-cyan)); font-size:clamp(1.4rem,4vw,2rem); font-weight:900; letter-spacing:.04em; }
+    [data-testid="stAlert"] { border-radius:15px!important; border:1px solid #D6E9F7!important; }
+    @media (max-width:700px) {
+        .main .block-container { padding:.65rem .65rem 2rem; }
+        .brand-header { padding:.55rem .7rem; border-radius:17px; }
+        .brand-logo-wrap img { max-height:55px; max-width:70vw; }
+        .brand-trust { font-size:.68rem; gap:.25rem; }
+        .brand-trust span { width:24px; height:24px; }
+        .journey-wrap { padding:.6rem .3rem; border-radius:14px; }
+        .journey { gap:.08rem; }
+        .journey-step { font-size:.58rem; gap:.25rem; }
+        .journey-dot { width:25px; height:25px; font-size:.68rem; }
+        .glass-container { padding:1.15rem .9rem; margin:.45rem 0; border-radius:21px; }
+        .benefit-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:.55rem; }
+        .benefit-card { padding:.8rem .45rem; }
+        .benefit-card .icon { width:40px; height:40px; }
+        [data-testid="stTextInput"] input, [data-testid="stTextArea"] textarea, [data-testid="stSelectbox"] [data-baseweb="select"] { font-size:16px!important; }
+        .stButton > button { min-height:48px; font-size:.92rem!important; }
+    }
+    @media (max-width:390px) { .brand-trust { display:none; } .journey-step { font-size:.52rem; } }
+</style>
 """, unsafe_allow_html=True)
 
 
@@ -999,6 +1086,7 @@ def obtener_logo_app_path():
         "cesantias_al_instante",
         "logo_cesantias",
         "logo_app_cesantias",
+        "logo_cesantias_al_instante",
     ]
     extensiones = [".png", ".jpg", ".jpeg", ".webp"]
     for carpeta in carpetas:
@@ -1020,13 +1108,47 @@ def obtener_logo_app_path():
 
 
 def render_brand_header(width=190):
-    """Muestra el logo de la aplicación en la interfaz, nunca en las plantillas."""
+    """Muestra la marca y el avance de seis etapas solo dentro de la app."""
     logo_app = obtener_logo_app_path()
-    if not logo_app:
+    etapa_por_pantalla = {
+        "pregunta1": 1, "pregunta2": 2, "verificar_saldo": 3,
+        "monto_exacto": 4, "resultados": 5,
+        "generando": 6, "whatsapp_entrega": 6, "pago": 6
+    }
+    etiquetas = ["Motivo", "Fondo", "Saldo", "Datos", "Resumen", "Finalizar"]
+    activa = etapa_por_pantalla.get(st.session_state.get("step", ""), 0)
+    logo_html = ""
+    if logo_app:
+        try:
+            with open(logo_app, "rb") as archivo_logo:
+                logo_b64 = base64.b64encode(archivo_logo.read()).decode("ascii")
+            mime = mimetypes.guess_type(logo_app)[0] or "image/png"
+            logo_html = f'<img src="data:{mime};base64,{logo_b64}" alt="Cesantías al Instante">'
+        except OSError:
+            logo_html = ""
+    if activa == 0:
+        izquierda, centro, derecha = st.columns([1, 2, 1])
+        with centro:
+            if logo_app:
+                st.image(logo_app, width=width)
         return
-    izquierda, centro, derecha = st.columns([1, 2, 1])
-    with centro:
-        st.image(logo_app, width=width)
+    st.markdown(
+        f'<div class="brand-header"><div class="brand-logo-wrap">{logo_html}</div>'
+        '<div class="brand-trust"><span>✓</span> Seguro y confiable</div></div>',
+        unsafe_allow_html=True
+    )
+    pasos_html = []
+    for numero, etiqueta in enumerate(etiquetas, start=1):
+        clase = "active" if numero == activa else ("done" if numero < activa else "")
+        simbolo = "✓" if numero < activa else str(numero)
+        pasos_html.append(
+            f'<div class="journey-step {clase}"><div class="journey-dot">{simbolo}</div>'
+            f'<span>{etiqueta}</span></div>'
+        )
+    st.markdown(
+        '<div class="journey-wrap"><div class="journey">' + ''.join(pasos_html) + '</div></div>',
+        unsafe_allow_html=True
+    )
 
 
 def render_landing():
@@ -1034,8 +1156,14 @@ def render_landing():
 
     st.markdown("""
     <div class="glass-container">
-        <div class="main-title">Tu retiro de cesantías, <span>más fácil</span></div>
-        <div class="sub-title">Retira tu dinero en 4 pasos, de forma rápida y segura.</div>
+        <div class="hero-kicker">✦ Tu bienestar, más cerca</div>
+        <div class="main-title">Tus cesantías,<br><span>más cerca de ti</span></div>
+        <div class="sub-title">Gestiona tu solicitud de retiro de cesantías de manera fácil, rápida y segura, desde cualquier lugar.</div>
+        <div class="hero-trust-row">
+            <span class="hero-trust-pill">⚡ Rápido</span>
+            <span class="hero-trust-pill">✓ Seguro</span>
+            <span class="hero-trust-pill">♡ Fácil</span>
+        </div>
     """, unsafe_allow_html=True)
 
     st.markdown("""
@@ -1063,7 +1191,7 @@ def render_landing():
     </div>
     """, unsafe_allow_html=True)
 
-    if st.button("Comenzar ahora →", use_container_width=True):
+    if st.button("Comenzar ahora →", use_container_width=True, key="landing_start"):
 
         for key in [
             'proposito', 'monto', 'monto_limpio', 'fondo',
@@ -1749,14 +1877,16 @@ def render_generando():
             fecha_documento = datetime.now(ZoneInfo("America/Bogota")).strftime("%d/%m/%Y")
 
             valores = {
-                "{{FONDO_CESANTIAS}}": st.session_state.fondo,
-                "{{NOMBRE_TRABAJADOR}}": st.session_state.nombre,
-                "{{CEDULA}}": st.session_state.cedula,
-                "{{MONTO_RETIRO}}": st.session_state.monto,
-                "{{MONTO DE RETIRO}}": st.session_state.monto,
-                "{{MOTIVO_RETIRO}}": motivo,
-                "{{CIUDAD}}": st.session_state.ciudad,
-                "{{DEPARTAMENTO}}": st.session_state.departamento,
+                # Los datos de texto se insertan en MAYÚSCULAS en la copia,
+                # sin modificar nunca la plantilla original.
+                "{{FONDO_CESANTIAS}}": str(st.session_state.fondo).upper(),
+                "{{NOMBRE_TRABAJADOR}}": str(st.session_state.nombre).upper(),
+                "{{CEDULA}}": str(st.session_state.cedula),
+                "{{MONTO_RETIRO}}": str(st.session_state.monto).upper(),
+                "{{MONTO DE RETIRO}}": str(st.session_state.monto).upper(),
+                "{{MOTIVO_RETIRO}}": motivo.upper(),
+                "{{CIUDAD}}": str(st.session_state.ciudad).upper(),
+                "{{DEPARTAMENTO}}": str(st.session_state.departamento).upper(),
                 "{{FECHA}}": fecha_documento
             }
             rellenar_plantilla_google_docs(
