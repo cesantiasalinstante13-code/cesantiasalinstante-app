@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
+from zoneinfo import ZoneInfo
 import os
 import base64
 import re
@@ -262,10 +263,10 @@ if 'step' not in st.session_state:
 for key in [
     'proposito', 'monto', 'monto_limpio', 'fondo',
     'nombre', 'cedula', 'telefono', 'email', 'empresa',
-    'nit', 'saldo_verificado', 'saldo_limpio',
+    'nit', 'ciudad', 'departamento', 'saldo_verificado', 'saldo_limpio',
     'solicitud_guardada', 'doc_id_plantilla',
     'nombre_plantilla', 'plantilla_url',
-    'doc_id_copia', 'url_copia', 'solicitud_id'
+    'doc_id_copia', 'url_copia', 'solicitud_id', 'documento_rellenado'
 ]:
     if key not in st.session_state:
         st.session_state[key] = ""
@@ -713,27 +714,83 @@ def obtener_info_plantilla(doc_id):
     return archivo
 
 
-def copiar_plantilla(doc_id, solicitud_id, nombre_persona):
-    """Crea una copia de la plantilla en la misma ubicación del original."""
+@st.cache_resource
+def obtener_servicio_docs():
+    """Crea Google Docs API con la misma cuenta OAuth administradora."""
+    datos = obtener_config_oauth()
+    refresh_token = str(datos.get("refresh_token", "")).strip()
+    if not refresh_token:
+        raise RuntimeError("Falta refresh_token en [google_oauth] de Streamlit Secrets.")
+
+    credenciales = UserCredentials(
+        token=None,
+        refresh_token=refresh_token,
+        token_uri="https://oauth2.googleapis.com/token",
+        client_id=datos["client_id"],
+        client_secret=datos["client_secret"],
+        scopes=[GOOGLE_DRIVE_SCOPE]
+    )
+    return build("docs", "v1", credentials=credenciales, cache_discovery=False)
+
+
+def obtener_id_carpeta_solicitudes():
+    """Lee el ID de la carpeta destino configurada por el administrador."""
+    datos = obtener_config_oauth()
+    folder_id = str(datos.get("solicitudes_folder_id", "")).strip()
+    if not folder_id:
+        raise RuntimeError(
+            "Falta solicitudes_folder_id en [google_oauth] de Streamlit Secrets. "
+            "Crea la carpeta Solicitudes_Cesantias en Mi unidad y pega su ID."
+        )
 
     servicio = obtener_servicio_drive()
+    carpeta = servicio.files().get(
+        fileId=folder_id,
+        fields="id,name,mimeType,trashed"
+    ).execute()
+    if carpeta.get("mimeType") != "application/vnd.google-apps.folder" or carpeta.get("trashed"):
+        raise RuntimeError("solicitudes_folder_id no corresponde a una carpeta válida de Google Drive.")
+    return folder_id
+
+
+def copiar_plantilla(doc_id, solicitud_id, nombre_persona):
+    """Copia la plantilla directamente dentro de Solicitudes_Cesantias."""
+    servicio = obtener_servicio_drive()
+    folder_id = obtener_id_carpeta_solicitudes()
 
     nombre_seguro = re.sub(
         r"[^A-Za-z0-9ÁÉÍÓÚáéíóúÑñ_-]+",
         "_",
         str(nombre_persona)
     ).strip("_")
-
     nombre_archivo = f"Solicitud_{solicitud_id}_{nombre_seguro}"[:180]
 
     copia = servicio.files().copy(
         fileId=str(doc_id).strip(),
-        body={"name": nombre_archivo},
+        body={"name": nombre_archivo, "parents": [folder_id]},
         supportsAllDrives=True,
-        fields="id,name,webViewLink"
+        fields="id,name,webViewLink,parents"
     ).execute()
-
     return copia
+
+
+def rellenar_plantilla_google_docs(document_id, valores):
+    """Sustituye los marcadores de la copia sin modificar la plantilla original."""
+    servicio = obtener_servicio_docs()
+    solicitudes = []
+    for marcador, valor in valores.items():
+        solicitudes.append({
+            "replaceAllText": {
+                "containsText": {"text": marcador, "matchCase": True},
+                "replaceText": str(valor or "")
+            }
+        })
+
+    resultado = servicio.documents().batchUpdate(
+        documentId=document_id,
+        body={"requests": solicitudes}
+    ).execute()
+    return resultado
 
 
 # ---------- PANTALLAS ----------
@@ -775,12 +832,15 @@ def render_landing():
         for key in [
             'proposito', 'monto', 'monto_limpio', 'fondo',
             'nombre', 'cedula', 'telefono', 'email', 'empresa',
-            'nit', 'saldo_verificado', 'saldo_limpio',
+            'nit', 'ciudad', 'departamento', 'saldo_verificado', 'saldo_limpio',
             'solicitud_guardada', 'doc_id_plantilla',
             'nombre_plantilla', 'plantilla_url',
-            'doc_id_copia', 'url_copia', 'solicitud_id'
+            'doc_id_copia', 'url_copia', 'solicitud_id', 'documento_rellenado'
         ]:
             st.session_state[key] = ""
+        # Limpiar también los widgets del lugar de firma para la próxima solicitud.
+        st.session_state["ciudad_widget"] = ""
+        st.session_state["departamento_widget"] = ""
 
         st.session_state.step = 'pregunta1'
         st.rerun()
@@ -1201,6 +1261,21 @@ def render_monto_exacto():
             key=f"nit_input_{empresa_seleccionada}"
         )
 
+    st.markdown("### 📍 Lugar de firma de la carta")
+    col_ciudad, col_departamento = st.columns(2)
+    with col_ciudad:
+        ciudad_valor = st.text_input(
+            "Ciudad",
+            placeholder="Ej. Bogotá",
+            key="ciudad_widget"
+        )
+    with col_departamento:
+        departamento_valor = st.text_input(
+            "Departamento",
+            placeholder="Ej. Cundinamarca",
+            key="departamento_widget"
+        )
+
     # ---------- BOTONES ----------
     col_btn1, col_btn2 = st.columns(2)
 
@@ -1223,10 +1298,12 @@ def render_monto_exacto():
                 nombre_val,
                 cedula_val,
                 email_val,
-                empresa_seleccionada
+                empresa_seleccionada,
+                ciudad_valor,
+                departamento_valor
             ]):
                 st.error(
-                    "Completa todos los datos y selecciona una empresa."
+                    "Completa tus datos, selecciona la empresa y escribe la ciudad y el departamento de firma."
                 )
                 st.stop()
 
@@ -1261,6 +1338,8 @@ def render_monto_exacto():
             st.session_state.email = email_val
             st.session_state.empresa = empresa_seleccionada
             st.session_state.nit = nit_auto
+            st.session_state.ciudad = ciudad_valor.strip()
+            st.session_state.departamento = departamento_valor.strip()
 
             st.session_state.step = 'resultados'
             st.rerun()
@@ -1356,6 +1435,8 @@ def render_generando():
                 "fondo": st.session_state.fondo,
                 "motivo": st.session_state.proposito,
                 "monto": st.session_state.monto,
+                "ciudad": st.session_state.ciudad,
+                "departamento": st.session_state.departamento,
                 "estado": "Pendiente"
             }])
 
@@ -1416,10 +1497,48 @@ def render_generando():
 
             st.stop()
 
+    # ---------- RELLENAR LA COPIA (NO LA PLANTILLA ORIGINAL) ----------
+    if not st.session_state.documento_rellenado:
+        try:
+            motivo = str(st.session_state.proposito or "").strip()
+            motivo = re.sub(r"^[^\wÁÉÍÓÚáéíóúÑñ]+", "", motivo).strip()
+            fecha_documento = datetime.now(ZoneInfo("America/Bogota")).strftime("%d/%m/%Y")
+
+            valores = {
+                "{{FONDO_CESANTIAS}}": st.session_state.fondo,
+                "{{NOMBRE_TRABAJADOR}}": st.session_state.nombre,
+                "{{CEDULA}}": st.session_state.cedula,
+                "{{MONTO_RETIRO}}": st.session_state.monto,
+                "{{MONTO DE RETIRO}}": st.session_state.monto,
+                "{{MOTIVO_RETIRO}}": motivo,
+                "{{CIUDAD}}": st.session_state.ciudad,
+                "{{DEPARTAMENTO}}": st.session_state.departamento,
+                "{{FECHA}}": fecha_documento,
+                "{{EMPRESA}}": st.session_state.empresa,
+                "{{NIT_EMPRESA}}": st.session_state.nit
+            }
+            rellenar_plantilla_google_docs(
+                st.session_state.doc_id_copia,
+                valores
+            )
+            st.session_state.documento_rellenado = True
+        except Exception as e:
+            st.error(
+                "La copia se creó en Drive, pero no se pudieron reemplazar "
+                f"los marcadores del documento. Detalle: {e}"
+            )
+            st.info(
+                "La plantilla original no fue modificada. Puedes corregir el "
+                "problema y pulsar Reintentar para rellenar la copia existente."
+            )
+            if st.button("Reintentar rellenado del documento"):
+                st.rerun()
+            st.stop()
+
     # ---------- CONFIRMACIÓN ----------
     st.success(
         f"✅ Solicitud {st.session_state.solicitud_id} "
-        f"guardada y plantilla copiada."
+        f"guardada y documento generado con los datos de la solicitud."
     )
 
     st.markdown(
