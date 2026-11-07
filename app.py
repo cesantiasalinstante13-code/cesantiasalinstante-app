@@ -317,9 +317,16 @@ st.markdown("""
     .sub-title { color: #40566E !important; }
     .benefit-card p { color: #52657B !important; }
     .stRadio > div > label { color: #102A43 !important; }
-    [data-testid="stAlert"] [data-testid="stMarkdownContainer"] * {
-        color: #243B53 !important;
+    /* Textos informativos (st.info): gris medio, no negro */
+    [data-testid="stAlert"] [data-testid="stMarkdownContainer"],
+    [data-testid="stAlert"] [data-testid="stMarkdownContainer"] p,
+    [data-testid="stAlert"] [data-testid="stMarkdownContainer"] span,
+    [data-testid="stAlert"] [data-testid="stMarkdownContainer"] li,
+    [data-testid="stAlert"] [data-testid="stMarkdownContainer"] strong,
+    [data-testid="stAlert"] [data-testid="stMarkdownContainer"] b {
+        color: #52657B !important;
         opacity: 1 !important;
+        font-weight: 500 !important;
     }
     .fund-logo-box {
         height: 112px;
