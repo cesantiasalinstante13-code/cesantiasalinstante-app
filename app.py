@@ -34,7 +34,7 @@ st.markdown("""
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap');
     * { font-family: 'Inter', sans-serif; }
     #MainMenu, footer, header { visibility: hidden; }
-    .stApp { background: linear-gradient(145deg, #F8FAFC 0%, #EDF2F7 100%); padding: 0 !important; }
+    .stApp { background: linear-gradient(145deg, #FFFFFF 0%, #F1F8FC 100%); padding: 0 !important; }
     .glass-container {
         background: rgba(255, 255, 255, 0.85);
         backdrop-filter: blur(10px);
@@ -49,13 +49,13 @@ st.markdown("""
     .main-title {
         font-size: 2.8rem;
         font-weight: 800;
-        color: #0A2540;
+        color: #102868;
         text-align: center;
         line-height: 1.1;
         margin-bottom: 0.2rem;
     }
     .main-title span {
-        background: linear-gradient(135deg, #0066FF, #00C853);
+        background: linear-gradient(135deg, #1769C2, #16A6D8);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
     }
@@ -105,7 +105,7 @@ st.markdown("""
         margin: 0;
         font-size: 0.85rem;
         font-weight: 700;
-        color: #0A2540;
+        color: #102868;
     }
     .benefit-card p {
         margin: 0.2rem 0 0 0;
@@ -113,7 +113,7 @@ st.markdown("""
         color: #94A3B8;
     }
     .stButton > button {
-        background: linear-gradient(135deg, #0066FF, #00C853) !important;
+        background: linear-gradient(135deg, #1769C2, #16A6D8) !important;
         color: white !important;
         font-weight: 700 !important;
         border-radius: 60px !important;
@@ -122,12 +122,12 @@ st.markdown("""
         font-size: 1.1rem !important;
         border: none !important;
         transition: all 0.3s ease !important;
-        box-shadow: 0 8px 25px rgba(0, 102, 255, 0.25) !important;
+        box-shadow: 0 8px 25px rgba(23, 105, 194, 0.22) !important;
         letter-spacing: 0.3px;
     }
     .stButton > button:hover {
         transform: scale(1.02) !important;
-        box-shadow: 0 12px 35px rgba(0, 102, 255, 0.35) !important;
+        box-shadow: 0 12px 35px rgba(23, 105, 194, 0.30) !important;
     }
     .stButton > button:active {
         transform: scale(0.97) !important;
@@ -140,7 +140,7 @@ st.markdown("""
     }
     .stRadio > div > label {
         background: white;
-        border: 2px solid #E2E8F0;
+        border: 2px solid #DCEAF4;
         border-radius: 16px;
         padding: 0.9rem 1.2rem;
         cursor: pointer;
@@ -149,12 +149,12 @@ st.markdown("""
         min-width: 120px;
         text-align: center;
         font-weight: 600;
-        color: #0A2540;
+        color: #102868;
         box-shadow: 0 2px 8px rgba(0,0,0,0.02);
     }
     .stRadio > div > label:hover {
-        border-color: #0066FF;
-        background: #F0F7FF;
+        border-color: #1769C2;
+        background: #EFF8FD;
         transform: translateY(-2px);
     }
     .stRadio > div > label > div {
@@ -164,9 +164,9 @@ st.markdown("""
         gap: 0.5rem;
     }
     .stRadio > div > label[data-checked="true"] {
-        border-color: #0066FF;
-        background: #F0F7FF;
-        box-shadow: 0 4px 12px rgba(0, 102, 255, 0.15);
+        border-color: #1769C2;
+        background: #EFF8FD;
+        box-shadow: 0 4px 12px rgba(23, 105, 194, 0.14);
     }
     .stTextInput > div > div > input {
         border-radius: 16px !important;
@@ -177,8 +177,8 @@ st.markdown("""
         background: white;
     }
     .stTextInput > div > div > input:focus {
-        border-color: #0066FF !important;
-        box-shadow: 0 0 0 4px rgba(0, 102, 255, 0.1) !important;
+        border-color: #1769C2 !important;
+        box-shadow: 0 0 0 4px rgba(23, 105, 194, 0.12) !important;
     }
     .progress-container {
         background: #E2E8F0;
@@ -190,7 +190,7 @@ st.markdown("""
     .progress-bar {
         height: 100%;
         border-radius: 40px;
-        background: linear-gradient(90deg, #0066FF, #00C853);
+        background: linear-gradient(90deg, #1769C2, #16A6D8);
         transition: width 0.6s cubic-bezier(0.22, 1, 0.36, 1);
     }
     .step-text {
@@ -205,12 +205,12 @@ st.markdown("""
         background: white;
         padding: 1.5rem;
         border-radius: 20px;
-        border-left: 6px solid #00C853;
+        border-left: 6px solid #16A6D8;
         box-shadow: 0 4px 16px rgba(0,0,0,0.04);
         margin: 1rem 0;
     }
     .price-tag {
-        background: linear-gradient(135deg, #0066FF, #00C853);
+        background: linear-gradient(135deg, #1769C2, #16A6D8);
         color: white;
         padding: 0.6rem 2rem;
         border-radius: 60px;
@@ -221,7 +221,7 @@ st.markdown("""
         box-shadow: 0 8px 20px rgba(0, 102, 255, 0.2);
     }
     .phone-number {
-        background: #0A2540;
+        background: #102868;
         color: white;
         padding: 1rem;
         border-radius: 20px;
@@ -237,7 +237,7 @@ st.markdown("""
         gap: 0.5rem;
     }
     .verified-badge {
-        background: #00C853;
+        background: #16A6D8;
         color: white;
         padding: 0.2rem 0.8rem;
         border-radius: 30px;
@@ -295,7 +295,7 @@ st.markdown("""
     [data-testid="stTextArea"] textarea,
     [data-testid="stSelectbox"] [data-baseweb="select"] > div {
         background-color: #FFFFFF !important;
-        border-color: #B8C5D3 !important;
+        border-color: #C5D8E8 !important;
     }
     [data-testid="stTextInput"] input::placeholder,
     [data-testid="stTextArea"] textarea::placeholder {
@@ -987,7 +987,7 @@ def exportar_google_doc_a_pdf(document_id, solicitud_id, nombre_persona):
 
 # ---------- PANTALLAS ----------
 def obtener_logo_app_path():
-    """Busca el logo propio de Cesantías al Instante, no los logos de los fondos."""
+    """Busca el logo propio de Cesantías al Instante para la interfaz; nunca se inserta en documentos ni PDF."""
     base_dir = os.path.dirname(os.path.abspath(__file__))
     carpetas = [
         os.path.join(base_dir, "assets"),
@@ -1019,16 +1019,23 @@ def obtener_logo_app_path():
     return None
 
 
-def render_landing():
+def render_brand_header(width=190):
+    """Muestra el logo de la aplicación en la interfaz, nunca en las plantillas."""
     logo_app = obtener_logo_app_path()
-    if logo_app:
-        st.image(logo_app, width=190)
+    if not logo_app:
+        return
+    izquierda, centro, derecha = st.columns([1, 2, 1])
+    with centro:
+        st.image(logo_app, width=width)
+
+
+def render_landing():
+    render_brand_header(width=320)
 
     st.markdown("""
     <div class="glass-container">
-        <div class="hero-icon">📄</div>
-        <div class="main-title">Tus <span>Cesantías</span><br>al Instante</div>
-        <div class="sub-title">Retira tu dinero en 4 pasos, sin abogados</div>
+        <div class="main-title">Tu retiro de cesantías, <span>más fácil</span></div>
+        <div class="sub-title">Retira tu dinero en 4 pasos, de forma rápida y segura.</div>
     """, unsafe_allow_html=True)
 
     st.markdown("""
@@ -1081,13 +1088,14 @@ def render_landing():
 
 
 def render_pregunta1():
+    render_brand_header(width=185)
     st.markdown("""
     <div class="glass-container">
         <div class="step-text">Paso 1 de 4</div>
         <div class="progress-container">
             <div class="progress-bar" style="width:25%;"></div>
         </div>
-        <h3 style="color:#0A2540;font-weight:700;margin-bottom:1rem;">
+        <h3 style="color:#102868;font-weight:700;margin-bottom:1rem;">
             🎯 ¿Para qué quieres retirar?
         </h3>
     """, unsafe_allow_html=True)
@@ -1119,13 +1127,14 @@ def render_pregunta1():
 
 
 def render_pregunta2():
+    render_brand_header(width=185)
     st.markdown("""
     <div class="glass-container">
         <div class="step-text">Paso 2 de 4</div>
         <div class="progress-container">
             <div class="progress-bar" style="width:50%;"></div>
         </div>
-        <h3 style="color:#0A2540;font-weight:700;margin-bottom:1rem;">
+        <h3 style="color:#102868;font-weight:700;margin-bottom:1rem;">
             🏦 ¿En qué fondo estás?
         </h3>
     """, unsafe_allow_html=True)
@@ -1211,13 +1220,14 @@ def render_pregunta2():
 
 
 def render_verificar_saldo():
+    render_brand_header(width=185)
     st.markdown("""
     <div class="glass-container">
         <div class="step-text">Paso 3 de 4</div>
         <div class="progress-container">
             <div class="progress-bar" style="width:75%;"></div>
         </div>
-        <h3 style="color:#0A2540;font-weight:700;margin-bottom:0.5rem;">
+        <h3 style="color:#102868;font-weight:700;margin-bottom:0.5rem;">
             📞 Verifica tu saldo
         </h3>
     """, unsafe_allow_html=True)
@@ -1301,13 +1311,14 @@ def limpiar_cedula_widget():
 
 
 def render_monto_exacto():
+    render_brand_header(width=185)
     st.markdown("""
     <div class="glass-container">
         <div class="step-text">Paso 4 de 4</div>
         <div class="progress-container">
             <div class="progress-bar" style="width:100%;"></div>
         </div>
-        <h3 style="color:#0A2540;font-weight:700;margin-bottom:1rem;">
+        <h3 style="color:#102868;font-weight:700;margin-bottom:1rem;">
             💰 Monto y tus datos
         </h3>
     """, unsafe_allow_html=True)
@@ -1577,9 +1588,10 @@ def render_monto_exacto():
 
 
 def render_resultados():
+    render_brand_header(width=185)
     st.markdown("""
     <div class="glass-container">
-        <h3 style="color:#0A2540;font-weight:700;">
+        <h3 style="color:#102868;font-weight:700;">
             ✅ ¡Listo! Resumen
         </h3>
     """, unsafe_allow_html=True)
@@ -1623,9 +1635,10 @@ def render_resultados():
 
 
 def render_generando():
+    render_brand_header(width=185)
     st.markdown("""
     <div class="glass-container" style="text-align:center;">
-        <h3 style="color:#0A2540;font-weight:700;">
+        <h3 style="color:#102868;font-weight:700;">
             🔄 Procesando...
         </h3>
         <p style="color:#64748B;">
@@ -1831,9 +1844,10 @@ def render_generando():
 
 
 def render_whatsapp_entrega():
+    render_brand_header(width=185)
     st.markdown("""
     <div class="glass-container" style="text-align:center;">
-        <h3 style="color:#0A2540;font-weight:700;">
+        <h3 style="color:#102868;font-weight:700;">
             📱 24 Horas Después...
         </h3>
     """, unsafe_allow_html=True)
@@ -1872,9 +1886,10 @@ def render_whatsapp_entrega():
 
 
 def render_pago():
+    render_brand_header(width=185)
     st.markdown("""
     <div class="glass-container">
-        <h3 style="color:#0A2540;font-weight:700;">
+        <h3 style="color:#102868;font-weight:700;">
             💳 Pago con Nequi
         </h3>
         <p style="color:#64748B;">
