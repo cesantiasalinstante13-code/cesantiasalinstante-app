@@ -4,9 +4,16 @@ from datetime import datetime
 import os
 import base64
 import re
+import hmac
+import hashlib
+import secrets
+import time
 from streamlit_gsheets import GSheetsConnection
-from google.oauth2.service_account import Credentials
+from google.oauth2.credentials import Credentials as UserCredentials
+from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
+
+GOOGLE_DRIVE_SCOPE = "https://www.googleapis.com/auth/drive"
 
 # ---------- CONFIG ----------
 st.set_page_config(
@@ -265,16 +272,268 @@ for key in [
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 
+# ---------- GOOGLE OAUTH: AUTORIZACIÓN ADMINISTRATIVA DE DRIVE ----------
+def obtener_config_oauth():
+    """Lee la configuración OAuth guardada de forma privada en Streamlit Secrets."""
+    try:
+        return dict(st.secrets["google_oauth"])
+    except Exception as e:
+        raise RuntimeError(
+            "Falta la sección [google_oauth] en Streamlit Secrets."
+        ) from e
+
+
+def crear_flujo_oauth(state=None):
+    """Prepara el flujo OAuth del servidor para la cuenta personal administradora."""
+    datos = obtener_config_oauth()
+    config_cliente = {
+        "web": {
+            "client_id": datos["client_id"],
+            "client_secret": datos["client_secret"],
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "redirect_uris": [datos["redirect_uri"]]
+        }
+    }
+    flujo = Flow.from_client_config(
+        config_cliente,
+        scopes=[GOOGLE_DRIVE_SCOPE],
+        state=state
+    )
+    flujo.redirect_uri = datos["redirect_uri"]
+    return flujo
+
+
+def crear_estado_oauth(clave_admin):
+    """Crea un state firmado y de corta duración para proteger el callback OAuth."""
+    contenido = f"{int(time.time())}:{secrets.token_urlsafe(24)}"
+    firma = hmac.new(
+        clave_admin.encode("utf-8"),
+        contenido.encode("utf-8"),
+        hashlib.sha256
+    ).hexdigest()
+    contenido_codificado = base64.urlsafe_b64encode(
+        contenido.encode("utf-8")
+    ).decode("ascii").rstrip("=")
+    return f"{contenido_codificado}.{firma}"
+
+
+def validar_estado_oauth(state, clave_admin):
+    """Comprueba la firma y que el intento OAuth no tenga más de 10 minutos."""
+    try:
+        contenido_codificado, firma_recibida = state.split(".", 1)
+        relleno = "=" * (-len(contenido_codificado) % 4)
+        contenido = base64.urlsafe_b64decode(
+            contenido_codificado + relleno
+        ).decode("utf-8")
+        firma_esperada = hmac.new(
+            clave_admin.encode("utf-8"),
+            contenido.encode("utf-8"),
+            hashlib.sha256
+        ).hexdigest()
+        if not hmac.compare_digest(firma_recibida, firma_esperada):
+            return False
+        marca_tiempo = int(contenido.split(":", 1)[0])
+        return 0 <= time.time() - marca_tiempo <= 600
+    except Exception:
+        return False
+
+
+def render_configuracion_drive():
+    """Pantalla de configuración accesible solo con la clave administrativa."""
+    st.title("Configuración privada de Google Drive")
+    st.caption(
+        "Esta pantalla es para el administrador. Los clientes no necesitan "
+        "iniciar sesión con Google para usar la aplicación."
+    )
+
+    try:
+        datos = obtener_config_oauth()
+        clave_correcta = str(datos.get("admin_key", ""))
+        if not clave_correcta:
+            st.error(
+                "Falta admin_key dentro de [google_oauth] en Streamlit Secrets. "
+                "Agrega esa clave privada antes de continuar."
+            )
+            st.stop()
+    except Exception as e:
+        st.error(str(e))
+        st.stop()
+
+    with st.form("form_admin_drive"):
+        clave_ingresada = st.text_input(
+            "Clave administrativa",
+            type="password"
+        )
+        continuar = st.form_submit_button("Continuar")
+
+    if continuar:
+        if hmac.compare_digest(clave_ingresada, clave_correcta):
+            st.session_state["admin_drive_autorizado"] = True
+        else:
+            st.session_state["admin_drive_autorizado"] = False
+            st.error("La clave administrativa no coincide.")
+
+    if not st.session_state.get("admin_drive_autorizado", False):
+        st.info("Introduce la clave administrativa para iniciar la conexión.")
+        st.stop()
+
+    if st.button("Generar enlace de autorización de Google"):
+        state = crear_estado_oauth(clave_correcta)
+        flujo = crear_flujo_oauth(state=state)
+        url_autorizacion, _ = flujo.authorization_url(
+            access_type="offline",
+            prompt="consent",
+            include_granted_scopes="true"
+        )
+        st.session_state["url_autorizacion_drive"] = url_autorizacion
+
+    url = st.session_state.get("url_autorizacion_drive")
+    if url:
+        st.link_button(
+            "Conectar la cuenta Gmail administradora",
+            url,
+            use_container_width=True
+        )
+        st.caption(
+            "Abre el enlace, selecciona la cuenta Gmail propietaria de "
+            "Plantillas_Cesantias y acepta el permiso de Google Drive."
+        )
+
+
+def procesar_callback_oauth():
+    """Intercambia el código OAuth y muestra el refresh token al administrador."""
+    parametros = st.query_params
+    error_google = parametros.get("error")
+    if error_google:
+        st.error(
+            f"Google no completó la autorización: {error_google}. "
+            "Puedes volver a abrir la configuración privada de Drive."
+        )
+        st.stop()
+
+    codigo = parametros.get("code")
+    state = parametros.get("state")
+    if not codigo or not state:
+        st.error("La respuesta de Google no contiene el código o el state esperado.")
+        st.stop()
+
+    try:
+        datos = obtener_config_oauth()
+        clave_admin = str(datos.get("admin_key", ""))
+        if not clave_admin or not validar_estado_oauth(state, clave_admin):
+            raise RuntimeError(
+                "La validación de seguridad expiró o no coincide. "
+                "Vuelve a iniciar la autorización desde la configuración privada."
+            )
+
+        flujo = crear_flujo_oauth(state=state)
+        flujo.fetch_token(code=codigo)
+        credenciales = flujo.credentials
+        refresh_token = credenciales.refresh_token
+
+        if not refresh_token:
+            raise RuntimeError(
+                "Google no devolvió un refresh token. Vuelve a iniciar la conexión "
+                "y asegúrate de seleccionar la cuenta correcta y aceptar el permiso."
+            )
+
+        # Guarda el token solo en la sesión temporal del administrador. No lo
+        # muestra en una página pública ni vuelve a intercambiar el mismo code.
+        st.session_state["oauth_pending_refresh_token"] = refresh_token
+        st.session_state["oauth_token_unlocked"] = False
+        st.query_params.clear()
+        st.rerun()
+
+    except Exception as e:
+        st.error(f"No se pudo completar la autorización OAuth: {e}")
+        if st.button("Volver a configuración de Drive"):
+            st.query_params.clear()
+            st.query_params["configurar_drive"] = "1"
+            st.rerun()
+        st.stop()
+
+
+def render_token_oauth():
+    """Muestra el refresh token solo después de volver a validar la clave admin."""
+    st.title("Autorización de Google completada")
+    st.success("Google autorizó el acceso a Drive.")
+    st.caption(
+        "Por seguridad, vuelve a introducir la clave administrativa para ver "
+        "el token privado que debes guardar en Streamlit Secrets."
+    )
+
+    try:
+        clave_correcta = str(obtener_config_oauth().get("admin_key", ""))
+    except Exception as e:
+        st.error(str(e))
+        st.stop()
+
+    with st.form("form_desbloquear_refresh_token"):
+        clave_ingresada = st.text_input(
+            "Clave administrativa", type="password"
+        )
+        desbloquear = st.form_submit_button("Mostrar token privado")
+
+    if desbloquear:
+        st.session_state["oauth_token_unlocked"] = bool(
+            clave_correcta and hmac.compare_digest(
+                clave_ingresada, clave_correcta
+            )
+        )
+        if not st.session_state["oauth_token_unlocked"]:
+            st.error("La clave administrativa no coincide.")
+
+    if not st.session_state.get("oauth_token_unlocked", False):
+        st.stop()
+
+    token = st.session_state.get("oauth_pending_refresh_token", "")
+    if not token:
+        st.error(
+            "El token temporal ya no está disponible en esta sesión. "
+            "Vuelve a realizar la autorización de Google."
+        )
+        st.stop()
+
+    st.warning(
+        "Copia este valor directamente a Streamlit Secrets. Es una credencial "
+        "privada: no lo compartas ni lo pegues en el chat."
+    )
+    st.code(token, language=None)
+    st.markdown(
+        'Dentro de `[google_oauth]`, agrega la línea '
+        '`refresh_token = "PEGA_AQUI_EL_TOKEN"`. Guarda Secrets y espera '
+        'a que Streamlit reinicie la aplicación.'
+    )
+    if st.button("Ya guardé el refresh token en Secrets"):
+        st.session_state.pop("oauth_pending_refresh_token", None)
+        st.session_state.pop("oauth_token_unlocked", None)
+        st.session_state.pop("url_autorizacion_drive", None)
+        st.session_state["admin_drive_autorizado"] = False
+        st.query_params["configurar_drive"] = "1"
+        st.rerun()
+
+
 # ---------- GOOGLE DRIVE: BUSCAR Y COPIAR PLANTILLAS ----------
 @st.cache_resource
 def obtener_servicio_drive():
-    """Crea el cliente de Drive usando la misma cuenta de servicio de GSheets."""
+    """Crea Drive API usando el refresh token OAuth de la cuenta Gmail administradora."""
     try:
-        datos = dict(st.secrets["connections"]["gsheets"])
+        datos = obtener_config_oauth()
+        refresh_token = str(datos.get("refresh_token", "")).strip()
+        if not refresh_token:
+            raise RuntimeError(
+                "Drive aún no está conectado. El administrador debe completar "
+                "la autorización OAuth y guardar refresh_token en Streamlit Secrets."
+            )
 
-        credenciales = Credentials.from_service_account_info(
-            datos,
-            scopes=["https://www.googleapis.com/auth/drive"]
+        credenciales = UserCredentials(
+            token=None,
+            refresh_token=refresh_token,
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id=datos["client_id"],
+            client_secret=datos["client_secret"],
+            scopes=[GOOGLE_DRIVE_SCOPE]
         )
 
         return build(
@@ -286,8 +545,7 @@ def obtener_servicio_drive():
 
     except Exception as e:
         raise RuntimeError(
-            "No se pudo iniciar Google Drive. Revisa los datos de la cuenta "
-            "de servicio en Secrets y que la API de Google Drive esté habilitada."
+            f"No se pudo iniciar Google Drive con OAuth: {e}"
         ) from e
 
 
@@ -1003,9 +1261,10 @@ def render_generando():
             )
 
             st.info(
-                "Verifica que la cuenta de servicio tenga permiso "
-                "de Editor sobre la plantilla y que la ubicación "
-                "de destino permita crear archivos."
+                "Verifica que el administrador haya conectado la cuenta Gmail "
+                "propietaria de la plantilla mediante OAuth, que esa cuenta "
+                "tenga acceso de Editor y que refresh_token esté guardado "
+                "en Streamlit Secrets."
             )
 
             if st.button("Reintentar copia de plantilla"):
@@ -1131,6 +1390,20 @@ def render_pago():
 
 # ---------- MAIN ----------
 def main():
+
+    # Google vuelve a la URL principal con code/state después de autorizar.
+    if st.query_params.get("code") or st.query_params.get("error"):
+        procesar_callback_oauth()
+
+    # El refresh token se muestra en una pantalla separada y protegida.
+    if st.session_state.get("oauth_pending_refresh_token"):
+        render_token_oauth()
+        return
+
+    # La configuración administrativa solo aparece al abrir ?configurar_drive=1.
+    if st.query_params.get("configurar_drive") == "1":
+        render_configuracion_drive()
+        return
 
     if st.session_state.step == 'landing':
         render_landing()
