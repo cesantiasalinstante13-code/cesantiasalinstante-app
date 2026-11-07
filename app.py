@@ -5,6 +5,7 @@ from zoneinfo import ZoneInfo
 import os
 import base64
 import mimetypes
+import html
 import re
 import hmac
 import hashlib
@@ -28,564 +29,154 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# ---------- CSS PREMIUM ----------
-st.markdown("""
-<style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap');
-    * { font-family: 'Inter', sans-serif; }
-    #MainMenu, footer, header { visibility: hidden; }
-    .stApp { background: linear-gradient(145deg, #FFFFFF 0%, #F1F8FC 100%); padding: 0 !important; }
-    .glass-container {
-        background: rgba(255, 255, 255, 0.85);
-        backdrop-filter: blur(10px);
-        -webkit-backdrop-filter: blur(10px);
-        border-radius: 32px;
-        padding: 2rem 1.5rem;
-        margin: 1rem auto;
-        max-width: 480px;
-        box-shadow: 0 20px 60px rgba(10, 37, 64, 0.08);
-        border: 1px solid rgba(255, 255, 255, 0.3);
-    }
-    .main-title {
-        font-size: 2.8rem;
-        font-weight: 800;
-        color: #102868;
-        text-align: center;
-        line-height: 1.1;
-        margin-bottom: 0.2rem;
-    }
-    .main-title span {
-        background: linear-gradient(135deg, #1769C2, #16A6D8);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-    }
-    .sub-title {
-        font-size: 1.1rem;
-        color: #64748B;
-        text-align: center;
-        margin-bottom: 1.5rem;
-        font-weight: 400;
-    }
-    .hero-icon {
-        text-align: center;
-        font-size: 4.5rem;
-        margin-bottom: 0.5rem;
-        animation: float 3s ease-in-out infinite;
-    }
-    @keyframes float {
-        0% { transform: translateY(0px); }
-        50% { transform: translateY(-10px); }
-        100% { transform: translateY(0px); }
-    }
-    .benefit-grid {
-        display: grid;
-        grid-template-columns: 1fr 1fr 1fr 1fr;
-        gap: 0.8rem;
-        margin: 1.5rem 0;
-    }
-    .benefit-card {
-        background: white;
-        padding: 1.2rem 0.5rem;
-        border-radius: 16px;
-        text-align: center;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.04);
-        border: 1px solid #E2E8F0;
-        transition: all 0.3s;
-    }
-    .benefit-card:hover {
-        transform: translateY(-4px);
-        box-shadow: 0 8px 24px rgba(0,0,0,0.08);
-    }
-    .benefit-card .icon {
-        font-size: 2.2rem;
-        display: block;
-        margin-bottom: 0.3rem;
-    }
-    .benefit-card h4 {
-        margin: 0;
-        font-size: 0.85rem;
-        font-weight: 700;
-        color: #102868;
-    }
-    .benefit-card p {
-        margin: 0.2rem 0 0 0;
-        font-size: 0.7rem;
-        color: #94A3B8;
-    }
-    .stButton > button {
-        background: linear-gradient(135deg, #1769C2, #16A6D8) !important;
-        color: white !important;
-        font-weight: 700 !important;
-        border-radius: 60px !important;
-        width: 100% !important;
-        padding: 0.9rem !important;
-        font-size: 1.1rem !important;
-        border: none !important;
-        transition: all 0.3s ease !important;
-        box-shadow: 0 8px 25px rgba(23, 105, 194, 0.22) !important;
-        letter-spacing: 0.3px;
-    }
-    .stButton > button:hover {
-        transform: scale(1.02) !important;
-        box-shadow: 0 12px 35px rgba(23, 105, 194, 0.30) !important;
-    }
-    .stButton > button:active {
-        transform: scale(0.97) !important;
-    }
-    .stRadio > div {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.8rem;
-        justify-content: center;
-    }
-    .stRadio > div > label {
-        background: white;
-        border: 2px solid #DCEAF4;
-        border-radius: 16px;
-        padding: 0.9rem 1.2rem;
-        cursor: pointer;
-        transition: all 0.2s ease;
-        flex: 1;
-        min-width: 120px;
-        text-align: center;
-        font-weight: 600;
-        color: #102868;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.02);
-    }
-    .stRadio > div > label:hover {
-        border-color: #1769C2;
-        background: #EFF8FD;
-        transform: translateY(-2px);
-    }
-    .stRadio > div > label > div {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 0.5rem;
-    }
-    .stRadio > div > label[data-checked="true"] {
-        border-color: #1769C2;
-        background: #EFF8FD;
-        box-shadow: 0 4px 12px rgba(23, 105, 194, 0.14);
-    }
-    .stTextInput > div > div > input {
-        border-radius: 16px !important;
-        border: 2px solid #E2E8F0 !important;
-        padding: 0.9rem 1.2rem !important;
-        font-size: 1rem !important;
-        transition: all 0.3s !important;
-        background: white;
-    }
-    .stTextInput > div > div > input:focus {
-        border-color: #1769C2 !important;
-        box-shadow: 0 0 0 4px rgba(23, 105, 194, 0.12) !important;
-    }
-    .progress-container {
-        background: #E2E8F0;
-        border-radius: 40px;
-        height: 6px;
-        margin: 1.5rem 0 1rem 0;
-        overflow: hidden;
-    }
-    .progress-bar {
-        height: 100%;
-        border-radius: 40px;
-        background: linear-gradient(90deg, #1769C2, #16A6D8);
-        transition: width 0.6s cubic-bezier(0.22, 1, 0.36, 1);
-    }
-    .step-text {
-        text-align: center;
-        color: #64748B;
-        font-size: 0.85rem;
-        font-weight: 600;
-        letter-spacing: 0.5px;
-        margin-bottom: 0.3rem;
-    }
-    .result-card {
-        background: white;
-        padding: 1.5rem;
-        border-radius: 20px;
-        border-left: 6px solid #16A6D8;
-        box-shadow: 0 4px 16px rgba(0,0,0,0.04);
-        margin: 1rem 0;
-    }
-    .price-tag {
-        background: linear-gradient(135deg, #1769C2, #16A6D8);
-        color: white;
-        padding: 0.6rem 2rem;
-        border-radius: 60px;
-        display: inline-block;
-        font-weight: 800;
-        font-size: 2rem;
-        margin: 0.5rem 0;
-        box-shadow: 0 8px 20px rgba(0, 102, 255, 0.2);
-    }
-    .phone-number {
-        background: #102868;
-        color: white;
-        padding: 1rem;
-        border-radius: 20px;
-        text-align: center;
-        font-size: 2rem;
-        font-weight: 800;
-        letter-spacing: 1px;
-        margin: 0.5rem 0;
-        box-shadow: 0 8px 24px rgba(10, 37, 64, 0.15);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 0.5rem;
-    }
-    .verified-badge {
-        background: #16A6D8;
-        color: white;
-        padding: 0.2rem 0.8rem;
-        border-radius: 30px;
-        font-size: 0.75rem;
-        font-weight: 700;
-        display: inline-block;
-    }
-    @media (max-width: 480px) {
-        .glass-container {
-            padding: 1.5rem 1rem;
-            border-radius: 24px;
-            margin: 0.5rem 0.5rem;
-        }
-        .main-title { font-size: 2.2rem; }
-        .phone-number { font-size: 1.5rem; padding: 0.8rem; }
-        .benefit-grid { grid-template-columns: 1fr 1fr; }
-    }
-
-    /* ---------- LEGIBILIDAD Y CONTRASTE (ESPECIALMENTE MÓVILES) ---------- */
-    :root { color-scheme: light; }
-    .stApp {
-        color: #172B4D !important;
-    }
-    .stApp [data-testid="stMarkdownContainer"] p,
-    .stApp [data-testid="stMarkdownContainer"] li,
-    .stApp [data-testid="stText"] {
-        color: #263B53 !important;
-        opacity: 1 !important;
-    }
-    .stApp [data-testid="stMarkdownContainer"] strong,
-    .stApp [data-testid="stMarkdownContainer"] b {
-        color: #102A43 !important;
-    }
-    [data-testid="stWidgetLabel"] p,
-    [data-testid="stWidgetLabel"] label,
-    [data-testid="stWidgetLabel"] span,
-    [data-testid="stTextInput"] label,
-    [data-testid="stSelectbox"] label,
-    [data-testid="stRadio"] label {
-        color: #102A43 !important;
-        font-weight: 700 !important;
-        opacity: 1 !important;
-    }
-    [data-testid="stTextInput"] input,
-    [data-testid="stNumberInput"] input,
-    [data-testid="stTextArea"] textarea,
-    [data-testid="stSelectbox"] [data-baseweb="select"] *,
-    [data-baseweb="popover"] [role="option"] * {
-        color: #142B45 !important;
-        opacity: 1 !important;
-        font-weight: 500 !important;
-    }
-    [data-testid="stTextInput"] input,
-    [data-testid="stNumberInput"] input,
-    [data-testid="stTextArea"] textarea,
-    [data-testid="stSelectbox"] [data-baseweb="select"] > div {
-        background-color: #FFFFFF !important;
-        border-color: #C5D8E8 !important;
-    }
-    [data-testid="stTextInput"] input::placeholder,
-    [data-testid="stTextArea"] textarea::placeholder {
-        color: #65758B !important;
-        opacity: 1 !important;
-    }
-    [data-testid="stTextInput"] input:disabled {
-        color: #34495E !important;
-        -webkit-text-fill-color: #34495E !important;
-        opacity: 1 !important;
-        background-color: #F1F5F9 !important;
-    }
-    [data-testid="stCaptionContainer"] p,
-    .stCaption,
-    .step-text {
-        color: #40566E !important;
-        opacity: 1 !important;
-    }
-    .sub-title { color: #40566E !important; }
-    .benefit-card p { color: #52657B !important; }
-    .stRadio > div > label { color: #102A43 !important; }
-    /* Textos informativos (st.info): gris medio, no negro */
-    [data-testid="stAlert"] [data-testid="stMarkdownContainer"],
-    [data-testid="stAlert"] [data-testid="stMarkdownContainer"] p,
-    [data-testid="stAlert"] [data-testid="stMarkdownContainer"] span,
-    [data-testid="stAlert"] [data-testid="stMarkdownContainer"] li,
-    [data-testid="stAlert"] [data-testid="stMarkdownContainer"] strong,
-    [data-testid="stAlert"] [data-testid="stMarkdownContainer"] b {
-        color: #52657B !important;
-        opacity: 1 !important;
-        font-weight: 500 !important;
-    }
-    .fund-logo-box {
-        height: 112px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 8px;
-        background: #FFFFFF;
-        border-radius: 12px;
-        margin-bottom: 8px;
-    }
-    .fund-logo-box img {
-        display: block;
-        max-width: 100%;
-        max-height: 94px;
-        width: auto;
-        height: auto;
-        object-fit: contain;
-    }
-    .fund-emoji {
-        height: 112px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 3.4rem;
-    }
-    .fund-name {
-        color: #102A43 !important;
-        font-size: 1.05rem;
-        line-height: 1.3;
-        font-weight: 800;
-        text-align: center;
-        min-height: 2.7rem;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        margin: 4px 0 10px 0;
-    }
-    @media (max-width: 640px) {
-        .glass-container {
-            padding: 1.2rem 0.85rem;
-            margin: 0.45rem 0.2rem;
-            border-radius: 22px;
-        }
-        .main-title { font-size: 2.15rem; }
-        .sub-title { font-size: 1rem; }
-        [data-testid="stWidgetLabel"] p,
-        [data-testid="stWidgetLabel"] span {
-            font-size: 0.98rem !important;
-        }
-        [data-testid="stTextInput"] input,
-        [data-testid="stTextArea"] textarea,
-        [data-testid="stSelectbox"] [data-baseweb="select"] {
-            font-size: 16px !important;
-        }
-        .fund-logo-box, .fund-emoji { height: 96px; }
-        .fund-logo-box img { max-height: 80px; }
-        .fund-name { font-size: 1rem; min-height: 2.5rem; }
-    }
-
-</style>
-<style>
-    /* ---------- REDISEÑO FINTECH: CAPA VISUAL ---------- */
-    :root {
-        --brand-navy:#082B66; --brand-blue:#0874D1; --brand-cyan:#10BCEB;
-        --brand-gold:#FFB51B; --brand-ink:#142B45; --brand-muted:#5B6F86;
-        --brand-line:#D9E6F2;
-    }
-    html, body, [class*="css"], .stApp { font-family:'Inter',sans-serif!important; }
-    .stApp {
-        background:radial-gradient(circle at 8% 4%,rgba(16,188,235,.13),transparent 25rem),
-        radial-gradient(circle at 95% 28%,rgba(8,116,209,.10),transparent 28rem),
-        linear-gradient(145deg,#F7FAFE 0%,#EAF3FB 100%)!important;
-        color:var(--brand-ink)!important;
-    }
-    .main .block-container { max-width:1060px; padding:1.2rem 1.35rem 3rem; }
-    .brand-header { max-width:980px; margin:.15rem auto 1rem; padding:.7rem 1.1rem;
-        display:flex; align-items:center; justify-content:space-between; gap:1rem;
-        background:rgba(255,255,255,.9); border:1px solid var(--brand-line);
-        border-radius:22px; box-shadow:0 10px 30px rgba(8,43,102,.07); }
-    .brand-logo-wrap { display:flex; align-items:center; min-width:0; }
-    .brand-logo-wrap img { display:block; max-height:72px; width:auto; max-width:100%; object-fit:contain; }
-    .brand-trust { display:flex; align-items:center; gap:.45rem; color:var(--brand-navy); font-size:.8rem; font-weight:800; white-space:nowrap; }
-    .brand-trust span { display:inline-flex; width:29px; height:29px; border-radius:50%; align-items:center; justify-content:center; color:#fff; background:linear-gradient(135deg,var(--brand-blue),var(--brand-cyan)); }
-    .journey-wrap { max-width:980px; margin:0 auto 1.1rem; padding:.75rem 1rem .6rem; background:rgba(255,255,255,.8); border:1px solid var(--brand-line); border-radius:18px; }
-    .journey { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:.3rem; }
-    .journey-step { display:flex; flex-direction:column; align-items:center; gap:.32rem; text-align:center; color:#8798AA; font-size:.7rem; font-weight:750; }
-    .journey-dot { width:30px; height:30px; display:flex; align-items:center; justify-content:center; border-radius:50%; background:#E5EDF5; color:#52677E; font-size:.78rem; font-weight:900; border:2px solid white; box-shadow:0 0 0 1px var(--brand-line); }
-    .journey-step.active { color:var(--brand-navy); }
-    .journey-step.active .journey-dot { color:#fff; background:linear-gradient(135deg,var(--brand-blue),var(--brand-cyan)); box-shadow:0 4px 14px rgba(8,116,209,.24); }
-    .journey-step.done { color:#1687B8; }
-    .journey-step.done .journey-dot { color:#fff; background:#13B9D8; }
-    .glass-container { position:relative; overflow:hidden; max-width:980px; margin:.7rem auto 1rem;
-        padding:clamp(1.1rem,3vw,2.35rem); border-radius:28px; background:rgba(255,255,255,.97);
-        border:1px solid #D6E5F3; box-shadow:0 18px 55px rgba(8,43,102,.10); }
-    .glass-container:after { content:""; position:absolute; z-index:0; pointer-events:none; width:220px; height:220px; right:-145px; bottom:-165px; border-radius:50%; border:24px solid rgba(16,188,235,.10); }
-    .glass-container > * { position:relative; z-index:1; }
-    .main-title { font-size:clamp(2.15rem,5vw,3.6rem); line-height:1.03; letter-spacing:-.05em; font-weight:900; color:var(--brand-navy); }
-    .main-title span { color:var(--brand-cyan); background:none; -webkit-text-fill-color:var(--brand-cyan); }
-    .sub-title { max-width:680px; color:var(--brand-muted)!important; font-size:1.07rem; line-height:1.55; }
-    .hero-kicker { display:inline-flex; align-items:center; gap:.4rem; padding:.42rem .8rem; border-radius:999px; background:#E8F7FD; color:#0875B8; font-size:.76rem; font-weight:850; letter-spacing:.04em; text-transform:uppercase; }
-    .hero-trust-row { display:flex; flex-wrap:wrap; gap:.5rem; margin:1rem 0 1.2rem; }
-    .hero-trust-pill { display:inline-flex; align-items:center; gap:.35rem; padding:.52rem .78rem; border-radius:999px; background:#F0F7FC; color:var(--brand-navy); border:1px solid #DCEAF5; font-size:.8rem; font-weight:750; }
-    .benefit-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:.75rem; margin:1.35rem 0; }
-    .benefit-card { min-width:0; padding:1rem .6rem; border-radius:18px; text-align:center; background:linear-gradient(180deg,#fff,#F5FAFE); border:1px solid var(--brand-line); box-shadow:0 7px 20px rgba(8,43,102,.055); transition:transform .2s,box-shadow .2s; }
-    .benefit-card:hover { transform:translateY(-3px); box-shadow:0 12px 26px rgba(8,43,102,.11); }
-    .benefit-card .icon { width:46px; height:46px; display:inline-flex; align-items:center; justify-content:center; border-radius:14px; margin-bottom:.5rem; color:white; background:linear-gradient(145deg,var(--brand-blue),var(--brand-cyan)); font-size:1.45rem; }
-    .benefit-card h4 { margin:0; color:var(--brand-navy); font-size:.9rem; font-weight:850; }
-    .benefit-card p { margin:.28rem 0 0; color:var(--brand-muted)!important; font-size:.75rem; line-height:1.35; }
-    [data-testid="stVerticalBlockBorderWrapper"] { border:1px solid var(--brand-line)!important; border-radius:20px!important; background:linear-gradient(180deg,#fff,#F7FBFE)!important; box-shadow:0 8px 22px rgba(8,43,102,.055)!important; }
-    .stRadio > div > label { border:2px solid #DCEAF5!important; border-radius:18px!important; background:#fff!important; color:var(--brand-navy)!important; font-weight:750!important; box-shadow:0 4px 12px rgba(8,43,102,.04)!important; }
-    .stRadio > div > label:hover { border-color:var(--brand-blue)!important; background:#F0F8FE!important; }
-    .stRadio > div > label[data-checked="true"] { border-color:var(--brand-blue)!important; background:#EAF6FE!important; }
-    [data-testid="stWidgetLabel"] p, [data-testid="stWidgetLabel"] label, [data-testid="stWidgetLabel"] span,
-    [data-testid="stTextInput"] label, [data-testid="stSelectbox"] label { color:var(--brand-navy)!important; font-weight:750!important; opacity:1!important; }
-    [data-testid="stTextInput"] input, [data-testid="stNumberInput"] input, [data-testid="stTextArea"] textarea,
-    [data-testid="stSelectbox"] [data-baseweb="select"] > div { min-height:47px; border:1.5px solid #C9DCEC!important; border-radius:13px!important; background:#fff!important; color:var(--brand-ink)!important; }
-    [data-testid="stTextInput"] input:focus, [data-testid="stTextArea"] textarea:focus { border-color:var(--brand-blue)!important; box-shadow:0 0 0 3px rgba(8,116,209,.12)!important; }
-    [data-testid="stTextInput"] input::placeholder, [data-testid="stTextArea"] textarea::placeholder { color:#8293A6!important; opacity:1!important; }
-    [data-testid="stTextInput"] input, [data-testid="stSelectbox"] [data-baseweb="select"] *, [data-baseweb="popover"] [role="option"] * { color:var(--brand-ink)!important; opacity:1!important; }
-    [data-testid="stCaptionContainer"] p, .stCaption { color:var(--brand-muted)!important; opacity:1!important; }
-    .stButton > button, [data-testid="stDownloadButton"] button, [data-testid="stLinkButton"] a { min-height:47px; border:0!important; border-radius:14px!important; padding:.72rem 1.15rem!important; color:white!important; background:linear-gradient(110deg,var(--brand-navy),var(--brand-blue) 68%,#0A9DD7)!important; font-weight:800!important; font-size:.98rem!important; box-shadow:0 8px 20px rgba(8,74,151,.19)!important; transition:transform .18s,box-shadow .18s!important; }
-    .stButton > button:hover, [data-testid="stDownloadButton"] button:hover { transform:translateY(-2px); box-shadow:0 12px 25px rgba(8,74,151,.25)!important; }
-    div.st-key-landing_start button { color:#082B66!important; background:linear-gradient(110deg,#FFD34F,#FFB51B)!important; box-shadow:0 10px 24px rgba(255,181,27,.28)!important; font-size:1.08rem!important; }
-    .step-text, .progress-container { display:none!important; }
-    .result-card { background:linear-gradient(135deg,#fff,#F0F8FE); padding:1.35rem; border-radius:20px; border:1px solid var(--brand-line); border-left:5px solid var(--brand-cyan); box-shadow:0 8px 22px rgba(8,43,102,.07); margin:1rem 0; }
-    .price-tag { display:inline-block; padding:.65rem 1.5rem; border-radius:15px; color:#fff; background:linear-gradient(120deg,var(--brand-navy),var(--brand-blue),var(--brand-cyan)); font-weight:900; font-size:clamp(1.5rem,4vw,2.1rem); }
-    .phone-number { display:flex; align-items:center; justify-content:center; gap:.5rem; padding:1rem; margin:.6rem 0; border-radius:17px; color:#fff; background:linear-gradient(120deg,var(--brand-navy),var(--brand-blue),var(--brand-cyan)); font-size:clamp(1.4rem,4vw,2rem); font-weight:900; letter-spacing:.04em; }
-    [data-testid="stAlert"] { border-radius:15px!important; border:1px solid #D6E9F7!important; }
-    @media (max-width:700px) {
-        .main .block-container { padding:.65rem .65rem 2rem; }
-        .brand-header { padding:.55rem .7rem; border-radius:17px; }
-        .brand-logo-wrap img { max-height:55px; max-width:70vw; }
-        .brand-trust { font-size:.68rem; gap:.25rem; }
-        .brand-trust span { width:24px; height:24px; }
-        .journey-wrap { padding:.6rem .3rem; border-radius:14px; }
-        .journey { gap:.08rem; }
-        .journey-step { font-size:.58rem; gap:.25rem; }
-        .journey-dot { width:25px; height:25px; font-size:.68rem; }
-        .glass-container { padding:1.15rem .9rem; margin:.45rem 0; border-radius:21px; }
-        .benefit-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:.55rem; }
-        .benefit-card { padding:.8rem .45rem; }
-        .benefit-card .icon { width:40px; height:40px; }
-        [data-testid="stTextInput"] input, [data-testid="stTextArea"] textarea, [data-testid="stSelectbox"] [data-baseweb="select"] { font-size:16px!important; }
-        .stButton > button { min-height:48px; font-size:.92rem!important; }
-    }
-    @media (max-width:390px) { .brand-trust { display:none; } .journey-step { font-size:.52rem; } }
-</style>
-""", unsafe_allow_html=True)
-
-
-# ---------- SISTEMA VISUAL: MAQUETA DE SEIS PANTALLAS ----------
+# ---------- SISTEMA VISUAL PREMIUM: CESANTÍAS AL INSTANTE ----------
 st.markdown(r"""
 <style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
 :root{
- --cia-navy:#062d70;--cia-blue:#0874d8;--cia-cyan:#12bfe9;--cia-gold:#ffb51b;
- --cia-ink:#102f60;--cia-muted:#506783;--cia-line:#d6e4f3;--cia-pale:#eef7ff;
+ --cia-navy:#062b68;--cia-blue:#086fd0;--cia-cyan:#10bce8;--cia-gold:#ffb51b;
+ --cia-ink:#18345b;--cia-muted:#60748d;--cia-line:#d8e6f4;--cia-pale:#eff7ff;
 }
 html,body,[class*="css"],.stApp{font-family:Inter,Arial,sans-serif!important}
-.stApp{background:linear-gradient(135deg,#05275f 0%,#06498f 48%,#08a4d8 100%)!important;color:var(--cia-ink)!important}
-.main .block-container{max-width:1120px!important;padding:1rem clamp(.55rem,2vw,1.4rem) 2.4rem!important}
 #MainMenu,footer,header{visibility:hidden}
-.brand-header{max-width:1050px;margin:.12rem auto .65rem;padding:.48rem 1.05rem;display:flex;align-items:center;justify-content:space-between;gap:1rem;background:#fff;border:1px solid #dce9f7;border-radius:19px 19px 8px 8px;box-shadow:0 8px 25px rgba(0,20,65,.15)}
-.brand-logo-wrap{display:flex;align-items:center;min-width:0;max-width:56%}
-.brand-logo-wrap img{display:block;max-height:65px;width:auto;max-width:100%;object-fit:contain}
-.brand-trust{display:flex;align-items:center;gap:.45rem;color:var(--cia-navy);font-size:.82rem;font-weight:800;white-space:nowrap}
-.brand-trust span{display:inline-flex;width:29px;height:29px;border-radius:50%;align-items:center;justify-content:center;color:#fff;background:linear-gradient(135deg,var(--cia-blue),var(--cia-cyan));font-size:1rem}
-.journey-wrap{position:relative;max-width:1050px;margin:0 auto .8rem;padding:.7rem 1rem .58rem;background:rgba(255,255,255,.97);border:1px solid var(--cia-line);border-radius:12px;box-shadow:0 8px 24px rgba(0,20,65,.12)}
-.journey{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:.25rem;position:relative}
-.journey-step{position:relative;display:flex;flex-direction:column;align-items:center;gap:.28rem;text-align:center;color:#7588a0;font-size:.72rem;font-weight:650;z-index:1}
-.journey-step:before{content:"";position:absolute;height:2px;background:#ccd9e8;left:-50%;right:50%;top:14px;z-index:-1}
-.journey-step:first-child:before{display:none}
-.journey-dot{width:29px;height:29px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:#e2eaf3;color:#18345b;font-size:.78rem;font-weight:900;border:2px solid #fff;box-shadow:0 0 0 1px #d3deeb}
+.stApp{background:linear-gradient(118deg,#06295f 0%,#07539a 53%,#079dcc 100%)!important;color:var(--cia-ink)!important}
+.main .block-container{max-width:1160px!important;padding:1.1rem clamp(.65rem,2.2vw,1.6rem) 2.6rem!important}
+[data-testid="stToolbar"], [data-testid="stDecoration"]{display:none!important}
+/* Encabezado y navegación */
+.brand-header{max-width:1080px;margin:0 auto .7rem;padding:.62rem 1.05rem;display:flex;align-items:center;justify-content:space-between;gap:1rem;background:#fff;border:1px solid #deebf7;border-radius:18px;box-shadow:0 8px 26px #001b4930}
+.brand-logo-wrap{display:flex;align-items:center;min-width:0}
+.brand-logo-wrap img{display:block;max-height:58px;width:auto;max-width:min(62vw,330px);object-fit:contain}
+.brand-trust{display:flex;align-items:center;gap:.5rem;color:var(--cia-navy);font-size:.82rem;font-weight:800;white-space:nowrap}
+.brand-trust span{display:inline-flex;width:29px;height:29px;border-radius:50%;align-items:center;justify-content:center;color:#fff;background:linear-gradient(140deg,var(--cia-blue),var(--cia-cyan));font-size:1rem}
+.journey-wrap{max-width:1080px;margin:0 auto .85rem;padding:.72rem .85rem .6rem;background:#ffffffed;border:1px solid #d9e7f4;border-radius:16px;box-shadow:0 8px 24px #001b4920}
+.journey{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:.25rem}
+.journey-step{position:relative;display:flex;flex-direction:column;align-items:center;gap:.32rem;text-align:center;color:#8292a7;font-size:.71rem;font-weight:700}
+.journey-step:not(:first-child):before{content:"";position:absolute;height:2px;background:#d5e0ec;left:-50%;right:50%;top:14px;z-index:0}
+.journey-dot{position:relative;z-index:1;width:30px;height:30px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:#e5edf5;color:#546a82;font-size:.78rem;font-weight:900;border:2px solid #fff;box-shadow:0 0 0 1px #d2deeb}
 .journey-step.active{color:var(--cia-navy);font-weight:900}
-.journey-step.active .journey-dot{color:#fff;background:linear-gradient(135deg,var(--cia-blue),#0752b8);box-shadow:0 0 0 2px #d2e9ff,0 4px 12px #0874d844}
-.journey-step.done{color:#0a6ebd}
-.journey-step.done .journey-dot{color:#fff;background:#11b9df;box-shadow:0 0 0 1px #b9eefa}
-.glass-container{position:relative;overflow:hidden;max-width:1050px;margin:.6rem auto 1rem;padding:clamp(1rem,2.7vw,2rem);border-radius:23px;background:linear-gradient(180deg,#fff 0%,#f8fbff 88%,#e9f7ff 100%);border:1px solid #d2e3f4;box-shadow:0 17px 48px rgba(0,19,65,.19)}
-.glass-container:after{content:"";position:absolute;pointer-events:none;width:260px;height:65px;right:-65px;bottom:-39px;transform:rotate(-13deg);border-radius:60% 0 0 0;background:linear-gradient(90deg,#0cc6f3,#0872d4,#06357f);opacity:.9}
-.glass-container>*{position:relative;z-index:1}
-.screen-heading{display:flex;align-items:center;gap:.8rem;margin:.2rem 0 1.15rem}
-.screen-heading .screen-icon{width:54px;height:54px;flex:0 0 54px;border-radius:15px;display:flex;align-items:center;justify-content:center;color:#fff;background:linear-gradient(145deg,#0879df,#05bce8);font-size:1.7rem;box-shadow:0 7px 18px #0874d833}
-.screen-heading h2{margin:0;color:var(--cia-navy);font-size:clamp(1.25rem,2.7vw,1.72rem);font-weight:900;letter-spacing:-.025em}
-.screen-heading p{margin:.12rem 0 0;color:#405b7b;font-size:.95rem}
-/* Landing, con la mujer de la maqueta */
-.hero-shell{position:relative;isolation:isolate;display:grid;grid-template-columns:1.05fr .95fr;min-height:490px;max-width:1050px;margin:0 auto 1rem;overflow:hidden;border-radius:24px;background:linear-gradient(135deg,#062a6b 0%,#073e91 58%,#087ed0 100%);box-shadow:0 20px 55px rgba(0,17,59,.28);border:1px solid #1688dc}
-.hero-shell:before{content:"";position:absolute;z-index:-1;left:-8%;top:-19%;width:66%;height:45%;border-radius:0 0 70% 12%;background:linear-gradient(145deg,#fff 0%,#f4fbff 72%,#b8eaff 100%);transform:rotate(-5deg)}
-.hero-shell:after{content:"";position:absolute;z-index:2;bottom:-42px;right:-4%;width:64%;height:85px;transform:rotate(-8deg);border-radius:80% 0 0 0;border-top:16px solid #0ac6f0;pointer-events:none}
-.hero-copy{position:relative;z-index:3;padding:1.25rem 1.5rem 1.45rem;display:flex;flex-direction:column;align-items:flex-start;justify-content:flex-start}
-.hero-logo{width:min(100%,410px);height:122px;display:flex;align-items:center;margin:-.5rem 0 1.2rem}
-.hero-logo img{max-width:100%;max-height:112px;object-fit:contain;object-position:left center;border-radius:8px}
-.hero-title{margin:.2rem 0 .7rem;color:#fff;font-size:clamp(2rem,4.2vw,3.15rem);font-weight:950;letter-spacing:-.045em;line-height:1.03}
-.hero-title span{display:block;color:#12d2f4}
-.hero-description{max-width:440px;color:#fff;font-size:clamp(1rem,1.8vw,1.22rem);line-height:1.45;margin:0 0 1.15rem}
-.hero-benefits{display:grid;gap:.55rem;margin:.15rem 0 .75rem;color:#fff;font-size:1.12rem;font-weight:750}
-.hero-benefit{display:flex;align-items:center;gap:.65rem}
-.hero-benefit i{font-style:normal;width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:#13c7e8;color:#003d8d;font-size:1.05rem;font-weight:900}
-.hero-person{position:relative;min-height:490px;align-self:stretch;overflow:hidden;border-radius:0 0 0 100px}
-.hero-person img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center top}
-.hero-person:after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,#07357e 0%,transparent 30%),linear-gradient(0deg,rgba(0,69,160,.2),transparent 40%);pointer-events:none}
-/* Streamlit button shapes and inputs */
-.stButton>button,[data-testid="stDownloadButton"] button,[data-testid="stLinkButton"] a{min-height:45px;border:1px solid #0874d8!important;border-radius:13px!important;padding:.62rem 1rem!important;color:#fff!important;background:linear-gradient(110deg,#073d91,#0874d8 68%,#0aa6db)!important;font-weight:850!important;font-size:.96rem!important;box-shadow:0 7px 17px rgba(8,74,151,.17)!important;transition:transform .16s,box-shadow .16s!important}
-.stButton>button:hover,[data-testid="stDownloadButton"] button:hover{transform:translateY(-2px);box-shadow:0 10px 22px rgba(8,74,151,.24)!important}
-div.st-key-landing_start{max-width:255px;margin-top:-5.35rem;margin-left:1.4rem;margin-bottom:3.5rem;position:relative;z-index:4}
-div.st-key-landing_start button{color:#072d66!important;background:linear-gradient(110deg,#ffcf39,#ffab00)!important;border:0!important;border-radius:40px!important;font-size:1.04rem!important;box-shadow:0 9px 23px #ffb51b55!important}
-.st-key-motivo_vivienda button,.st-key-motivo_educacion button,.st-key-motivo_salud button,.st-key-motivo_vacaciones button,.st-key-motivo_vehiculo button,.st-key-motivo_otro button{height:112px;white-space:pre-line!important;line-height:1.34!important;background:linear-gradient(180deg,#fff,#f1f8ff)!important;color:var(--cia-navy)!important;border:1px solid #d5e5f5!important;border-radius:15px!important;box-shadow:0 4px 12px #062d7010!important;font-size:.9rem!important}
-.st-key-motivo_vivienda button:hover,.st-key-motivo_educacion button:hover,.st-key-motivo_salud button:hover,.st-key-motivo_vacaciones button:hover,.st-key-motivo_vehiculo button:hover,.st-key-motivo_otro button:hover{border-color:#0874d8!important;background:#edf8ff!important}
-.st-key-fondo_porv button,.st-key-fondo_colf button,.st-key-fondo_prot button,.st-key-fondo_fna button,.st-key-fondo_otro button{height:72px;background:#fff!important;color:var(--cia-navy)!important;border:1px solid #d5e5f5!important;box-shadow:none!important}
-[data-testid="stVerticalBlockBorderWrapper"]{border:1px solid var(--cia-line)!important;border-radius:16px!important;background:linear-gradient(180deg,#fff,#f6fbff)!important;box-shadow:0 5px 16px #082b6610!important}
-[data-testid="stWidgetLabel"] p,[data-testid="stWidgetLabel"] label,[data-testid="stWidgetLabel"] span,[data-testid="stTextInput"] label,[data-testid="stSelectbox"] label,[data-testid="stRadio"] label{color:var(--cia-navy)!important;font-weight:800!important;opacity:1!important}
-[data-testid="stTextInput"] input,[data-testid="stNumberInput"] input,[data-testid="stTextArea"] textarea,[data-testid="stSelectbox"] [data-baseweb="select"]>div{min-height:45px;border:1.4px solid #c6d9ed!important;border-radius:12px!important;background:#fff!important;color:#152f55!important}
-[data-testid="stTextInput"] input:focus,[data-testid="stTextArea"] textarea:focus{border-color:#0874d8!important;box-shadow:0 0 0 3px #0874d81c!important}
+.journey-step.active .journey-dot{color:white;background:linear-gradient(135deg,var(--cia-blue),var(--cia-cyan));box-shadow:0 0 0 2px #d7efff,0 4px 12px #0874d844}
+.journey-step.done{color:#087bb8}
+.journey-step.done .journey-dot{color:#fff;background:#11b9dc}
+/* Contenedores de contenido */
+.st-key-screen_fund,.st-key-screen_data,.st-key-screen_summary,.st-key-screen_mission,.st-key-screen_company,.st-key-screen_processing,.st-key-screen_success{
+ background:linear-gradient(180deg,#fff 0%,#fafdff 75%,#f0f8ff 100%)!important;
+ border:1px solid #d9e8f5!important;border-radius:26px!important;
+ padding:clamp(1.05rem,2.8vw,2.2rem)!important;
+ box-shadow:0 18px 55px #001b4933!important;
+}
+.st-key-summary_panel{padding:1.05rem!important;border:1px solid #d2e3f2!important;border-radius:20px!important;background:linear-gradient(135deg,#fff,#f0f7ff)!important;box-shadow:0 8px 22px #082b6610!important}
+[data-testid="stVerticalBlockBorderWrapper"]{border:1px solid #d7e6f4!important;border-radius:20px!important;background:linear-gradient(180deg,#fff,#f5faff)!important;box-shadow:0 7px 20px #062b6810!important}
+.st-key-screen_fund [data-testid="stVerticalBlock"],.st-key-screen_data [data-testid="stVerticalBlock"],.st-key-screen_summary [data-testid="stVerticalBlock"],.st-key-screen_mission [data-testid="stVerticalBlock"],.st-key-screen_company [data-testid="stVerticalBlock"]{gap:.8rem!important}
+.page-shell{position:relative;isolation:isolate;overflow:hidden;max-width:1080px;margin:.65rem auto 1rem;padding:clamp(1.1rem,2.8vw,2.2rem);border-radius:26px;background:linear-gradient(180deg,#fff 0%,#fafdff 75%,#f0f8ff 100%);border:1px solid #d9e8f5;box-shadow:0 18px 55px #001b4933}
+.page-shell:after{content:"";position:absolute;z-index:-1;pointer-events:none;width:250px;height:58px;right:-60px;bottom:-32px;transform:rotate(-9deg);border-radius:80% 0 0 0;background:linear-gradient(90deg,var(--cia-cyan),var(--cia-blue),var(--cia-navy))}
+.screen-heading{display:flex;align-items:center;gap:.9rem;margin:.1rem 0 1.35rem}
+.screen-icon{width:54px;height:54px;flex:0 0 54px;display:flex;align-items:center;justify-content:center;border-radius:16px;color:#fff;background:linear-gradient(145deg,#0879df,#05bce8);box-shadow:0 8px 20px #0874d833}
+.screen-icon svg{width:27px;height:27px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.screen-heading h2{margin:0;color:var(--cia-navy);font-size:clamp(1.35rem,2.8vw,1.9rem);font-weight:900;letter-spacing:-.035em;line-height:1.15}
+.screen-heading p{margin:.28rem 0 0;color:#526984;font-size:.96rem;line-height:1.45}
+.eyebrow{display:inline-flex;align-items:center;gap:.4rem;padding:.4rem .72rem;border-radius:100px;color:#076db7;background:#e7f6ff;font-size:.72rem;font-weight:850;letter-spacing:.05em;text-transform:uppercase}
+/* Portada integrada: CTA dentro del mismo panel */
+.hero-shell{position:relative;isolation:isolate;display:grid;grid-template-columns:1.04fr .96fr;max-width:1080px;min-height:545px;margin:.3rem auto 1rem;overflow:hidden;border-radius:27px;background:linear-gradient(135deg,#062c6c 0%,#073c8b 60%,#086fbd 100%);border:1px solid #1595df;box-shadow:0 22px 60px #00183e55}
+.hero-shell:before{content:"";position:absolute;z-index:0;left:-7%;top:-20%;width:67%;height:44%;border-radius:0 0 75% 10%;background:linear-gradient(135deg,#fff 0%,#f2fbff 72%,#c1ebff 100%);transform:rotate(-5deg)}
+.hero-shell:after{content:"";position:absolute;z-index:3;right:-4%;bottom:-45px;width:64%;height:92px;transform:rotate(-8deg);border-radius:80% 0 0 0;border-top:16px solid #08c6ee;pointer-events:none}
+.hero-copy{position:relative;z-index:2;display:flex;flex-direction:column;align-items:flex-start;padding:1.15rem clamp(1.25rem,3vw,2rem) 1.55rem}
+.hero-logo{display:flex;align-items:center;justify-content:flex-start;width:min(100%,390px);height:112px;margin:-.2rem 0 1.15rem}
+.hero-logo img{display:block;max-width:100%;max-height:108px;object-fit:contain;object-position:left center;border-radius:7px}
+.hero-title{margin:.15rem 0 .85rem;color:#fff;font-size:clamp(2.1rem,4vw,3.4rem);font-weight:950;letter-spacing:-.055em;line-height:1.03}
+.hero-title span{display:block;color:#13d0f2}
+.hero-description{max-width:470px;margin:0 0 1.1rem;color:#e9f5ff;font-size:clamp(1rem,1.6vw,1.18rem);line-height:1.5}
+.hero-benefits{display:grid;gap:.65rem;margin:.25rem 0 1.35rem;color:white;font-size:1.08rem;font-weight:800}
+.hero-benefit{display:flex;align-items:center;gap:.7rem}
+.hero-benefit i{font-style:normal;width:35px;height:35px;flex:0 0 35px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:#12c7e8;color:#043c86;font-size:1.05rem;font-weight:950}
+.hero-cta{display:inline-flex;align-items:center;justify-content:center;gap:.55rem;min-height:52px;max-width:100%;padding:.8rem 1.9rem;border-radius:100px;color:#082c68!important;background:linear-gradient(110deg,#ffda55,#ffad00);font-size:1.02rem;font-weight:900;text-decoration:none!important;box-shadow:0 10px 26px #ffb51b55;transition:transform .18s,box-shadow .18s}
+.hero-cta:hover{transform:translateY(-3px);box-shadow:0 14px 30px #ffb51b77}
+.hero-person{position:relative;min-height:545px;align-self:stretch;overflow:hidden;border-radius:0 0 0 105px}
+.hero-person img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center 20%}
+.hero-person:after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,#07377f 0%,transparent 27%),linear-gradient(0deg,#00499a22,transparent 48%);pointer-events:none}
+/* Tarjetas e inputs */
+.fund-card{min-height:195px;padding:1rem .95rem .85rem;border:1px solid #d7e6f4;border-radius:20px;background:linear-gradient(180deg,#fff,#f4faff);box-shadow:0 7px 20px #062b6810;text-align:center}
+.fund-logo-box{height:92px;display:flex;align-items:center;justify-content:center;margin:0 auto .55rem;padding:.35rem;background:#fff;border-radius:13px}
+.fund-logo-box img{display:block;max-width:100%;max-height:82px;object-fit:contain}
+.fund-fallback{height:92px;display:flex;align-items:center;justify-content:center;color:#0875d2}
+.fund-fallback svg{width:55px;height:55px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.fund-name{margin:.15rem 0 .6rem;color:var(--cia-navy);font-size:1.02rem;font-weight:900}
+.personal-tip{display:flex;gap:.9rem;align-items:center;padding:.95rem 1.1rem;margin:0 0 1.1rem;border:1px solid #bfe5fa;border-radius:17px;background:linear-gradient(110deg,#eaf7ff,#d9f4ff)}
+.personal-tip-icon{width:48px;height:48px;flex:0 0 48px;display:flex;align-items:center;justify-content:center;border-radius:14px;color:#fff;background:linear-gradient(145deg,#0874d8,#10bde8);font-size:1.25rem;font-weight:900}
+.personal-tip strong{display:block;color:#073575;font-size:1.05rem;font-weight:900}
+.personal-tip p{margin:.15rem 0 0;color:#47627d;font-size:.86rem;line-height:1.45}
+.section-label{display:flex;align-items:center;gap:.55rem;margin:.85rem 0 .6rem;color:var(--cia-navy);font-size:1.03rem;font-weight:900}
+.section-label svg{width:21px;height:21px;stroke:#0878d2;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.field-label{display:flex;align-items:center;gap:.48rem;margin:.52rem 0 .22rem;color:#10376f;font-size:.88rem;font-weight:850}
+.field-label svg{width:18px;height:18px;stroke:#0878d2;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:0 0 18px}
+[data-testid="stWidgetLabel"] p,[data-testid="stWidgetLabel"] label,[data-testid="stWidgetLabel"] span,[data-testid="stTextInput"] label,[data-testid="stSelectbox"] label,[data-testid="stNumberInput"] label{color:var(--cia-navy)!important;font-weight:800!important;opacity:1!important}
+[data-testid="stTextInput"] input,[data-testid="stNumberInput"] input,[data-testid="stTextArea"] textarea,[data-testid="stSelectbox"] [data-baseweb="select"]>div{min-height:48px;border:1.5px solid #c9dced!important;border-radius:13px!important;background:#fff!important;color:#17345c!important;box-shadow:0 2px 6px #082b6608}
+[data-testid="stTextInput"] input:focus,[data-testid="stTextArea"] textarea:focus{border-color:#0876d3!important;box-shadow:0 0 0 3px #0876d322!important}
 [data-testid="stTextInput"] input::placeholder,[data-testid="stTextArea"] textarea::placeholder{color:#8093a9!important;opacity:1!important}
-[data-testid="stCaptionContainer"] p,.stCaption{color:#526780!important;opacity:1!important}
-[data-testid="stAlert"]{border-radius:13px!important;border:1px solid #cfe4f5!important}
-[data-testid="stAlert"] [data-testid="stMarkdownContainer"],[data-testid="stAlert"] p,[data-testid="stAlert"] span{color:#52657b!important;opacity:1!important}
-.fund-logo-box{height:72px;display:flex;align-items:center;justify-content:center;padding:5px;background:#fff;border-radius:10px;margin-bottom:4px}
-.fund-logo-box img{max-width:100%;max-height:64px;object-fit:contain}
-.fund-emoji{height:72px;display:flex;align-items:center;justify-content:center;font-size:2.1rem}
-.fund-name{color:var(--cia-navy)!important;font-weight:850;text-align:center;font-size:.9rem;min-height:1.5rem}
-.summary-panel{background:linear-gradient(135deg,#fff,#eff7ff);border:1px solid #d0e2f3;border-radius:17px;padding:1.15rem;box-shadow:0 6px 19px #082b6610}
-.summary-check{width:92px;height:92px;margin:.2rem auto .9rem;border-radius:50%;display:flex;align-items:center;justify-content:center;background:linear-gradient(145deg,#20c83d,#12a52d);color:#fff;font-size:3.6rem;font-weight:900;box-shadow:0 10px 25px #18b83733}
-.success-shell{max-width:1050px;margin:.5rem auto;padding:clamp(1.3rem,4vw,3rem);border-radius:24px;background:radial-gradient(circle at 50% 22%,#e5f4ff,#fff 60%,#eef8ff);border:1px solid #d2e3f4;box-shadow:0 17px 48px #00194133;text-align:center;position:relative;overflow:hidden}
-.success-shell:before{content:"";position:absolute;inset:0;background:radial-gradient(circle at 16% 18%,#12bfe955 0 3px,transparent 4px),radial-gradient(circle at 27% 10%,#ffb51b88 0 4px,transparent 5px),radial-gradient(circle at 76% 16%,#0874d855 0 4px,transparent 5px),radial-gradient(circle at 88% 28%,#ffb51b88 0 3px,transparent 4px),radial-gradient(circle at 9% 60%,#12bfe955 0 3px,transparent 4px);pointer-events:none}
-.success-check{width:92px;height:92px;margin:.2rem auto .9rem;border-radius:50%;display:flex;align-items:center;justify-content:center;background:linear-gradient(145deg,#10bdf0,#0756c4);color:#fff;font-size:3.6rem;font-weight:900;box-shadow:0 10px 25px #0874d833;position:relative;z-index:1}
+[data-testid="stSelectbox"] [data-baseweb="select"] *{color:#18345b!important}
+[data-testid="stCaptionContainer"] p,.stCaption{color:#58708b!important;opacity:1!important}
+.stButton>button,[data-testid="stDownloadButton"] button,[data-testid="stLinkButton"] a{min-height:48px;border:1px solid #0874d8!important;border-radius:14px!important;padding:.7rem 1.1rem!important;color:#fff!important;background:linear-gradient(110deg,#073b8a,#0874d4 70%,#0aa6dc)!important;font-weight:850!important;font-size:.96rem!important;box-shadow:0 8px 19px #084a9728!important;transition:transform .16s,box-shadow .16s!important}
+.stButton>button:hover,[data-testid="stDownloadButton"] button:hover{transform:translateY(-2px);box-shadow:0 12px 25px #084a9738!important}
+.stButton>button:disabled{opacity:.48!important;transform:none!important}
+/* Botones principales y secundarios por clave de widget */
+.st-key-landing_start button{display:none!important}
+.st-key-fund_back button,.st-key-data_back button,.st-key-summary_back button,.st-key-mission_back button,.st-key-company_back button{background:#fff!important;color:#0752a0!important;border:1.5px solid #8fc6f0!important;box-shadow:none!important}
+.st-key-company_submit button,.st-key-summary_continue button,.st-key-mission_continue button,.st-key-data_continue button{background:linear-gradient(110deg,#073b8a,#0874d4 70%,#0aa6dc)!important}
+/* Tarjetas informativas / resumen / misión / confirmación */
+.summary-panel{padding:1.2rem;border:1px solid #d2e3f2;border-radius:20px;background:linear-gradient(135deg,#fff,#f0f7ff);box-shadow:0 8px 22px #082b6610}
+.summary-check{width:72px;height:72px;margin:.2rem auto .8rem;border-radius:50%;display:flex;align-items:center;justify-content:center;background:linear-gradient(145deg,#22c83d,#0fa52f);color:#fff;font-size:2.8rem;font-weight:950;box-shadow:0 10px 24px #18b83733}
+.summary-item{padding:.7rem .8rem;margin:.3rem 0;border:1px solid #e0ebf5;border-radius:12px;background:#fff}
+.summary-item small{display:block;color:#688099;font-size:.72rem;font-weight:750;text-transform:uppercase;letter-spacing:.04em}
+.summary-item strong{display:block;color:#102f60;font-size:.97rem;font-weight:850;overflow-wrap:anywhere}
+.mission-hero{padding:1.25rem 1.35rem;margin:.2rem 0 1rem;border-radius:20px;background:linear-gradient(120deg,#062e70,#0879cf);color:#fff}
+.mission-hero h3{margin:0 0 .5rem;color:#fff;font-size:1.45rem;font-weight:900}
+.mission-hero p{margin:0;color:#e9f6ff;line-height:1.6}
+.mission-card{height:100%;padding:1rem;border-radius:17px;border:1px solid #d8e7f4;background:#fff;box-shadow:0 6px 18px #082b660d}
+.mission-card .mission-symbol{width:43px;height:43px;margin-bottom:.65rem;display:flex;align-items:center;justify-content:center;border-radius:13px;color:#fff;background:linear-gradient(145deg,#0878d8,#12bce8);font-size:1.2rem;font-weight:900}
+.mission-card .mission-symbol svg{width:23px;height:23px;stroke:white;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.mission-card strong{display:block;color:var(--cia-navy);font-size:.98rem;font-weight:900}
+.mission-card p{margin:.35rem 0 0;color:#5b7189;font-size:.85rem;line-height:1.5}
+.success-shell{max-width:1080px;margin:.55rem auto 1rem;padding:clamp(1.35rem,4vw,3rem);border-radius:26px;background:radial-gradient(circle at 50% 12%,#e2f4ff,#fff 58%,#eef8ff);border:1px solid #d3e5f4;box-shadow:0 18px 50px #00194135;text-align:center;position:relative;overflow:hidden}
+.success-check{width:92px;height:92px;margin:.2rem auto .9rem;border-radius:50%;display:flex;align-items:center;justify-content:center;background:linear-gradient(145deg,#12bce9,#0756c4);color:#fff;font-size:3.5rem;font-weight:950;box-shadow:0 10px 25px #0874d833}
 .success-shell h1{color:var(--cia-navy);font-size:clamp(2rem,4vw,3rem);font-weight:950;letter-spacing:-.04em;margin:.2rem 0 .5rem}
-.success-shell p{color:#173d76;font-size:1.05rem;line-height:1.45}
-.success-email{max-width:680px;margin:1.25rem auto;padding:.9rem 1.2rem;border-radius:16px;background:#d8edff;color:#063574;font-weight:650;text-align:left}
-.footer-brand{text-align:center;color:#063574;font-weight:850;font-style:italic;margin-top:1.3rem}
-/* Six-step flow is kept legible on narrow phones. */
+.success-shell p{color:#173d76;font-size:1.04rem;line-height:1.55}
+.success-delivery{max-width:740px;margin:1.1rem auto;padding:1rem 1.15rem;border-radius:16px;background:#dff1ff;color:#083a7b;font-weight:750;text-align:left;line-height:1.55}
+.footer-brand{text-align:center;color:#063574;font-weight:850;font-style:italic;margin-top:1.25rem}
+[data-testid="stAlert"]{border-radius:14px!important;border:1px solid #cfe4f5!important}
+[data-testid="stAlert"] [data-testid="stMarkdownContainer"],[data-testid="stAlert"] p,[data-testid="stAlert"] span{color:#52657b!important;opacity:1!important}
+/* Ajustes tablet y teléfono */
 @media(max-width:760px){
  .main .block-container{padding:.55rem .45rem 1.5rem!important}
  .brand-header{padding:.45rem .65rem;border-radius:14px;margin-bottom:.5rem}
- .brand-logo-wrap{max-width:68%}.brand-logo-wrap img{max-height:52px}
+ .brand-logo-wrap img{max-height:47px;max-width:62vw}
  .brand-trust{font-size:.66rem;gap:.25rem}.brand-trust span{width:23px;height:23px}
- .journey-wrap{padding:.55rem .2rem;border-radius:12px}
- .journey{gap:0}.journey-step{font-size:.57rem;gap:.22rem}.journey-dot{width:25px;height:25px;font-size:.68rem}
- .journey-step:before{top:12px}
- .glass-container{padding:1rem .75rem;margin:.4rem 0;border-radius:17px}
- .screen-heading{gap:.6rem;margin-bottom:.9rem}.screen-heading .screen-icon{width:44px;height:44px;flex-basis:44px;font-size:1.4rem}
- .screen-heading h2{font-size:1.24rem}.screen-heading p{font-size:.83rem}
- .hero-shell{grid-template-columns:1fr;min-height:0;border-radius:18px}
- .hero-shell:before{width:90%;height:24%;top:-10%}
- .hero-copy{padding:.8rem 1rem 1.1rem}
- .hero-logo{height:85px;width:min(100%,310px);margin:-.15rem 0 .55rem}.hero-logo img{max-height:78px}
- .hero-title{font-size:2.25rem;margin:.15rem 0 .5rem}.hero-description{font-size:1rem;margin-bottom:.7rem}
- .hero-benefits{display:flex;flex-wrap:wrap;gap:.5rem;font-size:.82rem}.hero-benefit{gap:.35rem}.hero-benefit i{width:27px;height:27px;font-size:.85rem}
- .hero-person{min-height:300px;max-height:365px;border-radius:0 0 0 60px}
- .hero-person img{object-position:center 25%}
- div.st-key-landing_start{margin:-1rem auto 1.1rem;max-width:calc(100% - 2rem)}
- div.st-key-landing_start button{min-height:50px}
- .st-key-motivo_vivienda button,.st-key-motivo_educacion button,.st-key-motivo_salud button,.st-key-motivo_vacaciones button,.st-key-motivo_vehiculo button,.st-key-motivo_otro button{height:105px;font-size:.8rem!important;padding:.45rem!important}
- .st-key-fondo_porv button,.st-key-fondo_colf button,.st-key-fondo_prot button,.st-key-fondo_fna button,.st-key-fondo_otro button{min-height:62px;font-size:.82rem!important}
- .success-shell{padding:1.3rem .9rem;border-radius:18px}
+ .journey-wrap{padding:.55rem .18rem;border-radius:12px}
+ .journey{gap:0}.journey-step{font-size:.56rem;gap:.22rem}.journey-dot{width:25px;height:25px;font-size:.68rem}
+ .journey-step:not(:first-child):before{top:12px}
+ .page-shell{padding:1.05rem .8rem;margin:.4rem 0;border-radius:19px}
+ .st-key-screen_fund,.st-key-screen_data,.st-key-screen_summary,.st-key-screen_mission,.st-key-screen_company,.st-key-screen_processing,.st-key-screen_success{padding:1.05rem .8rem!important;border-radius:19px!important}
+ .st-key-summary_panel{padding:.75rem!important}
+ .screen-heading{gap:.65rem;margin-bottom:1rem}.screen-icon{width:46px;height:46px;flex-basis:46px;border-radius:13px}.screen-icon svg{width:23px;height:23px}
+ .screen-heading h2{font-size:1.28rem}.screen-heading p{font-size:.84rem}
+ .hero-shell{grid-template-columns:1fr;min-height:0;margin:.15rem auto;border-radius:19px}
+ .hero-person{grid-row:1;min-height:290px;max-height:330px;border-radius:0 0 55px 0}
+ .hero-person img{object-position:center 24%}
+ .hero-copy{grid-row:2;padding:.85rem 1rem 1.25rem}
+ .hero-shell:before{top:285px;left:-8%;width:90%;height:27%;border-radius:60%}
+ .hero-logo{height:77px;width:min(100%,280px);margin:-.25rem 0 .45rem}.hero-logo img{max-height:74px}
+ .hero-title{font-size:2.18rem;margin:.1rem 0 .55rem}.hero-description{font-size:.96rem;margin-bottom:.65rem}
+ .hero-benefits{display:flex;flex-wrap:wrap;gap:.55rem;font-size:.82rem;margin:.4rem 0 1rem}.hero-benefit{gap:.35rem}.hero-benefit i{width:28px;height:28px;flex-basis:28px;font-size:.86rem}
+ .hero-cta{min-height:48px;padding:.72rem 1.45rem;font-size:.94rem;align-self:flex-start;width:auto}
+ .fund-card{min-height:170px;padding:.75rem .55rem}.fund-logo-box,.fund-fallback{height:76px}.fund-logo-box img{max-height:69px}
+ .personal-tip{align-items:flex-start;padding:.75rem}.personal-tip-icon{width:40px;height:40px;flex-basis:40px}
+ .summary-panel{padding:.8rem}
+ .mission-card{margin-bottom:.55rem}
+ .success-shell{padding:1.25rem .8rem;border-radius:19px}
+ [data-testid="stTextInput"] input,[data-testid="stSelectbox"] [data-baseweb="select"]{font-size:16px!important}
+ .stButton>button{min-height:47px;font-size:.9rem!important}
 }
-@media(max-width:390px){.brand-trust{font-size:.6rem}.journey-step{font-size:.49rem}.journey-dot{width:22px;height:22px}.journey-step:before{top:10px}.hero-title{font-size:2rem}}
+@media(max-width:390px){.brand-trust{display:none}.journey-step{font-size:.49rem}.journey-dot{width:22px;height:22px}.journey-step:not(:first-child):before{top:10px}.hero-person{min-height:250px;max-height:280px}.hero-title{font-size:1.95rem}}
 </style>
 """, unsafe_allow_html=True)
-
 
 # ---------- ESTADO INICIAL ----------
 if 'step' not in st.session_state:
@@ -1191,11 +782,11 @@ def obtener_logo_app_path():
         base_dir,
     ]
     nombres_preferidos = [
+        "logo_persona_corriendo",
         "logo_cesantias_al_instante",
         "cesantias_al_instante",
         "logo_cesantias",
         "logo_app_cesantias",
-        "logo_cesantias_al_instante",
     ]
     extensiones = [".png", ".jpg", ".jpeg", ".webp"]
     for carpeta in carpetas:
@@ -1285,39 +876,85 @@ def resolver_empresa_y_plantilla(empresa_seleccionada, empresa_manual="", nit_ma
     return df_empresas, empresa_valor, nit_auto, doc_id_auto
 
 
-def render_brand_header(width=190):
-    """Encabezado común con marca y el stepper de seis etapas."""
-    logo_app = obtener_logo_app_path()
-    logo_uri = imagen_data_uri(logo_app)
-    etapa_por_pantalla = {
-        "pregunta1": 1, "pregunta2": 2, "verificar_saldo": 3,
-        "monto_exacto": 3, "resultados": 4,
-        "generando": 6, "whatsapp_entrega": 6, "pago": 6
+def icon_svg(nombre):
+    """Iconos SVG lineales para mantener un lenguaje visual coherente."""
+    paths = {
+        "fund": '<path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5M9 21v-7h6v7"/>',
+        "user": '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+        "file": '<path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5M10 13h6M10 17h6"/>',
+        "check": '<path d="m5 12 4 4L19 6"/>',
+        "mission": '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+        "building": '<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M9 7h1m4 0h1M9 11h1m4 0h1M9 15h1m4 0h1M10 21v-3h4v3"/>',
+        "shield": '<path d="M12 22s8-4 8-11V5l-8-3-8 3v6c0 7 8 11 8 11Z"/><path d="m9 12 2 2 4-4"/>',
+        "mail": '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/>',
+        "phone": '<path d="M6.5 3.5 9 3l2 5-2 1.5a14 14 0 0 0 5.5 5.5L16 13l5 2-.5 2.5A3 3 0 0 1 17.5 20C9 19 5 15 4 6.5a3 3 0 0 1 2.5-3Z"/>',
+        "pin": '<path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/>',
+        "wallet": '<rect x="3" y="5" width="18" height="15" rx="2"/><path d="M3 8h18M16 14h2"/>',
     }
-    etiquetas = ["Motivo", "Empresa", "Solicitud", "Resumen", "Confirmar", "Finalizar"]
-    activa = etapa_por_pantalla.get(st.session_state.get("step", ""), 1)
+    return '<svg viewBox="0 0 24 24" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">' + paths.get(nombre, paths["file"]) + '</svg>'
+
+
+def render_screen_heading(icono, titulo, subtitulo):
+    st.markdown(
+        f'<div class="screen-heading"><div class="screen-icon">{icon_svg(icono)}</div>'
+        f'<div><h2>{html.escape(titulo)}</h2><p>{html.escape(subtitulo)}</p></div></div>',
+        unsafe_allow_html=True
+    )
+
+def render_field_label(icono, texto):
+    st.markdown(
+        f'<div class="field-label">{icon_svg(icono)}<span>{html.escape(texto)}</span></div>',
+        unsafe_allow_html=True
+    )
+
+
+def render_brand_header(etapa=2):
+    """Marca y progreso del recorrido definitivo de seis pantallas."""
+    logo_uri = imagen_data_uri(obtener_logo_app_path())
     logo_html = f'<img src="{logo_uri}" alt="Cesantías al Instante">' if logo_uri else '<strong>Cesantías al Instante</strong>'
     st.markdown(
         '<div class="brand-header"><div class="brand-logo-wrap">' + logo_html + '</div>'
-        '<div class="brand-trust"><span>✓</span> Seguro y confiable</div></div>',
+        '<div class="brand-trust"><span>✓</span> Trámite fácil y seguro</div></div>',
         unsafe_allow_html=True
     )
-    pasos_html = []
-    for numero, etiqueta in enumerate(etiquetas, start=1):
-        clase = "active" if numero == activa else ("done" if numero < activa else "")
-        simbolo = "✓" if numero < activa else str(numero)
-        pasos_html.append(
+    etiquetas = ["Inicio", "Fondo", "Datos", "Resumen", "Misión", "Empresa"]
+    pasos = []
+    for n, etiqueta in enumerate(etiquetas, 1):
+        clase = "active" if n == etapa else ("done" if n < etapa else "")
+        simbolo = "✓" if n < etapa else str(n)
+        pasos.append(
             f'<div class="journey-step {clase}"><div class="journey-dot">{simbolo}</div>'
             f'<span>{etiqueta}</span></div>'
         )
-    st.markdown('<div class="journey-wrap"><div class="journey">' + ''.join(pasos_html) + '</div></div>', unsafe_allow_html=True)
+    st.markdown('<div class="journey-wrap"><div class="journey">' + ''.join(pasos) + '</div></div>', unsafe_allow_html=True)
+
+
+def reiniciar_solicitud():
+    """Limpia únicamente los datos del trámite; la autorización y servicios permanecen intactos."""
+    llaves = [
+        "proposito", "monto", "monto_limpio", "fondo", "nombre", "cedula", "telefono", "email",
+        "empresa", "nit", "ciudad", "departamento", "empresa_manual", "nit_manual",
+        "empresa_seleccionada", "saldo_verificado", "saldo_limpio", "solicitud_guardada",
+        "doc_id_plantilla", "nombre_plantilla", "plantilla_url", "doc_id_copia", "url_copia",
+        "solicitud_id", "documento_rellenado", "pdf_id", "pdf_url", "pdf_generado",
+    ]
+    for key in llaves:
+        st.session_state[key] = ""
+    widgets = [
+        "ciudad_widget", "departamento_widget", "empresa_manual_widget", "nit_manual_widget",
+        "empresa_widget", "saldo_widget", "monto_raw_widget", "telefono_widget",
+        "nombre_widget", "cedula_widget", "email_widget",
+    ]
+    for key in widgets:
+        st.session_state[key] = ""
+
 
 def render_landing():
-    """Pantalla de bienvenida con composición visual equivalente a la maqueta."""
+    """Bienvenida con composición de marca; el CTA es parte del propio panel hero."""
     logo_uri = imagen_data_uri(obtener_logo_app_path())
     hero_uri = imagen_data_uri(obtener_imagen_hero_path())
-    logo_html = f'<img src="{logo_uri}" alt="Cesantías al Instante">' if logo_uri else '<strong>Cesantías al Instante</strong>'
-    hero_html = f'<img src="{hero_uri}" alt="Asesora de Cesantías al Instante">' if hero_uri else '<div class="hero-fallback">👩🏻‍💼</div>'
+    logo_html = f'<img src="{logo_uri}" alt="Logo Cesantías al Instante">' if logo_uri else '<strong>Cesantías al Instante</strong>'
+    hero_html = f'<img src="{hero_uri}" alt="Asesora de Cesantías al Instante">' if hero_uri else ''
     st.markdown(f"""
     <section class="hero-shell">
       <div class="hero-copy">
@@ -1329,257 +966,67 @@ def render_landing():
           <div class="hero-benefit"><i>✓</i> Seguro</div>
           <div class="hero-benefit"><i>✓</i> Fácil</div>
         </div>
+        <a class="hero-cta" href="?iniciar=1">Comenzar ahora <span aria-hidden="true">➜</span></a>
       </div>
       <div class="hero-person">{hero_html}</div>
     </section>
     """, unsafe_allow_html=True)
 
-    if st.button("Comenzar ahora  ➜", use_container_width=True, key="landing_start"):
-        for key in [
-            'proposito', 'monto', 'monto_limpio', 'fondo', 'nombre', 'cedula',
-            'telefono', 'email', 'empresa', 'nit', 'ciudad', 'departamento',
-            'empresa_manual', 'nit_manual', 'empresa_seleccionada',
-            'saldo_verificado', 'saldo_limpio', 'solicitud_guardada',
-            'doc_id_plantilla', 'nombre_plantilla', 'plantilla_url',
-            'doc_id_copia', 'url_copia', 'solicitud_id', 'documento_rellenado',
-            'pdf_id', 'pdf_url', 'pdf_generado'
-        ]:
-            st.session_state[key] = ""
-        for key in ["ciudad_widget", "departamento_widget", "empresa_manual_widget", "nit_manual_widget",
-                    "empresa_widget", "saldo_widget", "monto_raw_widget", "telefono_widget",
-                    "nombre_widget", "cedula_widget", "email_widget"]:
-            st.session_state[key] = ""
-        st.session_state.step = 'pregunta1'
-        st.rerun()
 
-def render_pregunta1():
-    render_brand_header()
-    st.markdown('''
-    <div class="glass-container">
-      <div class="screen-heading"><div class="screen-icon">▣</div><div><h2>¿Cuál es el motivo de tu retiro?</h2><p>Selecciona la opción que mejor se ajuste a tu caso.</p></div></div>
-    ''', unsafe_allow_html=True)
-
-    motivos = [
-        ("motivo_vivienda", "🏠  Vivienda\nCompra o mejora de vivienda", "Compra o mejora de vivienda"),
-        ("motivo_educacion", "🎓  Educación\nEstudios propios o de tus hijos", "Estudios propios o de tus hijos"),
-        ("motivo_salud", "✚  Salud\nTratamientos médicos", "Tratamientos médicos"),
-        ("motivo_vacaciones", "🌴  Vacaciones\nDescanso y bienestar", "Descanso y bienestar"),
-        ("motivo_vehiculo", "🚘  Vehículo\nCompra de vehículo", "Compra de vehículo"),
-        ("motivo_otro", "•••  Otro motivo\nOtra razón válida", "Otro motivo")
-    ]
-    for inicio in range(0, len(motivos), 3):
-        cols = st.columns(3, gap="small")
-        for col, (key, label, value) in zip(cols, motivos[inicio:inicio + 3]):
-            with col:
-                texto = "✓ " + label if st.session_state.get("proposito") == value else label
-                if st.button(texto, key=key, use_container_width=True):
-                    st.session_state.proposito = value
-                    st.rerun()
-
-    if st.session_state.get("proposito"):
-        st.success(f"Motivo seleccionado: {st.session_state.proposito}")
-    col1, col2 = st.columns([1, 1.5])
-    with col1:
-        if st.button("← Atrás", use_container_width=True):
-            st.session_state.step = 'landing'
-            st.rerun()
-    with col2:
-        if st.button("Siguiente  ➜", use_container_width=True, disabled=not bool(st.session_state.get("proposito"))):
-            st.session_state.step = 'pregunta2'
-            st.rerun()
-    st.markdown("</div>", unsafe_allow_html=True)
-
-def render_pregunta2():
-    """Etapa Empresa: conserva consulta de Empresas, NIT y Doc_ID, y selección de fondo."""
-    render_brand_header()
-    st.markdown('''
-    <div class="glass-container">
-      <div class="screen-heading"><div class="screen-icon">▦</div><div><h2>Empresa donde trabajas</h2><p>Selecciona tu empresa de la lista.</p></div></div>
-    ''', unsafe_allow_html=True)
-
-    lista_empresas = []
-    df_empresas = pd.DataFrame()
-    error_empresas = ""
-    try:
-        df_empresas = conn.read(worksheet="Empresas", ttl=0).dropna(how="all")
-        if "Nombre_Empresa" not in df_empresas.columns:
-            raise ValueError("La hoja Empresas debe tener la columna Nombre_Empresa.")
-        lista_empresas = df_empresas["Nombre_Empresa"].dropna().astype(str).str.strip().tolist()
-        lista_empresas = [x for x in lista_empresas if x and x.casefold() != "otra"]
-    except Exception as exc:
-        error_empresas = str(exc)
-        st.error(f"No fue posible cargar la lista de empresas: {exc}")
-
-    empresa_seleccionada = st.selectbox(
-        "Empresa", [""] + lista_empresas + ["Otra"], key="empresa_widget",
-        placeholder="Selecciona tu empresa"
-    )
-    empresa_manual = ""
-    nit_manual = ""
-    if empresa_seleccionada == "Otra":
-        st.info('Selecciona “Otra” para ingresar los datos manualmente.')
-        manual_cols = st.columns(2)
-        with manual_cols[0]:
-            empresa_manual = st.text_input("Nombre de la empresa", placeholder="Nombre de la empresa", key="empresa_manual_widget")
-        with manual_cols[1]:
-            nit_manual = st.text_input("NIT de la empresa", placeholder="NIT de la empresa", key="nit_manual_widget")
-
-    # El fondo de cesantías se conserva en esta etapa para que no se pierda la selección actual.
-    st.markdown("### Fondo de cesantías")
-    fondos = [
-        {"key":"fondo_porv","nombre":"Porvenir","logo":"Porvenir_logo.png","emoji":"🏦"},
-        {"key":"fondo_colf","nombre":"Colfondos","logo":"Colfondos_logo.png","emoji":"🏢"},
-        {"key":"fondo_prot","nombre":"Protección","logo":"Proteccion_logo.png","emoji":"🛡️"},
-        {"key":"fondo_fna","nombre":"FNA","logo":"FNA_logo.png","emoji":"🏛️"},
-        {"key":"fondo_otro","nombre":"Otro","logo":None,"emoji":"❓"}
-    ]
+def buscar_logo_fondo(nombre_archivo):
+    """Localiza los logos oficiales ya existentes en assets o assets/logos."""
     base_dir = os.path.dirname(os.path.abspath(__file__))
-    assets_dir = os.path.join(base_dir, "assets")
-    for inicio in range(0, len(fondos), 3):
-        cols = st.columns(3, gap="small")
-        for col, fondo in zip(cols, fondos[inicio:inicio + 3]):
-            with col:
-                logo_path = None
-                if fondo["logo"]:
-                    base = os.path.splitext(fondo["logo"])[0].lower()
-                    for carpeta in (assets_dir, os.path.join(assets_dir, "logos")):
-                        if os.path.isdir(carpeta):
-                            for archivo in os.listdir(carpeta):
-                                b, ext = os.path.splitext(archivo)
-                                if b.lower() in {base, base.replace("_logo", "")} and ext.lower() in {".png", ".jpg", ".jpeg", ".webp"}:
-                                    logo_path = os.path.join(carpeta, archivo)
-                                    break
-                        if logo_path:
-                            break
-                if logo_path:
-                    with open(logo_path, "rb") as f:
-                        b64 = base64.b64encode(f.read()).decode("ascii")
-                    mime = mimetypes.guess_type(logo_path)[0] or "image/png"
-                    st.markdown(f'<div class="fund-logo-box"><img src="data:{mime};base64,{b64}" alt="{fondo["nombre"]}"></div>', unsafe_allow_html=True)
-                else:
-                    st.markdown(f'<div class="fund-emoji">{fondo["emoji"]}</div>', unsafe_allow_html=True)
-                marcado = "✓ " if st.session_state.get("fondo") == fondo["nombre"] else ""
-                if st.button(marcado + fondo["nombre"], key=fondo["key"], use_container_width=True):
-                    st.session_state.fondo = fondo["nombre"]
-                    st.rerun()
-
-    nit_actual = ""
-    if empresa_seleccionada:
-        try:
-            _, empresa_valor, nit_actual, _ = resolver_empresa_y_plantilla(
-                empresa_seleccionada, empresa_manual, nit_manual
-            )
-            if nit_actual:
-                st.caption(f"NIT: {nit_actual}")
-        except Exception as exc:
-            st.session_state.doc_id_plantilla = ""
-            st.error(f"No se pudo validar la empresa o su plantilla: {exc}")
-
-    col1, col2 = st.columns([1, 1.5])
-    with col1:
-        if st.button("← Atrás", use_container_width=True):
-            st.session_state.step = 'pregunta1'
-            st.rerun()
-    with col2:
-        siguiente_habilitado = bool(empresa_seleccionada and st.session_state.get("fondo"))
-        if st.button("Siguiente  ➜", use_container_width=True, disabled=not siguiente_habilitado):
-            if empresa_seleccionada == "Otra":
-                if not empresa_manual.strip() or not nit_manual.strip():
-                    st.error("Escribe el nombre y el NIT de tu empresa.")
-                    st.stop()
-                try:
-                    resolver_empresa_y_plantilla(empresa_seleccionada, empresa_manual, nit_manual)
-                except Exception as exc:
-                    st.error(f"No se pudo validar la plantilla general: {exc}")
-                    st.stop()
-            elif empresa_seleccionada:
-                resolver_empresa_y_plantilla(empresa_seleccionada)
-            if not st.session_state.get("doc_id_plantilla"):
-                st.error("Esta empresa no tiene una plantilla asignada. Verifica la columna Doc_ID en la hoja Empresas.")
-                st.stop()
-            st.session_state.empresa = empresa_manual.strip() if empresa_seleccionada == "Otra" else empresa_seleccionada
-            st.session_state.nit = nit_manual.strip() if empresa_seleccionada == "Otra" else st.session_state.get("nit", "")
-            st.session_state.step = 'monto_exacto'
-            st.rerun()
-    st.markdown("</div>", unsafe_allow_html=True)
-
-def render_verificar_saldo():
-    render_brand_header(width=185)
-    st.markdown("""
-    <div class="glass-container">
-        <div class="step-text">Paso 3 de 4</div>
-        <div class="progress-container">
-            <div class="progress-bar" style="width:75%;"></div>
-        </div>
-        <h3 style="color:#102868;font-weight:700;margin-bottom:0.5rem;">
-            📞 Verifica tu saldo
-        </h3>
-    """, unsafe_allow_html=True)
-
-    numeros = {
-        "Porvenir": "01 8000 111 222",
-        "Colfondos": "01 8000 123 456",
-        "Protección": "01 8000 789 012",
-        "FNA": "01 8000 456 789",
-        "Otro": "01 8000 000 000"
+    nombre_base = os.path.splitext(nombre_archivo or "")[0].lower()
+    aliases = {
+        "porvenir_logo": {"porvenir_logo", "porvenir"},
+        "colfondos_logo": {"colfondos_logo", "colfondos"},
+        "proteccion_logo": {"proteccion_logo", "protección_logo", "proteccion"},
+        "fna_logo": {"fna_logo", "fna", "fondo_nacional_del_ahorro"},
     }
+    validos = aliases.get(nombre_base, {nombre_base})
+    for carpeta in (os.path.join(base_dir, "assets"), os.path.join(base_dir, "assets", "logos")):
+        if not os.path.isdir(carpeta):
+            continue
+        for archivo in os.listdir(carpeta):
+            base, extension = os.path.splitext(archivo)
+            if base.lower() in validos and extension.lower() in {".png", ".jpg", ".jpeg", ".webp"}:
+                return os.path.join(carpeta, archivo)
+    return None
 
-    numero = numeros.get(
-        st.session_state.fondo,
-        "01 8000 000 000"
-    )
 
-    st.markdown(
-        f'<div class="phone-number"><span>📱 {numero}</span></div>',
-        unsafe_allow_html=True
-    )
-
-    st.info(
-        "Marca, presiona 1, digita tu cédula y escucha tu saldo."
-    )
-
-    saldo_raw = st.text_input(
-        "💰 Saldo exacto",
-        placeholder="Ej: 10000000"
-    )
-
-    if saldo_raw:
-        limpio = re.sub(r'[^0-9]', '', saldo_raw)
-
-        if limpio:
-            st.success(
-                f"Saldo ingresado: "
-                f"**{f'{int(limpio):,}'.replace(',', '.')}**"
-            )
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-        if st.button("↩️ Atrás", use_container_width=True):
-            st.session_state.step = 'pregunta2'
+def render_seleccionar_fondo():
+    render_brand_header(2)
+    with st.container(border=True):
+        render_screen_heading("fund", "Selecciona tu fondo de cesantías", "Elige la entidad donde tienes tus cesantías para preparar tu solicitud.")
+        fondos = [
+            {"nombre": "Porvenir", "logo": "Porvenir_logo.png", "icono": "fund"},
+            {"nombre": "Colfondos", "logo": "Colfondos_logo.png", "icono": "building"},
+            {"nombre": "Protección", "logo": "Proteccion_logo.png", "icono": "shield"},
+            {"nombre": "FNA", "logo": "FNA_logo.png", "icono": "building"},
+            {"nombre": "Otro", "logo": None, "icono": "wallet"},
+        ]
+        for inicio in range(0, len(fondos), 2):
+            cols = st.columns(2, gap="medium")
+            for col, fondo in zip(cols, fondos[inicio:inicio + 2]):
+                with col:
+                    with st.container(border=True):
+                        logo_path = buscar_logo_fondo(fondo["logo"]) if fondo["logo"] else None
+                        if logo_path:
+                            with open(logo_path, "rb") as archivo_logo:
+                                logo_b64 = base64.b64encode(archivo_logo.read()).decode("ascii")
+                            mime = mimetypes.guess_type(logo_path)[0] or "image/png"
+                            st.markdown(f'<div class="fund-logo-box"><img src="data:{mime};base64,{logo_b64}" alt="Logo de {html.escape(fondo["nombre"])}"></div>', unsafe_allow_html=True)
+                        else:
+                            st.markdown(f'<div class="fund-logo-box fund-fallback">{icon_svg(fondo["icono"])}</div>', unsafe_allow_html=True)
+                        marcado = st.session_state.get("fondo") == fondo["nombre"]
+                        st.markdown(f'<div class="fund-name">{html.escape(fondo["nombre"])}</div>', unsafe_allow_html=True)
+                        if st.button("✓ Seleccionado" if marcado else "Seleccionar fondo", key=f"fund_{fondo['nombre'].lower().replace('ó','o')}", use_container_width=True):
+                            st.session_state.fondo = fondo["nombre"]
+                            st.session_state.step = "datos_personales"
+                            st.rerun()
+        if st.button("← Volver al inicio", key="fund_back", use_container_width=True):
+            st.session_state.step = "landing"
             st.rerun()
-
-    with col2:
-        if st.button("Siguiente →", use_container_width=True):
-
-            if saldo_raw:
-                st.session_state.saldo_limpio = re.sub(
-                    r'[^0-9]',
-                    '',
-                    saldo_raw
-                )
-
-                st.session_state.saldo_verificado = (
-                    f"${f'{int(st.session_state.saldo_limpio):,}'.replace(',', '.')}"
-                )
-
-                st.session_state.step = 'monto_exacto'
-                st.rerun()
-
-            else:
-                st.error("Ingresa el saldo.")
-
-    st.markdown("</div>", unsafe_allow_html=True)
 
 
 def limpiar_telefono_widget():
@@ -1589,158 +1036,246 @@ def limpiar_telefono_widget():
 
 
 def limpiar_cedula_widget():
-    """Mantiene la cédula compuesta únicamente por dígitos, sin límite fijo."""
+    """Mantiene la cédula compuesta únicamente por dígitos."""
     valor = str(st.session_state.get("cedula_widget", ""))
     st.session_state.cedula_widget = re.sub(r"\D", "", valor)
 
 
-def render_monto_exacto():
-    """Etapa Solicitud: reúne saldo, monto y datos personales en la misma pantalla."""
-    render_brand_header()
-    st.markdown('''
-    <div class="glass-container">
-      <div class="screen-heading"><div class="screen-icon">▤</div><div><h2>Datos de tu solicitud</h2><p>Completa tus datos para preparar la carta de retiro.</p></div></div>
-    ''', unsafe_allow_html=True)
+def render_datos_personales():
+    render_brand_header(3)
+    with st.container(border=True):
+        render_screen_heading("user", "Datos personales", "Completa tu información para preparar correctamente la carta de retiro.")
+        numeros = {
+            "Porvenir": "01 8000 111 222", "Colfondos": "01 8000 123 456",
+            "Protección": "01 8000 789 012", "FNA": "01 8000 456 789", "Otro": "01 8000 000 000"
+        }
+        numero = numeros.get(st.session_state.get("fondo", "Otro"), "01 8000 000 000")
+        st.markdown(
+            f'<div class="personal-tip"><div class="personal-tip-icon">{icon_svg("phone")}</div>'
+            f'<div><strong>{html.escape(numero)}</strong><p>Consulta tu saldo en los canales oficiales de tu fondo. Marca, sigue las indicaciones y escribe abajo el saldo que te informen.</p></div></div>',
+            unsafe_allow_html=True
+        )
+        st.markdown(f'<div class="section-label">{icon_svg("wallet")} Información del retiro</div>', unsafe_allow_html=True)
+        c_saldo, c_monto = st.columns(2, gap="medium")
+        with c_saldo:
+            render_field_label("wallet", "Saldo disponible (COP)")
+            saldo_raw = st.text_input("Saldo disponible (COP)", label_visibility="collapsed", placeholder="Ej. 10000000", key="saldo_widget")
+        with c_monto:
+            render_field_label("wallet", "Monto que deseas retirar (COP)")
+            monto_raw = st.text_input("Monto que deseas retirar (COP)", label_visibility="collapsed", placeholder="Ej. 900000", key="monto_raw_widget")
+        for valor, etiqueta in ((saldo_raw, "Saldo"), (monto_raw, "Monto")):
+            limpio = re.sub(r"\D", "", str(valor))
+            if limpio:
+                st.caption(f"{etiqueta}: ${int(limpio):,}".replace(",", "."))
 
-    numeros = {"Porvenir":"01 8000 111 222", "Colfondos":"01 8000 123 456", "Protección":"01 8000 789 012", "FNA":"01 8000 456 789", "Otro":"01 8000 000 000"}
-    numero = numeros.get(st.session_state.get("fondo", "Otro"), "01 8000 000 000")
-    st.markdown(f'<div class="phone-number">📞 {numero}</div>', unsafe_allow_html=True)
-    st.info("Marca, presiona 1, digita tu cédula y escucha tu saldo. Luego escribe el saldo disponible para validar el monto.")
-    saldo_raw = st.text_input("Saldo exacto disponible", placeholder="Ej: 10000000", key="saldo_widget")
-    if saldo_raw:
-        saldo_limpio_vista = re.sub(r"[^0-9]", "", saldo_raw)
-        if saldo_limpio_vista:
-            st.caption(f"Saldo ingresado: ${f'{int(saldo_limpio_vista):,}'.replace(',', '.')}")
+        st.markdown(f'<div class="section-label">{icon_svg("user")} Tus datos de contacto</div>', unsafe_allow_html=True)
+        c1, c2 = st.columns(2, gap="large")
+        with c1:
+            render_field_label("user", "Nombre completo")
+            nombre = st.text_input("Nombre completo", label_visibility="collapsed", placeholder="Como aparece en tu cédula", key="nombre_widget")
+            render_field_label("file", "Cédula")
+            cedula = st.text_input("Cédula", label_visibility="collapsed", placeholder="Escribe solo números", key="cedula_widget", on_change=limpiar_cedula_widget)
+            render_field_label("phone", "Teléfono / WhatsApp")
+            telefono = st.text_input("Teléfono / WhatsApp", label_visibility="collapsed", placeholder="Ej. 3001234567", key="telefono_widget", on_change=limpiar_telefono_widget)
+        with c2:
+            render_field_label("mail", "Correo electrónico")
+            email_val = st.text_input("Correo electrónico", label_visibility="collapsed", placeholder="nombre@correo.com", key="email_widget")
+            departamentos = [
+                "Amazonas", "Antioquia", "Arauca", "Atlántico", "Bogotá, D.C.", "Bolívar", "Boyacá", "Caldas", "Caquetá", "Casanare", "Cauca", "Cesar", "Chocó", "Córdoba", "Cundinamarca", "Guainía", "Guaviare", "Huila", "La Guajira", "Magdalena", "Meta", "Nariño", "Norte de Santander", "Putumayo", "Quindío", "Risaralda", "San Andrés y Providencia", "Santander", "Sucre", "Tolima", "Valle del Cauca", "Vaupés", "Vichada"
+            ]
+            render_field_label("pin", "Departamento")
+            departamento = st.selectbox("Departamento", [""] + departamentos, label_visibility="collapsed", key="departamento_widget", placeholder="Selecciona tu departamento")
+            render_field_label("pin", "Ciudad")
+            ciudad = st.text_input("Ciudad", label_visibility="collapsed", placeholder="Escribe tu ciudad", key="ciudad_widget")
 
-    monto_raw = st.text_input(
-        "Monto exacto a retirar", placeholder="Ej: 900000", key="monto_raw_widget",
-        value=st.session_state.get("monto_raw_display", "")
-    )
-    if monto_raw:
-        limpio_vista = re.sub(r"[^0-9]", "", monto_raw)
-        if limpio_vista:
-            st.caption(f"Monto a retirar: ${f'{int(limpio_vista):,}'.replace(',', '.')}")
+        c1, c2 = st.columns([1, 1.8])
+        with c1:
+            if st.button("← Atrás", key="data_back", use_container_width=True):
+                st.session_state.step = "seleccionar_fondo"
+                st.rerun()
+        with c2:
+            if st.button("Continuar al resumen  →", key="data_continue", use_container_width=True):
+                saldo_limpio = re.sub(r"\D", "", str(saldo_raw))
+                monto_limpio = re.sub(r"\D", "", str(monto_raw))
+                telefono_limpio = re.sub(r"\D", "", str(telefono))
+                cedula_limpia = re.sub(r"\D", "", str(cedula))
+                email_limpio = str(email_val).strip()
+                if not all([saldo_limpio, monto_limpio, nombre.strip(), cedula_limpia, telefono_limpio, email_limpio, departamento, ciudad.strip()]):
+                    st.error("Completa el saldo, el monto y los seis datos personales antes de continuar.")
+                    st.stop()
+                if not st.session_state.get("fondo"):
+                    st.error("Selecciona primero tu fondo de cesantías.")
+                    st.stop()
+                if len(telefono_limpio) != 10:
+                    st.error("El teléfono / WhatsApp debe tener exactamente 10 dígitos.")
+                    st.stop()
+                if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email_limpio):
+                    st.error("Escribe un correo electrónico válido.")
+                    st.stop()
+                if int(monto_limpio) > int(saldo_limpio):
+                    st.error("El monto a retirar no puede superar el saldo disponible.")
+                    st.stop()
+                st.session_state.proposito = "Retiro de cesantías"
+                st.session_state.saldo_limpio = saldo_limpio
+                st.session_state.saldo_verificado = f"${int(saldo_limpio):,}".replace(",", ".")
+                st.session_state.monto = f"{int(monto_limpio):,}".replace(",", ".")
+                st.session_state.monto_limpio = monto_limpio
+                st.session_state.nombre = nombre.strip()
+                st.session_state.cedula = cedula_limpia
+                st.session_state.telefono = telefono_limpio
+                st.session_state.email = email_limpio
+                st.session_state.departamento = departamento
+                st.session_state.ciudad = ciudad.strip()
+                st.session_state.step = "resumen"
+                st.rerun()
 
-    st.markdown("### Datos personales")
-    col1, col2 = st.columns(2, gap="medium")
-    with col1:
-        cedula = st.text_input("Cédula", placeholder="Solo números", key="cedula_widget", on_change=limpiar_cedula_widget)
-        telefono = st.text_input("Celular (WhatsApp)", placeholder="3001234567", key="telefono_widget", on_change=limpiar_telefono_widget)
-        nombre = st.text_input("Nombre completo", placeholder="Como aparece en tu documento", key="nombre_widget")
-    with col2:
-        email = st.text_input("Correo electrónico", placeholder="tu@email.com", key="email_widget")
-        departamentos_colombia = [
-            "Amazonas", "Antioquia", "Arauca", "Atlántico", "Bogotá, D.C.", "Bolívar", "Boyacá", "Caldas", "Caquetá", "Casanare", "Cauca", "Cesar", "Chocó", "Córdoba", "Cundinamarca", "Guainía", "Guaviare", "Huila", "La Guajira", "Magdalena", "Meta", "Nariño", "Norte de Santander", "Putumayo", "Quindío", "Risaralda", "San Andrés y Providencia", "Santander", "Sucre", "Tolima", "Valle del Cauca", "Vaupés", "Vichada"
+
+def render_resumen():
+    render_brand_header(4)
+    with st.container(border=True):
+        render_screen_heading("file", "Resumen de tu solicitud", "Revisa que la información esté correcta antes de continuar.")
+        with st.container(border=True):
+            st.markdown('<div class="summary-check">✓</div>', unsafe_allow_html=True)
+            filas = [
+                ("Fondo de cesantías", st.session_state.get("fondo", "")),
+                ("Nombre completo", st.session_state.get("nombre", "")),
+                ("Cédula", st.session_state.get("cedula", "")),
+                ("Teléfono / WhatsApp", st.session_state.get("telefono", "")),
+                ("Correo electrónico", st.session_state.get("email", "")),
+                ("Departamento", st.session_state.get("departamento", "")),
+                ("Ciudad", st.session_state.get("ciudad", "")),
+                ("Saldo disponible", st.session_state.get("saldo_verificado", "")),
+                ("Monto solicitado", "$" + str(st.session_state.get("monto", ""))),
+            ]
+            cols = st.columns(2, gap="medium")
+            for i, (etiqueta, valor) in enumerate(filas):
+                with cols[i % 2]:
+                    st.markdown(
+                        f'<div class="summary-item"><small>{html.escape(etiqueta)}</small><strong>{html.escape(str(valor))}</strong></div>',
+                        unsafe_allow_html=True
+                    )
+        st.info("En la siguiente pantalla te explicaremos quiénes somos y cómo acompañamos tu solicitud.")
+        c1, c2 = st.columns([1, 1.8])
+        with c1:
+            if st.button("← Corregir datos", key="summary_back", use_container_width=True):
+                st.session_state.step = "datos_personales"
+                st.rerun()
+        with c2:
+            if st.button("Continuar  →", key="summary_continue", use_container_width=True):
+                st.session_state.step = "mision"
+                st.rerun()
+
+
+def render_mision():
+    render_brand_header(5)
+    with st.container(border=True):
+        render_screen_heading("mission", "Nuestra misión", "Queremos que conozcas cómo funciona nuestro acompañamiento.")
+        st.markdown("""
+        <section class="mission-hero">
+          <h3>Hacemos más sencillo tu proceso de retiro de cesantías</h3>
+          <p>En Cesantías al Instante te acompañamos en la organización de la información y en la preparación de la carta correspondiente, utilizando los datos y la plantilla asociados a tu empresa.</p>
+        </section>
+        """, unsafe_allow_html=True)
+        cols = st.columns(3, gap="medium")
+        cards = [
+            (icon_svg("shield"), "Acompañamiento", "Te guiamos paso a paso para reunir la información necesaria de tu solicitud."),
+            (icon_svg("file"), "Gestión organizada", "Registramos la solicitud y preparamos el documento con la plantilla correspondiente."),
+            (icon_svg("check"), "Claridad y seguridad", "Puedes revisar tus datos antes de confirmar y mantener un registro de tu trámite."),
         ]
-        departamento_valor = st.selectbox("Departamento", [""] + departamentos_colombia, key="departamento_widget", index=0)
-        ciudad_valor = st.text_input("Ciudad", placeholder="Escribe tu ciudad", key="ciudad_widget")
+        for col, (simbolo, titulo, texto) in zip(cols, cards):
+            with col:
+                st.markdown(f'<div class="mission-card"><div class="mission-symbol">{simbolo}</div><strong>{titulo}</strong><p>{texto}</p></div>', unsafe_allow_html=True)
+        st.markdown('<p style="color:#58708b;font-size:.84rem;margin:1rem 0 0">La preparación de la carta depende de que los datos sean correctos y de que exista una plantilla válida asociada a la empresa seleccionada.</p>', unsafe_allow_html=True)
+        c1, c2 = st.columns([1, 1.8])
+        with c1:
+            if st.button("← Atrás", key="mission_back", use_container_width=True):
+                st.session_state.step = "resumen"
+                st.rerun()
+        with c2:
+            if st.button("Continuar a mi empresa  →", key="mission_continue", use_container_width=True):
+                st.session_state.step = "empresa"
+                st.rerun()
 
-    # Datos de empresa y plantilla fueron seleccionados en la pantalla anterior.
-    empresa_seleccionada = st.session_state.get("empresa_seleccionada", "")
-    empresa_valor = st.session_state.get("empresa", "")
-    nit_auto = st.session_state.get("nit", "")
 
-    col1, col2 = st.columns([1, 1.5])
-    with col1:
-        if st.button("← Atrás", use_container_width=True):
-            st.session_state.step = 'pregunta2'
-            st.rerun()
-    with col2:
-        if st.button("Siguiente  ➜", use_container_width=True):
-            monto_raw_val = st.session_state.get("monto_raw_widget", "")
-            saldo_raw_val = st.session_state.get("saldo_widget", "")
-            telefono_val = st.session_state.get("telefono_widget", "")
-            nombre_val = st.session_state.get("nombre_widget", "")
-            cedula_val = st.session_state.get("cedula_widget", "")
-            email_val = st.session_state.get("email_widget", "")
+def render_empresa():
+    render_brand_header(6)
+    with st.container(border=True):
+        render_screen_heading("building", "Empresa donde trabajas", "Selecciona tu empresa para localizar el NIT y la plantilla de tu carta.")
+        st.markdown('<div class="personal-tip"><div class="personal-tip-icon">' + icon_svg("building") + '</div><div><strong>Buscamos tu empresa en nuestro registro</strong><p>La selección permite asociar automáticamente los datos y la plantilla disponibles en nuestra base de empresas.</p></div></div>', unsafe_allow_html=True)
+        try:
+            df_empresas = conn.read(worksheet="Empresas", ttl=0).dropna(how="all")
+            if "Nombre_Empresa" not in df_empresas.columns:
+                raise ValueError("La hoja Empresas debe tener la columna Nombre_Empresa.")
+            lista_empresas = df_empresas["Nombre_Empresa"].dropna().astype(str).str.strip().tolist()
+            lista_empresas = list(dict.fromkeys([x for x in lista_empresas if x and x.casefold() != "otra"]))
+        except Exception as exc:
+            st.error(f"No fue posible cargar la lista de empresas desde Google Sheets: {exc}")
+            st.stop()
 
-            if not monto_raw_val or not saldo_raw_val or not all([
-                telefono_val, nombre_val, cedula_val, email_val, empresa_seleccionada,
-                empresa_valor, nit_auto, ciudad_valor, departamento_valor
-            ]):
-                st.error("Completa el saldo, el monto, tus datos personales y el lugar de firma.")
-                st.stop()
-            if not st.session_state.get("doc_id_plantilla"):
-                st.error("No se puede continuar porque la empresa no tiene una plantilla asignada en la hoja Empresas.")
-                st.stop()
+        render_field_label("building", "Empresa donde trabajas")
+        empresa_seleccionada = st.selectbox(
+            "Selecciona tu empresa", [""] + lista_empresas + ["Otra"], label_visibility="collapsed", key="empresa_widget",
+            placeholder="Busca o selecciona tu empresa"
+        )
+        empresa_manual = ""
+        nit_manual = ""
+        if empresa_seleccionada == "Otra":
+            st.markdown('<div class="section-label">' + icon_svg("building") + ' Información de tu empresa</div>', unsafe_allow_html=True)
+            mc1, mc2 = st.columns(2, gap="medium")
+            with mc1:
+                render_field_label("building", "Nombre de la empresa")
+                empresa_manual = st.text_input("Nombre de la empresa", label_visibility="collapsed", placeholder="Razón social", key="empresa_manual_widget")
+            with mc2:
+                render_field_label("file", "NIT de la empresa")
+                nit_manual = st.text_input("NIT de la empresa", label_visibility="collapsed", placeholder="Número de NIT", key="nit_manual_widget")
+            st.info("Para la opción “Otra”, la hoja Empresas debe tener una fila con Nombre_Empresa = Otra y el Doc_ID de la plantilla general.")
+        elif empresa_seleccionada:
+            coincidencias = df_empresas[df_empresas["Nombre_Empresa"].astype(str).str.strip() == empresa_seleccionada]
+            nit_visible = ""
+            if not coincidencias.empty and "NIT" in df_empresas.columns:
+                valor_nit = coincidencias.iloc[0].get("NIT", "")
+                nit_visible = "" if pd.isna(valor_nit) else str(valor_nit).strip()
+            st.markdown(f'<div class="summary-item"><small>NIT registrado</small><strong>{html.escape(nit_visible or "No aparece un NIT en la hoja Empresas")}</strong></div>', unsafe_allow_html=True)
 
-            telefono_val = re.sub(r"\D", "", str(telefono_val))
-            cedula_val = re.sub(r"\D", "", str(cedula_val))
-            email_val = str(email_val).strip()
-            saldo_limpio = re.sub(r"[^0-9]", "", str(saldo_raw_val))
-            monto_limpio = re.sub(r"[^0-9]", "", str(monto_raw_val))
-
-            if len(telefono_val) != 10:
-                st.error("El WhatsApp debe tener exactamente 10 dígitos.")
-                st.stop()
-            if not cedula_val:
-                st.error("La cédula debe contener únicamente números.")
-                st.stop()
-            if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email_val):
-                st.error("Ingresa un correo válido, con @ y un punto después del @.")
-                st.stop()
-            if not saldo_limpio or not monto_limpio:
-                st.error("Ingresa valores numéricos válidos para saldo y monto.")
-                st.stop()
-            if int(monto_limpio) > int(saldo_limpio):
-                st.error("El monto supera el saldo ingresado.")
-                st.stop()
-
-            st.session_state.saldo_limpio = saldo_limpio
-            st.session_state.saldo_verificado = f"${f'{int(saldo_limpio):,}'.replace(',', '.')}"
-            st.session_state.monto = f"{int(monto_limpio):,}".replace(",", ".")
-            st.session_state.monto_limpio = monto_limpio
-            st.session_state.telefono = telefono_val
-            st.session_state.nombre = nombre_val.strip()
-            st.session_state.cedula = cedula_val
-            st.session_state.email = email_val
-            st.session_state.empresa = empresa_valor
-            st.session_state.nit = nit_auto
-            st.session_state.ciudad = ciudad_valor.strip()
-            st.session_state.departamento = departamento_valor.strip()
-            st.session_state.step = 'resultados'
-            st.rerun()
-    st.markdown("</div>", unsafe_allow_html=True)
-
-def render_resultados():
-    render_brand_header()
-    st.markdown('''
-    <div class="glass-container">
-      <div class="screen-heading"><div class="screen-icon">▤</div><div><h2>Resumen de tu solicitud</h2><p>Verifica que toda la información sea correcta.</p></div></div>
-      <div class="summary-panel">
-    ''', unsafe_allow_html=True)
-    col1, col2, col3 = st.columns([0.45, 1, 1], gap="medium")
-    with col1:
-        st.markdown('<div class="summary-check">✓</div>', unsafe_allow_html=True)
-    with col2:
-        st.markdown(f"**Motivo:** {st.session_state.proposito}")
-        st.markdown(f"**Empresa:** {st.session_state.empresa}")
-        st.markdown(f"**NIT:** {st.session_state.nit}")
-        st.markdown(f"**Fondo:** {st.session_state.fondo}")
-        st.markdown(f"**Cédula:** {st.session_state.cedula}")
-    with col3:
-        st.markdown(f"**Celular:** {st.session_state.telefono}")
-        st.markdown(f"**Correo:** {st.session_state.email}")
-        st.markdown(f"**Ciudad:** {st.session_state.ciudad}, {st.session_state.departamento}")
-        st.markdown(f"**Saldo disponible:** {st.session_state.saldo_verificado}")
-        st.markdown(f"**Monto a retirar:** ${st.session_state.monto}")
-    st.markdown("</div>", unsafe_allow_html=True)
-    st.info('Al hacer clic en “Confirmar solicitud”, registraremos tu solicitud y prepararemos la carta usando la plantilla asociada a tu empresa.')
-    col1, col2 = st.columns([1, 1.6])
-    with col1:
-        if st.button("← Atrás", use_container_width=True):
-            st.session_state.step = 'monto_exacto'
-            st.rerun()
-    with col2:
-        if st.button("Confirmar solicitud  ✓", use_container_width=True):
-            st.session_state.step = 'generando'
-            st.rerun()
-    st.markdown("</div>", unsafe_allow_html=True)
+        c1, c2 = st.columns([1, 1.8])
+        with c1:
+            if st.button("← Atrás", key="company_back", use_container_width=True):
+                st.session_state.step = "mision"
+                st.rerun()
+        with c2:
+            if st.button("Enviar solicitud  ✓", key="company_submit", use_container_width=True):
+                if not empresa_seleccionada:
+                    st.error("Selecciona la empresa donde trabajas.")
+                    st.stop()
+                try:
+                    if empresa_seleccionada == "Otra":
+                        if not empresa_manual.strip() or not nit_manual.strip():
+                            st.error("Escribe el nombre y el NIT de tu empresa.")
+                            st.stop()
+                        resolver_empresa_y_plantilla(empresa_seleccionada, empresa_manual, nit_manual)
+                        st.session_state.empresa = empresa_manual.strip()
+                        st.session_state.nit = nit_manual.strip()
+                    else:
+                        resolver_empresa_y_plantilla(empresa_seleccionada)
+                        st.session_state.empresa = empresa_seleccionada
+                    if not st.session_state.get("nit"):
+                        st.error("No encontramos un NIT asociado a esta empresa. Revisa la columna NIT de la hoja Empresas.")
+                        st.stop()
+                    if not st.session_state.get("doc_id_plantilla"):
+                        st.error("Esta empresa no tiene una plantilla asignada. Verifica la columna Doc_ID de la hoja Empresas.")
+                        st.stop()
+                    st.session_state.empresa_seleccionada = empresa_seleccionada
+                    st.session_state.step = "generando"
+                    st.rerun()
+                except Exception as exc:
+                    st.error(f"No se pudo validar la empresa o localizar su plantilla: {exc}")
+                    st.stop()
 
 def render_generando():
     """Crea registro, copia la plantilla, la rellena y exporta el PDF; luego muestra la confirmación."""
-    render_brand_header()
-    st.markdown('<div class="glass-container"><div class="screen-heading"><div class="screen-icon">✦</div><div><h2>Estamos preparando tu solicitud</h2><p>Estamos creando tu carta de retiro de cesantías.</p></div></div>', unsafe_allow_html=True)
+    render_brand_header(6)
+    with st.container(border=True):
+        render_screen_heading("file", "Estamos preparando tu carta", "Estamos registrando la solicitud y generando tu documento.")
 
     # ---------- GUARDAR SOLICITUD EN GOOGLE SHEETS ----------
     if not st.session_state.solicitud_guardada:
@@ -1820,30 +1355,24 @@ def render_generando():
                 st.rerun()
             st.stop()
 
-    st.markdown("</div>", unsafe_allow_html=True)
+    numero_solicitud_html = html.escape(str(st.session_state.solicitud_id))
     st.markdown(f"""
     <section class="success-shell">
       <div class="success-check">✓</div>
-      <h1>¡Solicitud Enviada!</h1>
-      <p>Tu solicitud de retiro de cesantías ha sido<br>procesada correctamente.</p>
-      <div class="success-email">✉️ &nbsp; Recibirás la carta en tu correo electrónico en pocos minutos.</div>
-      <p><strong>Número de solicitud:</strong> {st.session_state.solicitud_id}</p>
+      <h1>¡Tu solicitud fue enviada!</h1>
+      <p>Registramos correctamente tu solicitud de retiro de cesantías.</p>
+      <div class="success-delivery">✉ &nbsp; Nuestro equipo gestionará la entrega de tu carta al correo electrónico y al WhatsApp que registraste, dentro de las próximas 24 horas.</div>
+      <p><strong>Número de solicitud:</strong> {numero_solicitud_html}</p>
       <div class="footer-brand">Cesantías al Instante... siempre contigo</div>
     </section>
     """, unsafe_allow_html=True)
     if st.session_state.pdf_url:
-        st.link_button("📄 Abrir o descargar mi carta (PDF)", st.session_state.pdf_url, use_container_width=True)
+        st.link_button("Abrir o descargar mi carta (PDF)", st.session_state.pdf_url, use_container_width=True)
     if st.session_state.url_copia:
         st.link_button("Abrir documento editable", st.session_state.url_copia, use_container_width=True)
-    c1, c2 = st.columns(2)
-    with c1:
-        if st.button("Volver al inicio", use_container_width=True):
-            st.session_state.step = 'landing'
-            st.rerun()
-    with c2:
-        if st.button("Ver entrega y pago", use_container_width=True):
-            st.session_state.step = 'whatsapp_entrega'
-            st.rerun()
+    if st.button("Volver al inicio", key="finish_home", use_container_width=True):
+        st.session_state.step = 'landing'
+        st.rerun()
 
 def render_whatsapp_entrega():
     render_brand_header()
@@ -1875,7 +1404,6 @@ def render_pago():
 
 # ---------- MAIN ----------
 def main():
-
     # Google vuelve a la URL principal con code/state después de autorizar.
     if st.query_params.get("code") or st.query_params.get("error"):
         procesar_callback_oauth()
@@ -1885,40 +1413,40 @@ def main():
         render_token_oauth()
         return
 
-    # La configuración administrativa solo aparece al abrir ?configurar_drive=1.
+    # Configuración administrativa privada de Google Drive.
     if st.query_params.get("configurar_drive") == "1":
         render_configuracion_drive()
         return
 
-    if st.session_state.step == 'landing':
-        render_landing()
+    # El enlace de bienvenida inicia un trámite nuevo sin tocar OAuth ni conexiones.
+    if st.query_params.get("iniciar") == "1":
+        reiniciar_solicitud()
+        st.session_state.step = "seleccionar_fondo"
+        st.query_params.clear()
+        st.rerun()
 
-    elif st.session_state.step == 'pregunta1':
-        render_pregunta1()
+    # Migra sesiones que hubieran quedado en los nombres del flujo anterior.
+    migracion = {
+        "pregunta1": "seleccionar_fondo",
+        "pregunta2": "empresa",
+        "verificar_saldo": "datos_personales",
+        "monto_exacto": "datos_personales",
+        "resultados": "resumen",
+    }
+    paso_actual = st.session_state.get("step", "landing")
+    if paso_actual in migracion:
+        st.session_state.step = migracion[paso_actual]
 
-    elif st.session_state.step == 'pregunta2':
-        render_pregunta2()
-
-    elif st.session_state.step == 'verificar_saldo':
-        render_verificar_saldo()
-
-    elif st.session_state.step == 'monto_exacto':
-        render_monto_exacto()
-
-    elif st.session_state.step == 'resultados':
-        render_resultados()
-
-    elif st.session_state.step == 'generando':
-        render_generando()
-
-    elif st.session_state.step == 'whatsapp_entrega':
-        render_whatsapp_entrega()
-
-    elif st.session_state.step == 'pago':
-        render_pago()
-
-    else:
-        render_landing()
+    rutas = {
+        "landing": render_landing,
+        "seleccionar_fondo": render_seleccionar_fondo,
+        "datos_personales": render_datos_personales,
+        "resumen": render_resumen,
+        "mision": render_mision,
+        "empresa": render_empresa,
+        "generando": render_generando,
+    }
+    rutas.get(st.session_state.get("step", "landing"), render_landing)()
 
 
 if __name__ == "__main__":
