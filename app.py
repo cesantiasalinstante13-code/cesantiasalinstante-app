@@ -4,6 +4,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 import os
 import base64
+import mimetypes
 import re
 import hmac
 import hashlib
@@ -254,6 +255,131 @@ st.markdown("""
         .phone-number { font-size: 1.5rem; padding: 0.8rem; }
         .benefit-grid { grid-template-columns: 1fr 1fr; }
     }
+
+    /* ---------- LEGIBILIDAD Y CONTRASTE (ESPECIALMENTE MÓVILES) ---------- */
+    :root { color-scheme: light; }
+    .stApp {
+        color: #172B4D !important;
+    }
+    .stApp [data-testid="stMarkdownContainer"] p,
+    .stApp [data-testid="stMarkdownContainer"] li,
+    .stApp [data-testid="stText"] {
+        color: #263B53 !important;
+        opacity: 1 !important;
+    }
+    .stApp [data-testid="stMarkdownContainer"] strong,
+    .stApp [data-testid="stMarkdownContainer"] b {
+        color: #102A43 !important;
+    }
+    [data-testid="stWidgetLabel"] p,
+    [data-testid="stWidgetLabel"] label,
+    [data-testid="stWidgetLabel"] span,
+    [data-testid="stTextInput"] label,
+    [data-testid="stSelectbox"] label,
+    [data-testid="stRadio"] label {
+        color: #102A43 !important;
+        font-weight: 700 !important;
+        opacity: 1 !important;
+    }
+    [data-testid="stTextInput"] input,
+    [data-testid="stNumberInput"] input,
+    [data-testid="stTextArea"] textarea,
+    [data-testid="stSelectbox"] [data-baseweb="select"] *,
+    [data-baseweb="popover"] [role="option"] * {
+        color: #142B45 !important;
+        opacity: 1 !important;
+        font-weight: 500 !important;
+    }
+    [data-testid="stTextInput"] input,
+    [data-testid="stNumberInput"] input,
+    [data-testid="stTextArea"] textarea,
+    [data-testid="stSelectbox"] [data-baseweb="select"] > div {
+        background-color: #FFFFFF !important;
+        border-color: #B8C5D3 !important;
+    }
+    [data-testid="stTextInput"] input::placeholder,
+    [data-testid="stTextArea"] textarea::placeholder {
+        color: #65758B !important;
+        opacity: 1 !important;
+    }
+    [data-testid="stTextInput"] input:disabled {
+        color: #34495E !important;
+        -webkit-text-fill-color: #34495E !important;
+        opacity: 1 !important;
+        background-color: #F1F5F9 !important;
+    }
+    [data-testid="stCaptionContainer"] p,
+    .stCaption,
+    .step-text {
+        color: #40566E !important;
+        opacity: 1 !important;
+    }
+    .sub-title { color: #40566E !important; }
+    .benefit-card p { color: #52657B !important; }
+    .stRadio > div > label { color: #102A43 !important; }
+    [data-testid="stAlert"] [data-testid="stMarkdownContainer"] * {
+        color: #243B53 !important;
+        opacity: 1 !important;
+    }
+    .fund-logo-box {
+        height: 112px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 8px;
+        background: #FFFFFF;
+        border-radius: 12px;
+        margin-bottom: 8px;
+    }
+    .fund-logo-box img {
+        display: block;
+        max-width: 100%;
+        max-height: 94px;
+        width: auto;
+        height: auto;
+        object-fit: contain;
+    }
+    .fund-emoji {
+        height: 112px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 3.4rem;
+    }
+    .fund-name {
+        color: #102A43 !important;
+        font-size: 1.05rem;
+        line-height: 1.3;
+        font-weight: 800;
+        text-align: center;
+        min-height: 2.7rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 4px 0 10px 0;
+    }
+    @media (max-width: 640px) {
+        .glass-container {
+            padding: 1.2rem 0.85rem;
+            margin: 0.45rem 0.2rem;
+            border-radius: 22px;
+        }
+        .main-title { font-size: 2.15rem; }
+        .sub-title { font-size: 1rem; }
+        [data-testid="stWidgetLabel"] p,
+        [data-testid="stWidgetLabel"] span {
+            font-size: 0.98rem !important;
+        }
+        [data-testid="stTextInput"] input,
+        [data-testid="stTextArea"] textarea,
+        [data-testid="stSelectbox"] [data-baseweb="select"] {
+            font-size: 16px !important;
+        }
+        .fund-logo-box, .fund-emoji { height: 96px; }
+        .fund-logo-box img { max-height: 80px; }
+        .fund-name { font-size: 1rem; min-height: 2.5rem; }
+    }
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -962,87 +1088,74 @@ def render_pregunta2():
     assets_dir = os.path.join(current_dir, "assets")
 
     def get_logo_path(filename):
-        path = os.path.join(assets_dir, filename)
-        return path if os.path.exists(path) else None
+        """Busca el logo en assets/ o assets/logos/, admitiendo PNG, JPG y WEBP."""
+        if not filename:
+            return None
+
+        nombre_base = os.path.splitext(filename)[0]
+        # También acepta nombres simples, por ejemplo porvenir.png.
+        nombre_simple = re.sub(r"_logo$", "", nombre_base, flags=re.IGNORECASE)
+        nombres_validos = {nombre_base.lower(), nombre_simple.lower()}
+        extensiones = {".png", ".jpg", ".jpeg", ".webp"}
+
+        for carpeta in (assets_dir, os.path.join(assets_dir, "logos")):
+            if not os.path.isdir(carpeta):
+                continue
+            try:
+                for archivo in os.listdir(carpeta):
+                    base, extension = os.path.splitext(archivo)
+                    if base.lower() in nombres_validos and extension.lower() in extensiones:
+                        return os.path.join(carpeta, archivo)
+            except OSError:
+                continue
+        return None
 
     fondos = [
-        {
-            "key": "porv",
-            "nombre": "Porvenir",
-            "logo": "Porvenir_logo.png",
-            "emoji": "🏦"
-        },
-        {
-            "key": "colf",
-            "nombre": "Colfondos",
-            "logo": "Colfondos_logo.png",
-            "emoji": "🏢"
-        },
-        {
-            "key": "prot",
-            "nombre": "Protección",
-            "logo": "Proteccion_logo.png",
-            "emoji": "🛡️"
-        },
-        {
-            "key": "fna",
-            "nombre": "FNA",
-            "logo": "FNA_logo.png",
-            "emoji": "🏛️"
-        },
-        {
-            "key": "otro",
-            "nombre": "Otro",
-            "logo": None,
-            "emoji": "❓"
-        }
+        {"key": "porv", "nombre": "Porvenir", "logo": "Porvenir_logo.png", "emoji": "🏦"},
+        {"key": "colf", "nombre": "Colfondos", "logo": "Colfondos_logo.png", "emoji": "🏢"},
+        {"key": "prot", "nombre": "Protección", "logo": "Proteccion_logo.png", "emoji": "🛡️"},
+        {"key": "fna", "nombre": "FNA", "logo": "FNA_logo.png", "emoji": "🏛️"},
+        {"key": "otro", "nombre": "Otro", "logo": None, "emoji": "❓"}
     ]
 
-    columns = st.columns(5)
+    # Dos tarjetas por fila: son más fáciles de leer y tocar en pantallas pequeñas.
+    for inicio in range(0, len(fondos), 2):
+        columnas = st.columns(2, gap="medium")
+        for columna, fondo in zip(columnas, fondos[inicio:inicio + 2]):
+            with columna:
+                with st.container(border=True):
+                    logo_path = get_logo_path(fondo["logo"])
 
-    for idx, fondo in enumerate(fondos):
-        with columns[idx]:
+                    if logo_path:
+                        with open(logo_path, "rb") as archivo_logo:
+                            logo_bytes = archivo_logo.read()
+                        logo_b64 = base64.b64encode(logo_bytes).decode("ascii")
+                        mime_type = mimetypes.guess_type(logo_path)[0] or "image/png"
+                        st.markdown(
+                            f'<div class="fund-logo-box"><img '
+                            f'src="data:{mime_type};base64,{logo_b64}" '
+                            f'alt="Logo de {fondo["nombre"]}"></div>',
+                            unsafe_allow_html=True
+                        )
+                    else:
+                        st.markdown(
+                            f'<div class="fund-emoji">{fondo["emoji"]}</div>',
+                            unsafe_allow_html=True
+                        )
 
-            logo_path = (
-                get_logo_path(fondo["logo"])
-                if fondo["logo"]
-                else None
-            )
+                    st.markdown(
+                        f'<div class="fund-name">{fondo["nombre"]}</div>',
+                        unsafe_allow_html=True
+                    )
 
-            if logo_path:
-                with open(logo_path, "rb") as f:
-                    img_data = base64.b64encode(f.read()).decode()
-
-                st.markdown(
-                    f'<div style="display:flex;justify-content:center;'
-                    f'align-items:center;height:120px;">'
-                    f'<img src="data:image/png;base64,{img_data}" '
-                    f'style="max-width:100px;max-height:100px;'
-                    f'object-fit:contain;"></div>',
-                    unsafe_allow_html=True
-                )
-            else:
-                st.markdown(
-                    f'<p style="font-size:4rem;text-align:center;">'
-                    f'{fondo["emoji"]}</p>',
-                    unsafe_allow_html=True
-                )
-
-            st.markdown(
-                f'<div style="text-align:center;font-weight:600;'
-                f'color:#0A2540;margin:8px 0;font-size:0.9rem;">'
-                f'{fondo["nombre"]}</div>',
-                unsafe_allow_html=True
-            )
-
-            if st.button(
-                "Seleccionar",
-                key=fondo["key"],
-                use_container_width=True
-            ):
-                st.session_state.fondo = fondo["nombre"]
-                st.session_state.step = 'verificar_saldo'
-                st.rerun()
+                    if st.button(
+                        "Seleccionar",
+                        key=fondo["key"],
+                        use_container_width=True
+                    ):
+                        st.session_state.fondo = fondo["nombre"]
+                        st.session_state.step = 'verificar_saldo'
+                        st.rerun()
 
     if st.button("↩️ Atrás", use_container_width=True):
         st.session_state.step = 'pregunta1'
