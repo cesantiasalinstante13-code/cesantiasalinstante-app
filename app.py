@@ -419,6 +419,82 @@ def render_configuracion_drive():
         st.info("Introduce la clave administrativa para iniciar la conexión.")
         st.stop()
 
+    # Prueba administrativa de solo lectura: valida el token y localiza la
+    # carpeta de plantillas sin crear solicitudes ni modificar archivos.
+    if str(datos.get("refresh_token", "")).strip():
+        if st.button("Probar conexión a Google Drive", use_container_width=True):
+            try:
+                servicio = obtener_servicio_drive()
+                perfil = servicio.about().get(
+                    fields="user(displayName,emailAddress)"
+                ).execute()
+                usuario_drive = perfil.get("user", {})
+                st.success("La conexión OAuth con Google Drive funciona.")
+                if usuario_drive.get("emailAddress"):
+                    st.write(
+                        f"**Cuenta autorizada:** {usuario_drive['emailAddress']}"
+                    )
+                if usuario_drive.get("displayName"):
+                    st.write(
+                        f"**Nombre de la cuenta:** {usuario_drive['displayName']}"
+                    )
+
+                consulta = (
+                    "name = 'Plantillas_Cesantias' and "
+                    "mimeType = 'application/vnd.google-apps.folder' and "
+                    "trashed = false"
+                )
+                resultado = servicio.files().list(
+                    q=consulta,
+                    spaces="drive",
+                    pageSize=100,
+                    fields="files(id,name,mimeType,webViewLink)"
+                ).execute()
+                carpetas = resultado.get("files", [])
+
+                if carpetas:
+                    st.success(
+                        f"Encontré {len(carpetas)} carpeta(s) llamada(s) "
+                        "Plantillas_Cesantias."
+                    )
+                    for carpeta in carpetas:
+                        st.write(
+                            f"**Carpeta:** {carpeta.get('name', '')}  "
+                            f"· **ID:** `{carpeta.get('id', '')}`"
+                        )
+                        contenido = servicio.files().list(
+                            q=f"'{carpeta['id']}' in parents and trashed = false",
+                            spaces="drive",
+                            pageSize=100,
+                            fields="files(id,name,mimeType,webViewLink)"
+                        ).execute().get("files", [])
+                        st.write(
+                            f"Archivos visibles dentro de esta carpeta: "
+                            f"**{len(contenido)}**"
+                        )
+                        if contenido:
+                            st.dataframe(
+                                [{
+                                    "Nombre": archivo.get("name", ""),
+                                    "Tipo": archivo.get("mimeType", ""),
+                                    "ID": archivo.get("id", "")
+                                } for archivo in contenido],
+                                use_container_width=True,
+                                hide_index=True
+                            )
+                else:
+                    st.warning(
+                        "La conexión funciona, pero no encontré una carpeta "
+                        "con el nombre exacto Plantillas_Cesantias. Comprueba "
+                        "que seleccionaste el Gmail correcto y que la carpeta "
+                        "esté en su Drive o compartida con esa cuenta."
+                    )
+            except Exception as e:
+                st.error(
+                    "No se pudo comprobar el acceso a Google Drive. "
+                    f"Detalle: {e}"
+                )
+
     if st.button("Generar enlace de autorización de Google"):
         state = crear_estado_oauth(clave_correcta)
         flujo = crear_flujo_oauth(state=state)
