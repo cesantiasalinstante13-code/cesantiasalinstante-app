@@ -8,6 +8,7 @@ import hmac
 import hashlib
 import secrets
 import time
+from threading import Lock
 from streamlit_gsheets import GSheetsConnection
 from google.oauth2.credentials import Credentials as UserCredentials
 from google_auth_oauthlib.flow import Flow
@@ -283,8 +284,46 @@ def obtener_config_oauth():
         ) from e
 
 
-def crear_flujo_oauth(state=None):
-    """Prepara el flujo OAuth del servidor para la cuenta personal administradora."""
+@st.cache_resource
+def obtener_almacen_pkce():
+    """Almacén temporal compartido entre sesiones Streamlit para completar PKCE."""
+    return {"lock": Lock(), "verificadores": {}}
+
+
+def guardar_verificador_pkce(state, code_verifier):
+    """Guarda el verificador en el servidor, nunca en la URL ni en el navegador."""
+    almacen = obtener_almacen_pkce()
+    ahora = time.time()
+    with almacen["lock"]:
+        # Elimina solicitudes anteriores para que el almacén no crezca sin límite.
+        vencidos = [
+            clave for clave, valor in almacen["verificadores"].items()
+            if ahora - valor["creado"] > 600
+        ]
+        for clave in vencidos:
+            almacen["verificadores"].pop(clave, None)
+        almacen["verificadores"][state] = {
+            "code_verifier": code_verifier,
+            "creado": ahora
+        }
+
+
+def consumir_verificador_pkce(state):
+    """Recupera una sola vez el verificador asociado al state y valida su vigencia."""
+    almacen = obtener_almacen_pkce()
+    with almacen["lock"]:
+        registro = almacen["verificadores"].pop(state, None)
+    if not registro or time.time() - registro["creado"] > 600:
+        return None
+    return registro["code_verifier"]
+
+
+def crear_flujo_oauth(
+    state=None,
+    code_verifier=None,
+    autogenerate_code_verifier=True
+):
+    """Prepara OAuth y permite reutilizar el mismo verificador PKCE en el callback."""
     datos = obtener_config_oauth()
     config_cliente = {
         "web": {
@@ -298,7 +337,9 @@ def crear_flujo_oauth(state=None):
     flujo = Flow.from_client_config(
         config_cliente,
         scopes=[GOOGLE_DRIVE_SCOPE],
-        state=state
+        state=state,
+        code_verifier=code_verifier,
+        autogenerate_code_verifier=autogenerate_code_verifier
     )
     flujo.redirect_uri = datos["redirect_uri"]
     return flujo
@@ -381,11 +422,20 @@ def render_configuracion_drive():
     if st.button("Generar enlace de autorización de Google"):
         state = crear_estado_oauth(clave_correcta)
         flujo = crear_flujo_oauth(state=state)
-        url_autorizacion, _ = flujo.authorization_url(
+        url_autorizacion, state_generado = flujo.authorization_url(
             access_type="offline",
             prompt="consent",
             include_granted_scopes="true"
         )
+        # PKCE: el verificador creado para esta solicitud debe sobrevivir al
+        # regreso desde Google y reutilizarse exactamente en el intercambio.
+        if not flujo.code_verifier:
+            st.error(
+                "No se pudo generar el verificador de seguridad PKCE. "
+                "Revisa que google-auth-oauthlib esté instalado y vuelve a intentar."
+            )
+            st.stop()
+        guardar_verificador_pkce(state_generado, flujo.code_verifier)
         st.session_state["url_autorizacion_drive"] = url_autorizacion
 
     url = st.session_state.get("url_autorizacion_drive")
@@ -427,8 +477,22 @@ def procesar_callback_oauth():
                 "Vuelve a iniciar la autorización desde la configuración privada."
             )
 
-        flujo = crear_flujo_oauth(state=state)
-        flujo.fetch_token(code=codigo)
+        # El callback puede abrirse en otra pestaña y crear otra sesión Streamlit.
+        # Por eso el verificador se recupera del almacén privado del servidor,
+        # usando el state firmado como identificador de esta autorización.
+        code_verifier = consumir_verificador_pkce(state)
+        if not code_verifier:
+            raise RuntimeError(
+                "No se encontró el verificador PKCE de esta autorización o ya venció. "
+                "Vuelve a Configuración de Drive y genera un enlace de autorización nuevo."
+            )
+
+        flujo = crear_flujo_oauth(
+            state=state,
+            code_verifier=code_verifier,
+            autogenerate_code_verifier=False
+        )
+        flujo.fetch_token(code=codigo, code_verifier=code_verifier)
         credenciales = flujo.credentials
         refresh_token = credenciales.refresh_token
 
@@ -442,10 +506,14 @@ def procesar_callback_oauth():
         # muestra en una página pública ni vuelve a intercambiar el mismo code.
         st.session_state["oauth_pending_refresh_token"] = refresh_token
         st.session_state["oauth_token_unlocked"] = False
+        st.session_state.pop("url_autorizacion_drive", None)
         st.query_params.clear()
         st.rerun()
 
     except Exception as e:
+        # El código OAuth de esta vuelta es de un solo uso; para reintentar se
+        # debe generar un enlace nuevo y, por tanto, un nuevo verificador PKCE.
+        st.session_state.pop("url_autorizacion_drive", None)
         st.error(f"No se pudo completar la autorización OAuth: {e}")
         if st.button("Volver a configuración de Drive"):
             st.query_params.clear()
