@@ -91,6 +91,7 @@ html,body,[class*="css"],.stApp{font-family:Inter,Arial,sans-serif!important}
 .hero-cta{display:inline-flex;align-items:center;justify-content:center;gap:.55rem;min-height:52px;max-width:100%;padding:.8rem 1.9rem;border-radius:100px;color:#082c68!important;background:linear-gradient(110deg,#ffda55,#ffad00);font-size:1.02rem;font-weight:900;text-decoration:none!important;box-shadow:0 10px 26px #ffb51b55;transition:transform .18s,box-shadow .18s}
 .hero-cta:hover{transform:translateY(-3px);box-shadow:0 14px 30px #ffb51b77}
 .hero-person{position:relative;min-height:545px;align-self:stretch;overflow:hidden;border-radius:0 0 0 105px}
+.hero-person picture{position:absolute;inset:0;display:block;width:100%;height:100%}
 .hero-person img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center 20%}
 .hero-person:after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,#07377f 0%,transparent 27%),linear-gradient(0deg,#00499a22,transparent 48%);pointer-events:none}
 /* Tarjetas e inputs */
@@ -1824,13 +1825,22 @@ def obtener_logo_app_path():
     return None
 
 
-def obtener_imagen_hero_path():
-    """Imagen de bienvenida; se mantiene separada de las plantillas de Google Docs."""
+def obtener_imagen_hero_path(es_pc=False):
+    """Localiza la foto específica para PC o móvil, con alternativa automática.
+
+    Nombres esperados dentro de assets:
+      - hero_mujer_PC.png  -> escritorio (ancho desde 761 px)
+      - hero_mujer.png     -> teléfono (hasta 760 px)
+    Si falta una de las dos, utiliza la otra como respaldo.
+    """
     base_dir = os.path.dirname(os.path.abspath(__file__))
+    nombre_preferido = "hero_mujer_PC.png" if es_pc else "hero_mujer.png"
+    nombre_respaldo = "hero_mujer.png" if es_pc else "hero_mujer_PC.png"
     for carpeta in (os.path.join(base_dir, "assets"), base_dir):
-        ruta = os.path.join(carpeta, "hero_mujer.png")
-        if os.path.isfile(ruta):
-            return ruta
+        for nombre in (nombre_preferido, nombre_respaldo):
+            ruta = os.path.join(carpeta, nombre)
+            if os.path.isfile(ruta):
+                return ruta
     return None
 
 
@@ -1969,9 +1979,23 @@ def reiniciar_solicitud():
 def render_landing():
     """Bienvenida con CTA Streamlit dentro del mismo contenedor visual."""
     logo_uri = imagen_data_uri(obtener_logo_app_path())
-    hero_uri = imagen_data_uri(obtener_imagen_hero_path())
+    # La etiqueta <picture> selecciona PC o móvil según el ancho real del navegador.
+    hero_pc_uri = imagen_data_uri(obtener_imagen_hero_path(es_pc=True))
+    hero_mobile_uri = imagen_data_uri(obtener_imagen_hero_path(es_pc=False))
     logo_html = f'<img src="{logo_uri}" alt="Logo Cesantías al Instante">' if logo_uri else '<strong>Cesantías al Instante</strong>'
-    hero_html = f'<img src="{hero_uri}" alt="Asesora de Cesantías al Instante">' if hero_uri else ''
+    if hero_pc_uri or hero_mobile_uri:
+        imagen_respaldo = hero_mobile_uri or hero_pc_uri
+        fuente_pc = (
+            f'<source media="(min-width: 761px)" srcset="{hero_pc_uri}">'
+            if hero_pc_uri else ""
+        )
+        hero_html = (
+            f'<picture class="hero-picture">{fuente_pc}'
+            f'<img src="{imagen_respaldo}" alt="Asesora de Cesantías al Instante">'
+            f'</picture>'
+        )
+    else:
+        hero_html = ''
     with st.container(key="landing_wrap"):
         st.markdown(f"""
         <section class="hero-shell">
