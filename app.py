@@ -30,7 +30,7 @@ st.set_page_config(
 )
 
 # ---------- SISTEMA VISUAL PREMIUM COMPLETAMENTE RESPONSIVO (MAQUETA EXACTA) ----------
-st.markdown(r\"\"\"
+st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
 :root{
@@ -224,7 +224,7 @@ html,body,[class*="css"],.stApp{font-family:Inter,Arial,sans-serif!important}
  }
 }
 </style>
-\"\"\", unsafe_allow_html=True)
+""", unsafe_allow_html=True)
 
 # ---------- ESTADO INICIAL ----------
 if 'step' not in st.session_state:
@@ -244,7 +244,7 @@ for key in [
 
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# ---------- BACKEND LOGIC: GOOGLE OAUTH & DRIVE ----------
+# ---------- BACKEND LOGIC: GOOGLE OAUTH & DRIVE (INTACTOS) ----------
 def obtener_config_oauth():
     try:
         return dict(st.secrets["google_oauth"])
@@ -465,10 +465,10 @@ def render_field_label(icono, texto):
 
 def render_brand_header(etapa=2):
     logo_uri = imagen_data_uri(obtener_logo_app_path())
-    logo_html = f'<img src=\"{logo_uri}\" alt=\"Logo\">' if logo_uri else '<strong>Cesantías al Instante</strong>'
+    logo_html = f'<img src="{logo_uri}" alt="Logo">' if logo_uri else '<strong>Cesantías al Instante</strong>'
     st.markdown(f'<div class="brand-header"><div class="brand-logo-wrap">{logo_html}</div><div class="brand-trust"><span>✓</span> Trámite fácil y seguro</div></div>', unsafe_allow_html=True)
     etiquetas = ["Inicio", "Motivo", "Datos", "Resumen", "Misión", "Empresa"]
-    pasos = [f'<div class="journey-step {\"active\" if n==etapa else (\"done\" if n<etapa else \"\")}\"><div class="journey-dot">{\"✓\" if n<etapa else n}</div><span>{et}</span></div>' for n, et in enumerate(etiquetas, 1)]
+    pasos = [f'<div class="journey-step {"active" if n==etapa else ("done" if n<etapa else "")}"><div class="journey-dot">{"✓" if n<etapa else n}</div><span>{et}</span></div>' for n, et in enumerate(etiquetas, 1)]
     st.markdown(f'<div class="journey-wrap"><div class="journey">{"".join(pasos)}</div></div>', unsafe_allow_html=True)
 
 def reiniciar_solicitud():
@@ -477,11 +477,11 @@ def reiniciar_solicitud():
 
 # ---------- PANTALLA 1: PORTADA INTEGRADA PREMIUM ----------
 def render_landing():
-    logo_html = f'<img src=\"{imagen_data_uri(obtener_logo_app_path())}\" alt=\"Logo\">' if obtener_logo_app_path() else '<strong>Cesantías al Instante</strong>'
-    hero_html = f'<img src=\"{imagen_data_uri(obtener_imagen_hero_path())}\" alt=\"Hero\">' if obtener_imagen_hero_path() else ''
+    logo_html = f'<img src="{imagen_data_uri(obtener_logo_app_path())}" alt="Logo">' if obtener_logo_app_path() else '<strong>Cesantías al Instante</strong>'
+    hero_html = f'<img src="{imagen_data_uri(obtener_imagen_hero_path())}" alt="Hero">' if obtener_imagen_hero_path() else ''
     
     with st.container(key="landing_wrap"):
-        st.markdown(f\"\"\"
+        st.markdown(f"""
         <section class="hero-shell">
           <div class="hero-copy">
             <div class="hero-logo">{logo_html}</div>
@@ -495,7 +495,7 @@ def render_landing():
           </div>
           <div class="hero-person">{hero_html}</div>
         </section>
-        \"\"\", unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
         if st.button("Comenzar ahora  ➜", key="landing_start"):
             reiniciar_solicitud()
             st.session_state.step = "seleccionar_fondo"
@@ -507,7 +507,8 @@ def render_seleccionar_fondo():
     with st.container(key="screen_fund"):
         render_screen_heading("fund", "¿Cuál es el motivo de tu retiro?", "Selecciona la opción que mejor se ajuste a tu caso.")
         
-        st.markdown(\"\"\"
+        # Inyección directa HTML estructurada con clases CSS nativas responsivas
+        st.markdown("""
         <div class="premium-flex-grid">
             <div class="premium-flex-row">
                 <div class="premium-flex-col"><div class="premium-card-btn"><div class="premium-card-icon">🏠</div><div class="premium-card-title">Vivienda</div><div class="premium-card-desc">Compra o mejora de vivienda</div></div></div>
@@ -522,8 +523,9 @@ def render_seleccionar_fondo():
                 <div class="premium-flex-col"><div class="premium-card-btn"><div class="premium-card-icon">•••</div><div class="premium-card-title">Otro motivo</div><div class="premium-card-desc">Otra razón válida</div></div></div>
             </div>
         </div>
-        \"\"\", unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
         
+        # Mapeo de Selección Estricto por Columnas Invisibles Compatibles con Streamlit State
         c1, c2 = st.columns(2)
         with c1:
             opcion = st.selectbox("Selecciona formalmente el motivo:", ["", "Vivienda", "Educación", "Salud", "Vacaciones", "Vehículo", "Otro motivo"], index=0, key="motivo_dropdown")
@@ -539,7 +541,7 @@ def render_seleccionar_fondo():
                 if not opcion:
                     st.error("Por favor, selecciona una opción de la lista para continuar.")
                 else:
-                    st.session_state.fondo = opcion
+                    st.session_state.fondo = opcion  # Guardamos la selección compatible con tu hoja de cálculo
                     st.session_state.step = "datos_personales"
                     st.rerun()
 
@@ -765,14 +767,14 @@ def render_generando():
         except Exception as e:
             st.error(f"Error PDF: {e}"); st.stop()
 
-    st.markdown(f\"\"\"
+    st.markdown(f"""
     <section class="success-shell">
       <div class="success-check">✓</div>
       <h1>¡Solicitud Procesada!</h1>
       <p>Tu documentación ha sido estructurada con éxito bajo el radicado: <strong>{st.session_state.solicitud_id}</strong></p>
       <div class="success-delivery">Recibirás la confirmación formal en tu correo y WhatsApp registrados dentro de los próximos minutos.</div>
     </section>
-    \"\"\", unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
     
     if st.session_state.pdf_url:
         st.link_button("📥 Descargar mi carta editable (PDF)", st.session_state.pdf_url)
