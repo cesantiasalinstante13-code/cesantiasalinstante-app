@@ -811,516 +811,261 @@ st.markdown(r"""
   outline:3px solid rgba(16,188,232,.55)!important;
   outline-offset:3px!important;
 }
-@media(max-width:760px){
-  .st-key-screen_fund [class*="st-key-fund_card_"] {
-    min-height:176px!important;
-    padding:.8rem .5rem .65rem!important;
-    border-radius:16px!important;
-  }
-  .st-key-screen_fund .fund-card-title {
-    min-height:1.55rem;
-    font-size:clamp(1rem,4vw,1.18rem);
-  }
-  .st-key-screen_fund .fund-card-logo {height:76px;min-height:76px;padding:.08rem;overflow:hidden}
-  .st-key-screen_fund .fund-card-logo img {max-height:66px;max-width:88%}
-  .st-key-screen_fund .fund-card-logo svg {width:40px;height:40px;max-width:100%;max-height:100%}
-}
-@media(max-width:390px){
-  .st-key-screen_fund [class*="st-key-fund_card_"] {min-height:164px!important;padding:.72rem .38rem .55rem!important}
-  .st-key-screen_fund .fund-card-title {font-size:.98rem}
-  .st-key-screen_fund .fund-card-logo {height:68px;min-height:68px}
-  .st-key-screen_fund .fund-card-logo img {max-height:58px;max-width:86%}
-  .st-key-screen_fund .fund-card-logo svg {width:35px;height:35px}
-}
+
 </style>
 """, unsafe_allow_html=True)
 
-# ---------- PANTALLA 2: AJUSTE EXCLUSIVO PARA TELÉFONOS ----------
-# En escritorio se conserva la cuadrícula original de dos fondos por fila.
-# En teléfonos también se mantienen DOS tarjetas por fila, en tamaño compacto.
+
+# ---------- PANTALLA 2: CSS MÓVIL CONSOLIDADO ----------
 st.markdown(r"""
 <style>
 @media (max-width: 600px) {
+  /* Mantener el panel y sus columnas dentro del ancho real del teléfono. */
   .st-key-screen_fund {
-    width: 100% !important;
-    max-width: 100% !important;
-    padding: .82rem .58rem 1rem !important;
-    margin: .3rem auto .75rem !important;
-    border-radius: 18px !important;
-    box-sizing: border-box !important;
+    width:100% !important;
+    max-width:100% !important;
+    min-width:0 !important;
+    box-sizing:border-box !important;
+    padding:.82rem .58rem 1rem !important;
+    overflow:hidden !important;
   }
-  .st-key-screen_fund .screen-heading {
-    align-items: center !important;
-    gap: .58rem !important;
-    margin: .04rem 0 .78rem !important;
-  }
-  .st-key-screen_fund .screen-heading .screen-icon {
-    width: 41px !important;
-    height: 41px !important;
-    flex: 0 0 41px !important;
-    border-radius: 12px !important;
-  }
-  .st-key-screen_fund .screen-heading h2 {
-    font-size: 1.12rem !important;
-    line-height: 1.16 !important;
-  }
-  .st-key-screen_fund .screen-heading p {
-    font-size: .79rem !important;
-    line-height: 1.32 !important;
-  }
-
-  /* Las dos tarjetas de cada fila permanecen lado a lado en móvil. */
   .st-key-screen_fund [data-testid="stHorizontalBlock"]:not(:has(.st-key-fund_card_otro_fondo)) {
-    display: flex !important;
-    flex-direction: row !important;
-    flex-wrap: nowrap !important;
-    align-items: stretch !important;
-    justify-content: space-between !important;
-    gap: .48rem !important;
-    width: 100% !important;
+    display:grid !important;
+    grid-template-columns:repeat(2,minmax(0,1fr)) !important;
+    align-items:stretch !important;
+    gap:.58rem !important;
+    width:100% !important;
+    max-width:100% !important;
+    min-width:0 !important;
+    box-sizing:border-box !important;
   }
   .st-key-screen_fund [data-testid="stHorizontalBlock"]:not(:has(.st-key-fund_card_otro_fondo)) > [data-testid="column"] {
-    display: block !important;
-    flex: 1 1 0 !important;
-    width: calc(50% - .24rem) !important;
-    min-width: 0 !important;
-    max-width: calc(50% - .24rem) !important;
-    padding: 0 !important;
+    display:block !important;
+    width:100% !important;
+    max-width:100% !important;
+    min-width:0 !important;
+    flex:initial !important;
+    padding:0 !important;
+    box-sizing:border-box !important;
   }
 
-  /* La fila final contiene solo "Otro Fondo", centrado. */
-  .st-key-screen_fund [data-testid="stHorizontalBlock"]:has(.st-key-fund_card_otro_fondo) {
-    display: flex !important;
-    flex-direction: row !important;
-    flex-wrap: nowrap !important;
-    justify-content: center !important;
-    align-items: stretch !important;
-    gap: 0 !important;
-    width: 100% !important;
-  }
-  .st-key-screen_fund [data-testid="stHorizontalBlock"]:has(.st-key-fund_card_otro_fondo) > [data-testid="column"]:not(:has(.st-key-fund_card_otro_fondo)) {
-    display: none !important;
-  }
-  .st-key-screen_fund [data-testid="stHorizontalBlock"]:has(.st-key-fund_card_otro_fondo) > [data-testid="column"]:has(.st-key-fund_card_otro_fondo) {
-    display: block !important;
-    flex: 0 1 72% !important;
-    width: 72% !important;
-    min-width: 0 !important;
-    max-width: 72% !important;
-    margin-left: auto !important;
-    margin-right: auto !important;
-    padding: 0 !important;
-  }
-
-  /* Compactamos cada tarjeta, sin reducir demasiado el logo ni el nombre. */
+  /* Cada tarjeta es un cuadrado real. La primera pieza (HTML de nombre+logo)
+     ocupa todo el cuadrado; el botón transparente cubre la superficie aparte. */
   .st-key-screen_fund [class*="st-key-fund_card_"] {
-    width: 100% !important;
-    min-width: 0 !important;
-    min-height: 145px !important;
-    height: 100% !important;
-    padding: .68rem .28rem .55rem !important;
-    border-radius: 15px !important;
-    gap: .12rem !important;
-    box-sizing: border-box !important;
-    margin: 0 !important;
-    transform: none !important;
+    position:relative !important;
+    display:grid !important;
+    grid-template-columns:minmax(0,1fr) !important;
+    grid-template-rows:minmax(0,1fr) !important;
+    align-items:stretch !important;
+    justify-items:stretch !important;
+    width:100% !important;
+    min-width:0 !important;
+    min-height:0 !important;
+    height:auto !important;
+    max-height:none !important;
+    aspect-ratio:1 / 1 !important;
+    padding:.52rem .34rem .38rem !important;
+    margin:0 !important;
+    gap:0 !important;
+    box-sizing:border-box !important;
+    border-radius:15px !important;
+    overflow:hidden !important;
+  }
+  .st-key-screen_fund [class*="st-key-fund_card_"] > [data-testid="stElementContainer"]:first-child {
+    grid-column:1 !important;
+    grid-row:1 !important;
+    display:flex !important;
+    align-self:stretch !important;
+    width:100% !important;
+    height:100% !important;
+    min-width:0 !important;
+    min-height:0 !important;
+    margin:0 !important;
+  }
+  .st-key-screen_fund [class*="st-key-fund_card_"] > [data-testid="stElementContainer"]:first-child [data-testid="stMarkdown"],
+  .st-key-screen_fund [class*="st-key-fund_card_"] > [data-testid="stElementContainer"]:first-child [data-testid="stMarkdownContainer"] {
+    display:flex !important;
+    flex:1 1 auto !important;
+    align-items:stretch !important;
+    width:100% !important;
+    height:100% !important;
+    min-width:0 !important;
+    min-height:0 !important;
+    margin:0 !important;
+  }
+  .st-key-screen_fund .fund-card-content {
+    display:grid !important;
+    grid-template-rows: minmax(1.7rem,auto) minmax(0,1fr) !important;
+    align-items:stretch !important;
+    justify-items:stretch !important;
+    gap:.42rem !important;
+    width:100% !important;
+    height:100% !important;
+    min-width:0 !important;
+    min-height:0 !important;
+    margin:0 !important;
+    box-sizing:border-box !important;
+    overflow:hidden !important;
   }
   .st-key-screen_fund .fund-card-title {
-    min-height: 1.35rem !important;
-    margin: 0 0 .06rem !important;
-    font-size: clamp(.92rem, 4vw, 1.08rem) !important;
-    line-height: 1.18 !important;
-    white-space: nowrap !important;
+    display:flex !important;
+    align-items:center !important;
+    justify-content:center !important;
+    width:100% !important;
+    min-width:0 !important;
+    min-height:1.7rem !important;
+    height:auto !important;
+    margin:0 !important;
+    padding:0 .08rem !important;
+    color:#082e6b !important;
+    font-size:clamp(1rem,4.3vw,1.08rem) !important;
+    font-weight:900 !important;
+    line-height:1.12 !important;
+    text-align:center !important;
+    white-space:nowrap !important;
+    overflow:hidden !important;
+    text-overflow:ellipsis !important;
+    box-sizing:border-box !important;
   }
   .st-key-screen_fund .fund-card-logo {
-    height: 70px !important;
-    min-height: 70px !important;
-    padding: .02rem .1rem !important;
-    overflow: hidden !important;
-    box-sizing: border-box !important;
+    display:flex !important;
+    align-items:center !important;
+    justify-content:center !important;
+    width:100% !important;
+    height:100% !important;
+    min-width:0 !important;
+    min-height:0 !important;
+    margin:0 !important;
+    padding:.18rem .12rem .06rem !important;
+    overflow:hidden !important;
+    box-sizing:border-box !important;
   }
   .st-key-screen_fund .fund-card-logo img {
-    max-height: 60px !important;
-    max-width: 88% !important;
-    width: auto !important;
+    display:block !important;
+    width:auto !important;
+    height:auto !important;
+    max-width:78% !important;
+    max-height:clamp(42px,15vw,64px) !important;
+    object-fit:contain !important;
+    object-position:center center !important;
+    margin:0 auto !important;
   }
   .st-key-screen_fund .fund-card-logo svg {
-    width: 38px !important;
-    height: 38px !important;
-    max-width: 100% !important;
-    max-height: 100% !important;
+    display:block !important;
+    width:clamp(25px,8vw,32px) !important;
+    height:clamp(25px,8vw,32px) !important;
+    min-width:0 !important;
+    max-width:32px !important;
+    max-height:32px !important;
+    margin:0 auto !important;
   }
+
+  /* El botón invisible sigue haciendo clicable toda la tarjeta. */
   .st-key-screen_fund [class*="st-key-fund_card_"] [class*="st-key-fund_pick_"] {
-    inset: 0 !important;
-    width: 100% !important;
-    height: 100% !important;
+    position:absolute !important;
+    inset:0 !important;
+    z-index:20 !important;
+    width:100% !important;
+    height:100% !important;
+    min-height:0 !important;
+    margin:0 !important;
+    padding:0 !important;
   }
   .st-key-screen_fund [class*="st-key-fund_card_"] [class*="st-key-fund_pick_"] button {
-    width: 100% !important;
-    height: 100% !important;
-    min-height: 100% !important;
-    border-radius: 15px !important;
-    -webkit-tap-highlight-color: transparent !important;
+    position:absolute !important;
+    inset:0 !important;
+    display:block !important;
+    width:100% !important;
+    height:100% !important;
+    min-height:100% !important;
+    max-height:100% !important;
+    margin:0 !important;
+    padding:0 !important;
+    opacity:0 !important;
+    color:transparent !important;
+    background:transparent !important;
+    border:0 !important;
+    box-shadow:none !important;
+    border-radius:15px !important;
+    cursor:pointer !important;
+    touch-action:manipulation !important;
   }
-  .st-key-screen_fund [class*="st-key-fund_card_"]:active {
-    border-color: #0874d8 !important;
-    box-shadow: 0 0 0 3px rgba(8,116,216,.13) !important;
-  }
-  .st-key-screen_fund [data-testid="stButton"] button {
-    touch-action: manipulation !important;
-  }
-}
-@media (max-width: 380px) {
-  .st-key-screen_fund { padding: .76rem .5rem .92rem !important; }
-  .st-key-screen_fund .screen-heading h2 { font-size: 1.06rem !important; }
-  .st-key-screen_fund [data-testid="stHorizontalBlock"]:not(:has(.st-key-fund_card_otro_fondo)) { gap: .38rem !important; }
-  .st-key-screen_fund [data-testid="stHorizontalBlock"]:not(:has(.st-key-fund_card_otro_fondo)) > [data-testid="column"] {
-    width: calc(50% - .19rem) !important;
-    max-width: calc(50% - .19rem) !important;
-  }
-  .st-key-screen_fund [class*="st-key-fund_card_"] { min-height: 138px !important; padding: .62rem .2rem .5rem !important; }
-  .st-key-screen_fund .fund-card-title { font-size: .96rem !important; }
-  .st-key-screen_fund .fund-card-logo { height: 62px !important; min-height: 62px !important; }
-  .st-key-screen_fund .fund-card-logo img { max-height: 54px !important; max-width: 84% !important; }
-  .st-key-screen_fund .fund-card-logo svg { width: 33px !important; height: 33px !important; }
-}
-</style>
-""", unsafe_allow_html=True)
 
-# ---------- AJUSTE MÓVIL FINAL: TARJETAS COMPACTAS ----------
-# Solo afecta teléfonos. Los estilos de escritorio quedan intactos.
-st.markdown(r"""
-<style>
-@media (max-width: 600px) {
-  .st-key-screen_fund [data-testid="stHorizontalBlock"]:not(:has(.st-key-fund_card_otro_fondo)) {
-    display: flex !important;
-    flex-direction: row !important;
-    flex-wrap: nowrap !important;
-    justify-content: center !important;
-    align-items: stretch !important;
-    gap: .56rem !important;
-    width: 100% !important;
-  }
-  .st-key-screen_fund [data-testid="stHorizontalBlock"]:not(:has(.st-key-fund_card_otro_fondo)) > [data-testid="column"] {
-    display: block !important;
-    flex: 0 1 46% !important;
-    width: 46% !important;
-    max-width: 46% !important;
-    min-width: 0 !important;
-    padding: 0 !important;
-  }
-  .st-key-screen_fund [class*="st-key-fund_card_"] {
-    width: 100% !important;
-    min-width: 0 !important;
-    min-height: 108px !important;
-    height: 108px !important;
-    max-height: 108px !important;
-    padding: .38rem .24rem .32rem !important;
-    margin: 0 !important;
-    gap: .04rem !important;
-    border-radius: 13px !important;
-    box-sizing: border-box !important;
-    overflow: hidden !important;
-  }
-  .st-key-screen_fund .fund-card-title {
-    min-height: 18px !important;
-    height: 18px !important;
-    margin: 0 !important;
-    padding: 0 !important;
-    font-size: .88rem !important;
-    line-height: 18px !important;
-    white-space: nowrap !important;
-    overflow: hidden !important;
-    text-overflow: ellipsis !important;
-  }
-  .st-key-screen_fund .fund-card-logo {
-    flex: 0 0 46px !important;
-    width: 100% !important;
-    height: 46px !important;
-    min-height: 46px !important;
-    max-height: 46px !important;
-    padding: 0 !important;
-    margin: 0 !important;
-    overflow: hidden !important;
-  }
-  .st-key-screen_fund .fund-card-logo img {
-    width: auto !important;
-    max-width: 82% !important;
-    height: auto !important;
-    max-height: 40px !important;
-    object-fit: contain !important;
-  }
-  .st-key-screen_fund .fund-card-logo svg {
-    width: 27px !important;
-    height: 27px !important;
-    max-width: 27px !important;
-    max-height: 27px !important;
-  }
-  .st-key-screen_fund [class*="st-key-fund_card_"] [class*="st-key-fund_pick_"] button {
-    width: 100% !important;
-    height: 100% !important;
-    min-height: 100% !important;
-    max-height: 100% !important;
-  }
-  /* Otro Fondo: mismo formato compacto, centrado y sin ocupar todo el ancho. */
+  /* La fila de Otro Fondo se centra y usa un cuadrado menor. */
   .st-key-screen_fund [data-testid="stHorizontalBlock"]:has(.st-key-fund_card_otro_fondo) {
-    display: flex !important;
-    flex-direction: row !important;
-    justify-content: center !important;
-    align-items: stretch !important;
-    gap: 0 !important;
-    width: 100% !important;
+    display:grid !important;
+    grid-template-columns:minmax(0,1fr) !important;
+    justify-items:center !important;
+    width:100% !important;
+    max-width:100% !important;
+    min-width:0 !important;
+    gap:0 !important;
+    box-sizing:border-box !important;
   }
   .st-key-screen_fund [data-testid="stHorizontalBlock"]:has(.st-key-fund_card_otro_fondo) > [data-testid="column"]:not(:has(.st-key-fund_card_otro_fondo)) {
-    display: none !important;
+    display:none !important;
   }
   .st-key-screen_fund [data-testid="stHorizontalBlock"]:has(.st-key-fund_card_otro_fondo) > [data-testid="column"]:has(.st-key-fund_card_otro_fondo) {
-    display: block !important;
-    flex: 0 1 60% !important;
-    width: 60% !important;
-    max-width: 60% !important;
-    min-width: 0 !important;
-    margin: 0 auto !important;
-    padding: 0 !important;
+    display:block !important;
+    width:min(38vw,138px) !important;
+    max-width:138px !important;
+    min-width:0 !important;
+    flex:initial !important;
+    margin:0 auto !important;
+    padding:0 !important;
+    box-sizing:border-box !important;
   }
   .st-key-screen_fund [class*="st-key-fund_card_otro_fondo"] {
-    min-height: 104px !important;
-    height: 104px !important;
-    max-height: 104px !important;
+    width:100% !important;
+    min-width:0 !important;
+    aspect-ratio:1 / 1 !important;
+    height:auto !important;
+    min-height:0 !important;
+    max-height:none !important;
+    padding:.42rem .22rem !important;
+  }
+  .st-key-screen_fund [class*="st-key-fund_card_otro_fondo"] .fund-card-content {
+    grid-template-rows:minmax(1.3rem,auto) minmax(0,1fr) !important;
+    gap:.3rem !important;
+  }
+  .st-key-screen_fund [class*="st-key-fund_card_otro_fondo"] .fund-card-title {
+    font-size:.86rem !important;
+  }
+  .st-key-screen_fund [class*="st-key-fund_card_otro_fondo"] .fund-card-logo svg {
+    width:26px !important;
+    height:26px !important;
   }
 }
-@media (max-width: 380px) {
-  .st-key-screen_fund [data-testid="stHorizontalBlock"]:not(:has(.st-key-fund_card_otro_fondo)) {
-    gap: .42rem !important;
-  }
-  .st-key-screen_fund [data-testid="stHorizontalBlock"]:not(:has(.st-key-fund_card_otro_fondo)) > [data-testid="column"] {
-    flex-basis: 45% !important;
-    width: 45% !important;
-    max-width: 45% !important;
-  }
-  .st-key-screen_fund [class*="st-key-fund_card_"] {
-    min-height: 98px !important;
-    height: 98px !important;
-    max-height: 98px !important;
-    padding: .32rem .18rem .26rem !important;
-  }
-  .st-key-screen_fund .fund-card-title {
-    font-size: .82rem !important;
-    min-height: 17px !important;
-    height: 17px !important;
-    line-height: 17px !important;
-  }
-  .st-key-screen_fund .fund-card-logo {
-    flex-basis: 41px !important;
-    height: 41px !important;
-    min-height: 41px !important;
-    max-height: 41px !important;
-  }
-  .st-key-screen_fund .fund-card-logo img { max-height: 35px !important; max-width: 80% !important; }
-  .st-key-screen_fund .fund-card-logo svg { width: 24px !important; height: 24px !important; }
-  .st-key-screen_fund [class*="st-key-fund_card_otro_fondo"] {
-    min-height: 96px !important;
-    height: 96px !important;
-    max-height: 96px !important;
-  }
-}
-</style>
-""", unsafe_allow_html=True)
 
-# ---------- AJUSTE DEFINITIVO MÓVIL: TARJETAS CUADRADAS ----------
-# Este bloque afecta solo pantallas de hasta 600px. Escritorio conserva su diseño.
-st.markdown(r"""
-<style>
-@media (max-width: 600px) {
-  /* Contenedor interior: nunca debe producir desbordamiento horizontal. */
+@media (max-width:380px) {
   .st-key-screen_fund {
-    width: 100% !important;
-    max-width: 100% !important;
-    min-width: 0 !important;
-    box-sizing: border-box !important;
-    overflow: hidden !important;
+    padding:.72rem .42rem .9rem !important;
   }
-
-  /* Dos columnas reales con tracks que pueden encogerse en teléfonos estrechos. */
   .st-key-screen_fund [data-testid="stHorizontalBlock"]:not(:has(.st-key-fund_card_otro_fondo)) {
-    display: grid !important;
-    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-    width: 100% !important;
-    max-width: 100% !important;
-    min-width: 0 !important;
-    gap: .55rem !important;
-    box-sizing: border-box !important;
-    align-items: stretch !important;
+    gap:.42rem !important;
   }
-  .st-key-screen_fund [data-testid="stHorizontalBlock"]:not(:has(.st-key-fund_card_otro_fondo)) > [data-testid="column"] {
-    width: 100% !important;
-    max-width: 100% !important;
-    min-width: 0 !important;
-    flex: initial !important;
-    padding: 0 !important;
-    box-sizing: border-box !important;
-  }
-
-  /* Tarjeta cuadrada. El alto se calcula desde el ancho disponible de cada columna. */
   .st-key-screen_fund [class*="st-key-fund_card_"] {
-    width: 100% !important;
-    min-width: 0 !important;
-    min-height: 0 !important;
-    height: auto !important;
-    max-height: none !important;
-    aspect-ratio: 1 / 1 !important;
-    padding: .48rem .28rem .38rem !important;
-    margin: 0 !important;
-    gap: .12rem !important;
-    display: flex !important;
-    flex-direction: column !important;
-    align-items: center !important;
-    justify-content: flex-start !important;
-    border-radius: 14px !important;
-    box-sizing: border-box !important;
-    overflow: hidden !important;
+    padding:.42rem .22rem .32rem !important;
+    border-radius:13px !important;
   }
-
-  /* El título ocupa una franja propia en la parte superior. */
+  .st-key-screen_fund .fund-card-content {
+    grid-template-rows:minmax(1.65rem,auto) minmax(0,1fr) !important;
+    gap:.32rem !important;
+  }
   .st-key-screen_fund .fund-card-title {
-    position: relative !important;
-    z-index: 1 !important;
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-    flex: 0 0 auto !important;
-    width: 100% !important;
-    min-width: 0 !important;
-    min-height: 1.35rem !important;
-    height: 1.35rem !important;
-    margin: 0 !important;
-    padding: 0 .08rem !important;
-    font-size: clamp(.78rem, 3.6vw, .94rem) !important;
-    line-height: 1.1 !important;
-    white-space: nowrap !important;
-    overflow: hidden !important;
-    text-overflow: ellipsis !important;
-    text-align: center !important;
-  }
-
-  /* Logo/icono debajo del nombre: tamaño limitado para que nunca lo tape. */
-  .st-key-screen_fund .fund-card-logo {
-    position: relative !important;
-    z-index: 1 !important;
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-    flex: 1 1 auto !important;
-    width: 100% !important;
-    min-width: 0 !important;
-    min-height: 0 !important;
-    height: auto !important;
-    max-height: calc(100% - 1.5rem) !important;
-    padding: .08rem .12rem .12rem !important;
-    margin: 0 !important;
-    overflow: hidden !important;
-    box-sizing: border-box !important;
+    font-size:.9rem !important;
   }
   .st-key-screen_fund .fund-card-logo img {
-    display: block !important;
-    width: auto !important;
-    height: auto !important;
-    max-width: 78% !important;
-    max-height: 64px !important;
-    object-fit: contain !important;
+    max-width:74% !important;
+    max-height:48px !important;
   }
   .st-key-screen_fund .fund-card-logo svg {
-    display: block !important;
-    width: 31px !important;
-    height: 31px !important;
-    min-width: 0 !important;
-    max-width: 31px !important;
-    max-height: 31px !important;
-    flex: 0 1 auto !important;
-  }
-
-  /* Mantiene toda la superficie clicable sin mostrar el botón superpuesto. */
-  .st-key-screen_fund [class*="st-key-fund_card_"] [class*="st-key-fund_pick_"] {
-    position: absolute !important;
-    inset: 0 !important;
-    z-index: 5 !important;
-    width: 100% !important;
-    height: 100% !important;
-    margin: 0 !important;
-    padding: 0 !important;
-  }
-  .st-key-screen_fund [class*="st-key-fund_card_"] [class*="st-key-fund_pick_"] button {
-    position: absolute !important;
-    inset: 0 !important;
-    width: 100% !important;
-    height: 100% !important;
-    min-height: 100% !important;
-    max-height: 100% !important;
-    padding: 0 !important;
-    margin: 0 !important;
-    opacity: 0 !important;
-    color: transparent !important;
-    background: transparent !important;
-    border: 0 !important;
-    box-shadow: none !important;
-    border-radius: 14px !important;
-  }
-
-  /* Otro Fondo: una tarjeta cuadrada más angosta, centrada. */
-  .st-key-screen_fund [data-testid="stHorizontalBlock"]:has(.st-key-fund_card_otro_fondo) {
-    display: grid !important;
-    grid-template-columns: minmax(0, 1fr) !important;
-    width: 100% !important;
-    max-width: 100% !important;
-    min-width: 0 !important;
-    gap: 0 !important;
-    justify-items: center !important;
-    box-sizing: border-box !important;
-  }
-  .st-key-screen_fund [data-testid="stHorizontalBlock"]:has(.st-key-fund_card_otro_fondo) > [data-testid="column"]:not(:has(.st-key-fund_card_otro_fondo)) {
-    display: none !important;
+    width:27px !important;
+    height:27px !important;
   }
   .st-key-screen_fund [data-testid="stHorizontalBlock"]:has(.st-key-fund_card_otro_fondo) > [data-testid="column"]:has(.st-key-fund_card_otro_fondo) {
-    display: block !important;
-    width: min(48%, 150px) !important;
-    max-width: min(48%, 150px) !important;
-    min-width: 0 !important;
-    flex: initial !important;
-    margin: 0 auto !important;
-    padding: 0 !important;
-    box-sizing: border-box !important;
-  }
-  .st-key-screen_fund [class*="st-key-fund_card_otro_fondo"] {
-    width: 100% !important;
-    aspect-ratio: 1 / 1 !important;
-    min-height: 0 !important;
-    height: auto !important;
-    max-height: none !important;
-  }
-}
-
-@media (max-width: 380px) {
-  .st-key-screen_fund [data-testid="stHorizontalBlock"]:not(:has(.st-key-fund_card_otro_fondo)) {
-    gap: .42rem !important;
-  }
-  .st-key-screen_fund [class*="st-key-fund_card_"] {
-    padding: .4rem .2rem .3rem !important;
-    border-radius: 12px !important;
-  }
-  .st-key-screen_fund .fund-card-title {
-    font-size: .76rem !important;
-    min-height: 1.22rem !important;
-    height: 1.22rem !important;
-  }
-  .st-key-screen_fund .fund-card-logo img {
-    max-width: 76% !important;
-    max-height: 54px !important;
-  }
-  .st-key-screen_fund .fund-card-logo svg {
-    width: 27px !important;
-    height: 27px !important;
-    max-width: 27px !important;
-    max-height: 27px !important;
+    width:min(38vw,126px) !important;
+    max-width:126px !important;
   }
 }
 </style>
@@ -2169,11 +1914,8 @@ def render_seleccionar_fondo():
         def mostrar_tarjeta_fondo(fondo):
             slug = fondo["slug"]
             with st.container(key=f"fund_card_{slug}"):
-                # El nombre va arriba, en tipografía grande, y el logo debajo.
-                st.markdown(
-                    f'<div class="fund-card-title">{html.escape(fondo["nombre"])}</div>',
-                    unsafe_allow_html=True
-                )
+                # Nombre y logo dentro de un único bloque HTML para controlar
+                # con precisión la separación vertical en teléfonos.
                 logo_path = buscar_logo_fondo(fondo["logo"]) if fondo["logo"] else None
                 if logo_path:
                     with open(logo_path, "rb") as archivo_logo:
@@ -2181,12 +1923,16 @@ def render_seleccionar_fondo():
                     mime = mimetypes.guess_type(logo_path)[0] or "image/png"
                     logo_html = (
                         f'<img src="data:{mime};base64,{logo_b64}" '
-                        f'alt="Logo de {html.escape(fondo["nombre"])}">'
+                        f'alt="Logo de {html.escape(fondo['nombre'])}">'
                     )
                 else:
                     logo_html = icon_svg(fondo["icono"])
+
                 st.markdown(
-                    f'<div class="fund-card-logo">{logo_html}</div>',
+                    '<div class="fund-card-content">'
+                    f'<div class="fund-card-title">{html.escape(fondo["nombre"])}</div>'
+                    f'<div class="fund-card-logo">{logo_html}</div>'
+                    '</div>',
                     unsafe_allow_html=True
                 )
 
