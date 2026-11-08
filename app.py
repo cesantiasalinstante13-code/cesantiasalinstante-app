@@ -636,6 +636,69 @@ st.markdown(r"""
 </style>
 """, unsafe_allow_html=True)
 
+# ---------- AJUSTE FINAL: CTA DE PORTADA EN PC SIN SOLAPAR BENEFICIOS ----------
+st.markdown(r"""
+<style>
+@media (min-width:761px) {
+  /* Compacta un poco el contenido para reservar una franja independiente al CTA. */
+  .st-key-landing_wrap .hero-shell {
+    height:540px!important;
+    min-height:540px!important;
+  }
+  .st-key-landing_wrap .hero-copy {
+    padding:.82rem 1.55rem 4.65rem!important;
+  }
+  .st-key-landing_wrap .hero-logo {
+    height:84px!important;
+    width:min(100%,310px)!important;
+    margin:0 0 .42rem!important;
+  }
+  .st-key-landing_wrap .hero-logo img {
+    max-height:84px!important;
+  }
+  .st-key-landing_wrap .hero-title {
+    font-size:clamp(2.05rem,3.05vw,2.62rem)!important;
+    line-height:1.01!important;
+    margin:.08rem 0 .48rem!important;
+  }
+  .st-key-landing_wrap .hero-description {
+    max-width:405px!important;
+    font-size:.97rem!important;
+    line-height:1.34!important;
+    margin:0 0 .58rem!important;
+  }
+  .st-key-landing_wrap .hero-benefits {
+    gap:.34rem!important;
+    margin:.04rem 0 0!important;
+    font-size:.94rem!important;
+    line-height:1.12!important;
+  }
+  .st-key-landing_wrap .hero-benefit i {
+    width:29px!important;
+    height:29px!important;
+    flex-basis:29px!important;
+  }
+  /* El botón queda en el flujo de la página y sube al espacio reservado inferior.
+     Así su posición no depende de la altura accidental del contenedor de Streamlit. */
+  .st-key-landing_start {
+    position:relative!important;
+    left:1.6rem!important;
+    top:auto!important;
+    bottom:auto!important;
+    width:max-content!important;
+    max-width:235px!important;
+    margin-top:-72px!important;
+    margin-bottom:19px!important;
+    z-index:20!important;
+  }
+  .st-key-landing_start button {
+    min-width:205px!important;
+    min-height:49px!important;
+  }
+}
+</style>
+""", unsafe_allow_html=True)
+
 # ---------- ESTADO INICIAL ----------
 if 'step' not in st.session_state:
     st.session_state.step = 'landing'
