@@ -987,6 +987,146 @@ st.markdown(r"""
 </style>
 """, unsafe_allow_html=True)
 
+# ---------- AJUSTE MÓVIL FINAL: TARJETAS COMPACTAS ----------
+# Solo afecta teléfonos. Los estilos de escritorio quedan intactos.
+st.markdown(r"""
+<style>
+@media (max-width: 600px) {
+  .st-key-screen_fund [data-testid="stHorizontalBlock"]:not(:has(.st-key-fund_card_otro_fondo)) {
+    display: flex !important;
+    flex-direction: row !important;
+    flex-wrap: nowrap !important;
+    justify-content: center !important;
+    align-items: stretch !important;
+    gap: .56rem !important;
+    width: 100% !important;
+  }
+  .st-key-screen_fund [data-testid="stHorizontalBlock"]:not(:has(.st-key-fund_card_otro_fondo)) > [data-testid="column"] {
+    display: block !important;
+    flex: 0 1 46% !important;
+    width: 46% !important;
+    max-width: 46% !important;
+    min-width: 0 !important;
+    padding: 0 !important;
+  }
+  .st-key-screen_fund [class*="st-key-fund_card_"] {
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 108px !important;
+    height: 108px !important;
+    max-height: 108px !important;
+    padding: .38rem .24rem .32rem !important;
+    margin: 0 !important;
+    gap: .04rem !important;
+    border-radius: 13px !important;
+    box-sizing: border-box !important;
+    overflow: hidden !important;
+  }
+  .st-key-screen_fund .fund-card-title {
+    min-height: 18px !important;
+    height: 18px !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    font-size: .88rem !important;
+    line-height: 18px !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+  .st-key-screen_fund .fund-card-logo {
+    flex: 0 0 46px !important;
+    width: 100% !important;
+    height: 46px !important;
+    min-height: 46px !important;
+    max-height: 46px !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: hidden !important;
+  }
+  .st-key-screen_fund .fund-card-logo img {
+    width: auto !important;
+    max-width: 82% !important;
+    height: auto !important;
+    max-height: 40px !important;
+    object-fit: contain !important;
+  }
+  .st-key-screen_fund .fund-card-logo svg {
+    width: 27px !important;
+    height: 27px !important;
+    max-width: 27px !important;
+    max-height: 27px !important;
+  }
+  .st-key-screen_fund [class*="st-key-fund_card_"] [class*="st-key-fund_pick_"] button {
+    width: 100% !important;
+    height: 100% !important;
+    min-height: 100% !important;
+    max-height: 100% !important;
+  }
+  /* Otro Fondo: mismo formato compacto, centrado y sin ocupar todo el ancho. */
+  .st-key-screen_fund [data-testid="stHorizontalBlock"]:has(.st-key-fund_card_otro_fondo) {
+    display: flex !important;
+    flex-direction: row !important;
+    justify-content: center !important;
+    align-items: stretch !important;
+    gap: 0 !important;
+    width: 100% !important;
+  }
+  .st-key-screen_fund [data-testid="stHorizontalBlock"]:has(.st-key-fund_card_otro_fondo) > [data-testid="column"]:not(:has(.st-key-fund_card_otro_fondo)) {
+    display: none !important;
+  }
+  .st-key-screen_fund [data-testid="stHorizontalBlock"]:has(.st-key-fund_card_otro_fondo) > [data-testid="column"]:has(.st-key-fund_card_otro_fondo) {
+    display: block !important;
+    flex: 0 1 60% !important;
+    width: 60% !important;
+    max-width: 60% !important;
+    min-width: 0 !important;
+    margin: 0 auto !important;
+    padding: 0 !important;
+  }
+  .st-key-screen_fund [class*="st-key-fund_card_otro_fondo"] {
+    min-height: 104px !important;
+    height: 104px !important;
+    max-height: 104px !important;
+  }
+}
+@media (max-width: 380px) {
+  .st-key-screen_fund [data-testid="stHorizontalBlock"]:not(:has(.st-key-fund_card_otro_fondo)) {
+    gap: .42rem !important;
+  }
+  .st-key-screen_fund [data-testid="stHorizontalBlock"]:not(:has(.st-key-fund_card_otro_fondo)) > [data-testid="column"] {
+    flex-basis: 45% !important;
+    width: 45% !important;
+    max-width: 45% !important;
+  }
+  .st-key-screen_fund [class*="st-key-fund_card_"] {
+    min-height: 98px !important;
+    height: 98px !important;
+    max-height: 98px !important;
+    padding: .32rem .18rem .26rem !important;
+  }
+  .st-key-screen_fund .fund-card-title {
+    font-size: .82rem !important;
+    min-height: 17px !important;
+    height: 17px !important;
+    line-height: 17px !important;
+  }
+  .st-key-screen_fund .fund-card-logo {
+    flex-basis: 41px !important;
+    height: 41px !important;
+    min-height: 41px !important;
+    max-height: 41px !important;
+  }
+  .st-key-screen_fund .fund-card-logo img { max-height: 35px !important; max-width: 80% !important; }
+  .st-key-screen_fund .fund-card-logo svg { width: 24px !important; height: 24px !important; }
+  .st-key-screen_fund [class*="st-key-fund_card_otro_fondo"] {
+    min-height: 96px !important;
+    height: 96px !important;
+    max-height: 96px !important;
+  }
+}
+</style>
+""", unsafe_allow_html=True)
+
 # ---------- ESTADO INICIAL ----------
 if 'step' not in st.session_state:
     st.session_state.step = 'landing'
