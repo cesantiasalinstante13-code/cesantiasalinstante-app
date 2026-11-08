@@ -50,7 +50,7 @@ html,body,[class*="css"],.stApp{font-family:Inter,Arial,sans-serif!important}
 .brand-trust span{display:inline-flex;width:29px;height:29px;border-radius:50%;align-items:center;justify-content:center;color:#fff;background:linear-gradient(140deg,var(--cia-blue),var(--cia-cyan));font-size:1rem}
 .journey-wrap{max-width:1080px;margin:0 auto .85rem;padding:.72rem .85rem .6rem;background:#ffffffed;border:1px solid #d9e7f4;border-radius:16px;box-shadow:0 8px 24px #001b4920}
 .journey{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:.25rem}
-.journey-step{position:relative;display:flex;flex-direction:column;align-items:center;gap:.32rem;text-align:center;color:#8292a7;font-size:.71rem;font-weight:700}
+.journey-step{position:relative;display:flex;flex-direction:column;align-items:center;gap:.32rem;text-align:center;color:#60758c;font-size:.71rem;font-weight:800}
 .journey-step:not(:first-child):before{content:"";position:absolute;height:2px;background:#d5e0ec;left:-50%;right:50%;top:14px;z-index:0}
 .journey-dot{position:relative;z-index:1;width:30px;height:30px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:#e5edf5;color:#546a82;font-size:.78rem;font-weight:900;border:2px solid #fff;box-shadow:0 0 0 1px #d2deeb}
 .journey-step.active{color:var(--cia-navy);font-weight:900}
@@ -118,14 +118,13 @@ html,body,[class*="css"],.stApp{font-family:Inter,Arial,sans-serif!important}
 .stButton>button:hover,[data-testid="stDownloadButton"] button:hover{transform:translateY(-2px);box-shadow:0 12px 25px #084a9738!important}
 .stButton>button:disabled{opacity:.48!important;transform:none!important}
 /* Botones principales y secundarios por clave de widget */
-.st-key-landing_start button{display:none!important}
 .st-key-fund_back button,.st-key-data_back button,.st-key-summary_back button,.st-key-mission_back button,.st-key-company_back button{background:#fff!important;color:#0752a0!important;border:1.5px solid #8fc6f0!important;box-shadow:none!important}
 .st-key-company_submit button,.st-key-summary_continue button,.st-key-mission_continue button,.st-key-data_continue button{background:linear-gradient(110deg,#073b8a,#0874d4 70%,#0aa6dc)!important}
 /* Tarjetas informativas / resumen / misión / confirmación */
 .summary-panel{padding:1.2rem;border:1px solid #d2e3f2;border-radius:20px;background:linear-gradient(135deg,#fff,#f0f7ff);box-shadow:0 8px 22px #082b6610}
 .summary-check{width:72px;height:72px;margin:.2rem auto .8rem;border-radius:50%;display:flex;align-items:center;justify-content:center;background:linear-gradient(145deg,#22c83d,#0fa52f);color:#fff;font-size:2.8rem;font-weight:950;box-shadow:0 10px 24px #18b83733}
 .summary-item{padding:.7rem .8rem;margin:.3rem 0;border:1px solid #e0ebf5;border-radius:12px;background:#fff}
-.summary-item small{display:block;color:#688099;font-size:.72rem;font-weight:750;text-transform:uppercase;letter-spacing:.04em}
+.summary-item small{display:block;color:#526981;font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.04em}
 .summary-item strong{display:block;color:#102f60;font-size:.97rem;font-weight:850;overflow-wrap:anywhere}
 .mission-hero{padding:1.25rem 1.35rem;margin:.2rem 0 1rem;border-radius:20px;background:linear-gradient(120deg,#062e70,#0879cf);color:#fff}
 .mission-hero h3{margin:0 0 .5rem;color:#fff;font-size:1.45rem;font-weight:900}
@@ -175,6 +174,129 @@ html,body,[class*="css"],.stApp{font-family:Inter,Arial,sans-serif!important}
  .stButton>button{min-height:47px;font-size:.9rem!important}
 }
 @media(max-width:390px){.brand-trust{display:none}.journey-step{font-size:.49rem}.journey-dot{width:22px;height:22px}.journey-step:not(:first-child):before{top:10px}.hero-person{min-height:250px;max-height:280px}.hero-title{font-size:1.95rem}}
+
+/* ---------- CORRECCIÓN DEFINITIVA DE CONTRASTE Y PANELES ---------- */
+.main .block-container,
+div[data-testid="stMainBlockContainer"] {
+  width:calc(100% - 2rem)!important; max-width:1160px!important;
+  margin-left:auto!important; margin-right:auto!important;
+  padding-left:clamp(.55rem,2vw,1.25rem)!important;
+  padding-right:clamp(.55rem,2vw,1.25rem)!important;
+}
+.st-key-screen_fund,
+.st-key-screen_data,
+.st-key-screen_summary,
+.st-key-screen_mission,
+.st-key-screen_company,
+.st-key-screen_processing,
+.st-key-screen_success {
+  display:block!important; width:100%!important; max-width:1080px!important;
+  margin:.65rem auto 1rem!important; box-sizing:border-box!important;
+  color:#17345b!important;
+  background:linear-gradient(180deg,#ffffff 0%,#fbfdff 72%,#f1f8ff 100%)!important;
+  border:1px solid #cbdff0!important; border-radius:25px!important;
+  padding:clamp(1.05rem,2.6vw,2rem)!important;
+  box-shadow:0 18px 48px rgba(0,24,68,.22)!important;
+}
+.st-key-summary_panel {
+  display:block!important; box-sizing:border-box!important; width:100%!important;
+  color:#17345b!important; background:linear-gradient(135deg,#fff,#f4f9ff)!important;
+  border:1px solid #d2e3f2!important; border-radius:18px!important;
+  padding:clamp(.8rem,2vw,1.2rem)!important;
+}
+.st-key-screen_fund [data-testid="stMarkdownContainer"] p,
+.st-key-screen_data [data-testid="stMarkdownContainer"] p,
+.st-key-screen_summary [data-testid="stMarkdownContainer"] p,
+.st-key-screen_mission [data-testid="stMarkdownContainer"] p,
+.st-key-screen_company [data-testid="stMarkdownContainer"] p,
+.st-key-screen_processing [data-testid="stMarkdownContainer"] p {
+  color:#40566f!important; opacity:1!important; line-height:1.55!important;
+}
+.st-key-screen_fund .screen-heading h2,
+.st-key-screen_data .screen-heading h2,
+.st-key-screen_summary .screen-heading h2,
+.st-key-screen_mission .screen-heading h2,
+.st-key-screen_company .screen-heading h2,
+.st-key-screen_processing .screen-heading h2 {
+  color:#082e6b!important; opacity:1!important; font-weight:900!important;
+}
+.st-key-screen_fund .screen-heading p,
+.st-key-screen_data .screen-heading p,
+.st-key-screen_summary .screen-heading p,
+.st-key-screen_mission .screen-heading p,
+.st-key-screen_company .screen-heading p,
+.st-key-screen_processing .screen-heading p { color:#405873!important; opacity:1!important; }
+.st-key-screen_fund .section-label,
+.st-key-screen_data .section-label,
+.st-key-screen_company .section-label,
+.st-key-screen_fund .field-label,
+.st-key-screen_data .field-label,
+.st-key-screen_company .field-label {
+  color:#12396e!important; opacity:1!important; font-weight:850!important;
+}
+.st-key-screen_fund [data-testid="stWidgetLabel"],
+.st-key-screen_data [data-testid="stWidgetLabel"],
+.st-key-screen_company [data-testid="stWidgetLabel"],
+.st-key-screen_fund [data-testid="stWidgetLabel"] *,
+.st-key-screen_data [data-testid="stWidgetLabel"] *,
+.st-key-screen_company [data-testid="stWidgetLabel"] * {
+  color:#16375f!important; opacity:1!important; font-weight:800!important;
+}
+.st-key-screen_fund [data-testid="stTextInput"] input,
+.st-key-screen_data [data-testid="stTextInput"] input,
+.st-key-screen_data [data-testid="stSelectbox"] [data-baseweb="select"] > div,
+.st-key-screen_company [data-testid="stTextInput"] input,
+.st-key-screen_company [data-testid="stSelectbox"] [data-baseweb="select"] > div {
+  color:#172f4f!important; background:#fff!important; border:1.5px solid #b9cee2!important;
+  min-height:48px!important; opacity:1!important; border-radius:12px!important;
+}
+.st-key-screen_data [data-testid="stTextInput"] input::placeholder,
+.st-key-screen_company [data-testid="stTextInput"] input::placeholder {
+  color:#71849a!important; opacity:1!important;
+}
+.st-key-screen_fund [data-testid="stCaptionContainer"] p,
+.st-key-screen_data [data-testid="stCaptionContainer"] p,
+.st-key-screen_summary [data-testid="stCaptionContainer"] p,
+.st-key-screen_mission [data-testid="stCaptionContainer"] p,
+.st-key-screen_company [data-testid="stCaptionContainer"] p {
+  color:#52677f!important; opacity:1!important;
+}
+.st-key-screen_summary [data-testid="stAlert"] p,
+.st-key-screen_company [data-testid="stAlert"] p {
+  color:#234565!important; opacity:1!important;
+}
+/* CTA real de Streamlit, anclado dentro de la tarjeta de bienvenida. */
+.st-key-landing_wrap {position:relative!important;max-width:1080px!important;width:100%!important;margin:.3rem auto 1rem!important;overflow:visible!important}
+.st-key-landing_wrap .hero-shell {width:100%!important;max-width:1080px!important;margin:0 auto!important}
+.st-key-landing_start {
+  position:absolute!important; z-index:12!important; left:clamp(1.25rem,3vw,2rem)!important;
+  bottom:1.45rem!important; max-width:230px!important; margin:0!important;
+}
+.st-key-landing_start button {
+  display:inline-flex!important; width:auto!important; min-width:205px!important;
+  min-height:52px!important; justify-content:center!important; align-items:center!important;
+  padding:.8rem 1.7rem!important; border:0!important; border-radius:999px!important;
+  color:#082c68!important; background:linear-gradient(110deg,#ffda55,#ffad00)!important;
+  font-size:1.02rem!important; font-weight:900!important;
+  box-shadow:0 10px 26px rgba(255,181,27,.36)!important;
+}
+.st-key-landing_start button:hover { transform:translateY(-2px)!important; }
+/* Quitar bordes grises genéricos de los contenedores principales; las tarjetas internas sí conservan su diseño. */
+.st-key-screen_fund > div,
+.st-key-screen_data > div,
+.st-key-screen_summary > div,
+.st-key-screen_mission > div,
+.st-key-screen_company > div,
+.st-key-screen_processing > div { background:transparent!important; }
+@media(max-width:760px){
+ .st-key-screen_fund,.st-key-screen_data,.st-key-screen_summary,
+ .st-key-screen_mission,.st-key-screen_company,.st-key-screen_processing,
+ .st-key-screen_success {width:100%!important;max-width:100%!important;margin:.4rem auto!important;padding:1rem .8rem!important;border-radius:19px!important}
+ .st-key-landing_wrap {margin:.15rem auto .8rem!important}
+ .st-key-landing_start {left:1rem!important;bottom:1.1rem!important;max-width:220px!important}
+ .st-key-landing_start button {min-width:195px!important;min-height:49px!important;font-size:.95rem!important}
+}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -950,27 +1072,32 @@ def reiniciar_solicitud():
 
 
 def render_landing():
-    """Bienvenida con composición de marca; el CTA es parte del propio panel hero."""
+    """Bienvenida con CTA Streamlit dentro del mismo contenedor visual."""
     logo_uri = imagen_data_uri(obtener_logo_app_path())
     hero_uri = imagen_data_uri(obtener_imagen_hero_path())
     logo_html = f'<img src="{logo_uri}" alt="Logo Cesantías al Instante">' if logo_uri else '<strong>Cesantías al Instante</strong>'
     hero_html = f'<img src="{hero_uri}" alt="Asesora de Cesantías al Instante">' if hero_uri else ''
-    st.markdown(f"""
-    <section class="hero-shell">
-      <div class="hero-copy">
-        <div class="hero-logo">{logo_html}</div>
-        <h1 class="hero-title">Tus cesantías,<span>más cerca de ti</span></h1>
-        <p class="hero-description">Gestiona tu solicitud de retiro de cesantías de manera fácil, rápida y segura.</p>
-        <div class="hero-benefits">
-          <div class="hero-benefit"><i>ϟ</i> Rápido</div>
-          <div class="hero-benefit"><i>✓</i> Seguro</div>
-          <div class="hero-benefit"><i>✓</i> Fácil</div>
-        </div>
-        <a class="hero-cta" href="?iniciar=1">Comenzar ahora <span aria-hidden="true">➜</span></a>
-      </div>
-      <div class="hero-person">{hero_html}</div>
-    </section>
-    """, unsafe_allow_html=True)
+    with st.container(key="landing_wrap"):
+        st.markdown(f"""
+        <section class="hero-shell">
+          <div class="hero-copy">
+            <div class="hero-logo">{logo_html}</div>
+            <h1 class="hero-title">Tus cesantías,<span>más cerca de ti</span></h1>
+            <p class="hero-description">Gestiona tu solicitud de retiro de cesantías de manera fácil, rápida y segura.</p>
+            <div class="hero-benefits">
+              <div class="hero-benefit"><i>ϟ</i> Rápido</div>
+              <div class="hero-benefit"><i>✓</i> Seguro</div>
+              <div class="hero-benefit"><i>✓</i> Fácil</div>
+            </div>
+          </div>
+          <div class="hero-person">{hero_html}</div>
+        </section>
+        """, unsafe_allow_html=True)
+        # Botón interno: conserva la URL y la sesión actual de Streamlit.
+        if st.button("Comenzar ahora  ➜", key="landing_start", use_container_width=False):
+            reiniciar_solicitud()
+            st.session_state.step = "seleccionar_fondo"
+            st.rerun()
 
 
 def buscar_logo_fondo(nombre_archivo):
@@ -996,7 +1123,7 @@ def buscar_logo_fondo(nombre_archivo):
 
 def render_seleccionar_fondo():
     render_brand_header(2)
-    with st.container(border=True):
+    with st.container(key="screen_fund"): 
         render_screen_heading("fund", "Selecciona tu fondo de cesantías", "Elige la entidad donde tienes tus cesantías para preparar tu solicitud.")
         fondos = [
             {"nombre": "Porvenir", "logo": "Porvenir_logo.png", "icono": "fund"},
@@ -1043,7 +1170,7 @@ def limpiar_cedula_widget():
 
 def render_datos_personales():
     render_brand_header(3)
-    with st.container(border=True):
+    with st.container(key="screen_data"): 
         render_screen_heading("user", "Datos personales", "Completa tu información para preparar correctamente la carta de retiro.")
         numeros = {
             "Porvenir": "01 8000 111 222", "Colfondos": "01 8000 123 456",
@@ -1132,9 +1259,9 @@ def render_datos_personales():
 
 def render_resumen():
     render_brand_header(4)
-    with st.container(border=True):
+    with st.container(key="screen_summary"): 
         render_screen_heading("file", "Resumen de tu solicitud", "Revisa que la información esté correcta antes de continuar.")
-        with st.container(border=True):
+        with st.container(key="summary_panel"): 
             st.markdown('<div class="summary-check">✓</div>', unsafe_allow_html=True)
             filas = [
                 ("Fondo de cesantías", st.session_state.get("fondo", "")),
@@ -1168,7 +1295,7 @@ def render_resumen():
 
 def render_mision():
     render_brand_header(5)
-    with st.container(border=True):
+    with st.container(key="screen_mission"): 
         render_screen_heading("mission", "Nuestra misión", "Queremos que conozcas cómo funciona nuestro acompañamiento.")
         st.markdown("""
         <section class="mission-hero">
@@ -1199,7 +1326,7 @@ def render_mision():
 
 def render_empresa():
     render_brand_header(6)
-    with st.container(border=True):
+    with st.container(key="screen_company"): 
         render_screen_heading("building", "Empresa donde trabajas", "Selecciona tu empresa para localizar el NIT y la plantilla de tu carta.")
         st.markdown('<div class="personal-tip"><div class="personal-tip-icon">' + icon_svg("building") + '</div><div><strong>Buscamos tu empresa en nuestro registro</strong><p>La selección permite asociar automáticamente los datos y la plantilla disponibles en nuestra base de empresas.</p></div></div>', unsafe_allow_html=True)
         try:
@@ -1274,7 +1401,7 @@ def render_empresa():
 def render_generando():
     """Crea registro, copia la plantilla, la rellena y exporta el PDF; luego muestra la confirmación."""
     render_brand_header(6)
-    with st.container(border=True):
+    with st.container(key="screen_processing"): 
         render_screen_heading("file", "Estamos preparando tu carta", "Estamos registrando la solicitud y generando tu documento.")
 
     # ---------- GUARDAR SOLICITUD EN GOOGLE SHEETS ----------
@@ -1418,17 +1545,12 @@ def main():
         render_configuracion_drive()
         return
 
-    # El enlace de bienvenida inicia un trámite nuevo sin tocar OAuth ni conexiones.
-    if st.query_params.get("iniciar") == "1":
-        reiniciar_solicitud()
-        st.session_state.step = "seleccionar_fondo"
-        st.query_params.clear()
-        st.rerun()
-
     # Migra sesiones que hubieran quedado en los nombres del flujo anterior.
     migracion = {
         "pregunta1": "seleccionar_fondo",
-        "pregunta2": "empresa",
+        # En el flujo anterior, pregunta2 era la selección del fondo.
+        # Si una sesión antigua quedó allí, la siguiente pantalla correcta es Datos.
+        "pregunta2": "datos_personales",
         "verificar_saldo": "datos_personales",
         "monto_exacto": "datos_personales",
         "resultados": "resumen",
