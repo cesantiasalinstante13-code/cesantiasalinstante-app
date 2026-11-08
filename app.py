@@ -828,6 +828,121 @@ st.markdown(r"""
 </style>
 """, unsafe_allow_html=True)
 
+# ---------- PANTALLA 2: AJUSTE EXCLUSIVO PARA TELÉFONOS ----------
+# En escritorio se conserva exactamente la cuadrícula de dos fondos por fila.
+# En teléfonos cada tarjeta ocupa el ancho disponible para facilitar lectura y toque.
+st.markdown(r"""
+<style>
+@media (max-width: 600px) {
+  .st-key-screen_fund {
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: .95rem .72rem 1.15rem !important;
+    margin: .35rem auto .8rem !important;
+    border-radius: 18px !important;
+    box-sizing: border-box !important;
+  }
+  .st-key-screen_fund .screen-heading {
+    align-items: center !important;
+    gap: .62rem !important;
+    margin: .05rem 0 .9rem !important;
+  }
+  .st-key-screen_fund .screen-heading .screen-icon {
+    width: 43px !important;
+    height: 43px !important;
+    flex: 0 0 43px !important;
+    border-radius: 12px !important;
+  }
+  .st-key-screen_fund .screen-heading h2 {
+    font-size: 1.18rem !important;
+    line-height: 1.16 !important;
+  }
+  .st-key-screen_fund .screen-heading p {
+    font-size: .82rem !important;
+    line-height: 1.35 !important;
+  }
+  /* Cada fila de Streamlit pasa a una sola tarjeta de ancho completo. */
+  .st-key-screen_fund [data-testid="stHorizontalBlock"] {
+    display: flex !important;
+    flex-direction: column !important;
+    flex-wrap: nowrap !important;
+    gap: .72rem !important;
+    width: 100% !important;
+    align-items: stretch !important;
+  }
+  .st-key-screen_fund [data-testid="stHorizontalBlock"] > [data-testid="column"] {
+    display: block !important;
+    flex: 1 1 100% !important;
+    width: 100% !important;
+    min-width: 100% !important;
+    max-width: 100% !important;
+    padding: 0 !important;
+  }
+  /* En la fila de "Otro Fondo" se ocultan las dos columnas vacías laterales. */
+  .st-key-screen_fund [data-testid="stHorizontalBlock"]:has(.st-key-fund_card_otro_fondo) > [data-testid="column"]:not(:has(.st-key-fund_card_otro_fondo)) {
+    display: none !important;
+  }
+  .st-key-screen_fund [class*="st-key-fund_card_"] {
+    width: 100% !important;
+    min-height: 148px !important;
+    height: auto !important;
+    padding: .72rem .7rem .62rem !important;
+    border-radius: 16px !important;
+    gap: .18rem !important;
+    box-sizing: border-box !important;
+    margin: 0 !important;
+    transform: none !important;
+  }
+  .st-key-screen_fund .fund-card-title {
+    min-height: 1.45rem !important;
+    margin: 0 0 .08rem !important;
+    font-size: 1.12rem !important;
+    line-height: 1.2 !important;
+  }
+  .st-key-screen_fund .fund-card-logo {
+    height: 84px !important;
+    min-height: 84px !important;
+    padding: .05rem .25rem !important;
+  }
+  .st-key-screen_fund .fund-card-logo img {
+    max-height: 78px !important;
+    max-width: 94% !important;
+  }
+  .st-key-screen_fund .fund-card-logo svg {
+    width: 57px !important;
+    height: 57px !important;
+  }
+  .st-key-screen_fund [class*="st-key-fund_card_"] [class*="st-key-fund_pick_"] {
+    inset: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+  }
+  .st-key-screen_fund [class*="st-key-fund_card_"] [class*="st-key-fund_pick_"] button {
+    width: 100% !important;
+    height: 100% !important;
+    min-height: 100% !important;
+    border-radius: 16px !important;
+    -webkit-tap-highlight-color: transparent !important;
+  }
+  .st-key-screen_fund [class*="st-key-fund_card_"]:active {
+    border-color: #0874d8 !important;
+    box-shadow: 0 0 0 3px rgba(8,116,216,.13) !important;
+  }
+  .st-key-screen_fund [data-testid="stButton"] button {
+    touch-action: manipulation !important;
+  }
+}
+@media (max-width: 380px) {
+  .st-key-screen_fund { padding: .82rem .58rem 1rem !important; }
+  .st-key-screen_fund .screen-heading h2 { font-size: 1.08rem !important; }
+  .st-key-screen_fund [class*="st-key-fund_card_"] { min-height: 140px !important; }
+  .st-key-screen_fund .fund-card-title { font-size: 1.06rem !important; }
+  .st-key-screen_fund .fund-card-logo { height: 78px !important; min-height: 78px !important; }
+  .st-key-screen_fund .fund-card-logo img { max-height: 72px !important; }
+}
+</style>
+""", unsafe_allow_html=True)
+
 # ---------- ESTADO INICIAL ----------
 if 'step' not in st.session_state:
     st.session_state.step = 'landing'
