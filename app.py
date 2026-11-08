@@ -699,6 +699,135 @@ st.markdown(r"""
 </style>
 """, unsafe_allow_html=True)
 
+# ---------- PANTALLA 2: TARJETAS DE FONDOS CLICABLES ----------
+st.markdown(r"""
+<style>
+/* Dos tarjetas equilibradas por fila; la quinta opción queda centrada. */
+.st-key-screen_fund [class*="st-key-fund_card_"] {
+  position:relative!important;
+  min-height:218px!important;
+  height:100%!important;
+  box-sizing:border-box!important;
+  display:flex!important;
+  flex-direction:column!important;
+  justify-content:flex-start!important;
+  align-items:stretch!important;
+  gap:.3rem!important;
+  padding:1.05rem .9rem .8rem!important;
+  border:1.5px solid #d5e6f6!important;
+  border-radius:20px!important;
+  background:linear-gradient(180deg,#ffffff 0%,#f5faff 100%)!important;
+  box-shadow:0 7px 20px rgba(6,43,104,.08)!important;
+  overflow:hidden!important;
+  transition:border-color .18s ease,box-shadow .18s ease,transform .18s ease!important;
+}
+.st-key-screen_fund [class*="st-key-fund_card_"]:hover {
+  border-color:#36a8ed!important;
+  box-shadow:0 12px 26px rgba(8,111,208,.15)!important;
+  transform:translateY(-2px)!important;
+}
+.st-key-screen_fund .fund-card-title {
+  width:100%;
+  min-height:1.8rem;
+  margin:0 0 .2rem;
+  color:#082e6b!important;
+  text-align:center;
+  font-size:clamp(1.18rem,2vw,1.42rem);
+  line-height:1.2;
+  font-weight:900;
+  letter-spacing:-.025em;
+}
+.st-key-screen_fund .fund-card-logo {
+  width:100%;
+  height:112px;
+  flex:1 1 auto;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:.15rem .35rem;
+  margin:0;
+  background:transparent!important;
+  border:0!important;
+  border-radius:0!important;
+}
+.st-key-screen_fund .fund-card-logo img {
+  display:block;
+  width:auto;
+  max-width:94%;
+  height:auto;
+  max-height:105px;
+  object-fit:contain;
+}
+.st-key-screen_fund .fund-card-logo svg {
+  display:block;
+  width:76px;
+  height:76px;
+  color:#0878d8;
+  stroke:currentColor;
+  fill:none;
+  stroke-width:1.8;
+  stroke-linecap:round;
+  stroke-linejoin:round;
+}
+/* El botón real cubre todo el contenedor: tanto nombre como logo responden al clic.
+   Su etiqueta sigue disponible para lectores de pantalla, pero no aparece visualmente. */
+.st-key-screen_fund [class*="st-key-fund_card_"] [class*="st-key-fund_pick_"] {
+  position:absolute!important;
+  inset:0!important;
+  z-index:20!important;
+  width:100%!important;
+  height:100%!important;
+  margin:0!important;
+  padding:0!important;
+}
+.st-key-screen_fund [class*="st-key-fund_card_"] [class*="st-key-fund_pick_"] button {
+  position:absolute!important;
+  inset:0!important;
+  display:block!important;
+  width:100%!important;
+  height:100%!important;
+  min-height:100%!important;
+  margin:0!important;
+  padding:0!important;
+  opacity:0!important;
+  color:transparent!important;
+  background:transparent!important;
+  border:0!important;
+  border-radius:20px!important;
+  box-shadow:none!important;
+  cursor:pointer!important;
+}
+.st-key-screen_fund [class*="st-key-fund_card_"] [class*="st-key-fund_pick_"] button:hover {
+  transform:none!important;
+  box-shadow:none!important;
+}
+.st-key-screen_fund [class*="st-key-fund_card_"]:focus-within {
+  outline:3px solid rgba(16,188,232,.55)!important;
+  outline-offset:3px!important;
+}
+@media(max-width:760px){
+  .st-key-screen_fund [class*="st-key-fund_card_"] {
+    min-height:176px!important;
+    padding:.8rem .5rem .65rem!important;
+    border-radius:16px!important;
+  }
+  .st-key-screen_fund .fund-card-title {
+    min-height:1.55rem;
+    font-size:clamp(1rem,4vw,1.18rem);
+  }
+  .st-key-screen_fund .fund-card-logo {height:88px;padding:.1rem}
+  .st-key-screen_fund .fund-card-logo img {max-height:82px;max-width:96%}
+  .st-key-screen_fund .fund-card-logo svg {width:62px;height:62px}
+}
+@media(max-width:390px){
+  .st-key-screen_fund [class*="st-key-fund_card_"] {min-height:164px!important;padding:.72rem .38rem .55rem!important}
+  .st-key-screen_fund .fund-card-title {font-size:.98rem}
+  .st-key-screen_fund .fund-card-logo {height:78px}
+  .st-key-screen_fund .fund-card-logo img {max-height:72px}
+}
+</style>
+""", unsafe_allow_html=True)
+
 # ---------- ESTADO INICIAL ----------
 if 'step' not in st.session_state:
     st.session_state.step = 'landing'
@@ -1521,35 +1650,72 @@ def buscar_logo_fondo(nombre_archivo):
 
 
 def render_seleccionar_fondo():
+    """Selección visual de fondo: tarjetas completas clicables, dos por fila."""
     render_brand_header(2)
-    with st.container(key="screen_fund"): 
-        render_screen_heading("fund", "Selecciona tu fondo de cesantías", "Elige la entidad donde tienes tus cesantías para preparar tu solicitud.")
+    with st.container(key="screen_fund"):
+        render_screen_heading(
+            "fund",
+            "Selecciona tu fondo de cesantías",
+            "Toca el nombre o el logo del fondo donde tienes tus cesantías."
+        )
+
         fondos = [
-            {"nombre": "Porvenir", "logo": "Porvenir_logo.png", "icono": "fund"},
-            {"nombre": "Colfondos", "logo": "Colfondos_logo.png", "icono": "building"},
-            {"nombre": "Protección", "logo": "Proteccion_logo.png", "icono": "shield"},
-            {"nombre": "FNA", "logo": "FNA_logo.png", "icono": "building"},
-            {"nombre": "Otro", "logo": None, "icono": "wallet"},
+            {"slug": "porvenir", "nombre": "Porvenir", "valor": "Porvenir", "logo": "Porvenir_logo.png", "icono": "fund"},
+            {"slug": "colfondos", "nombre": "Colfondos", "valor": "Colfondos", "logo": "Colfondos_logo.png", "icono": "building"},
+            {"slug": "proteccion", "nombre": "Protección", "valor": "Protección", "logo": "Proteccion_logo.png", "icono": "shield"},
+            {"slug": "fna", "nombre": "FNA", "valor": "FNA", "logo": "FNA_logo.png", "icono": "building"},
+            # Se conserva "Otro" como valor interno porque el backend y las plantillas lo esperan.
+            {"slug": "otro_fondo", "nombre": "Otro Fondo", "valor": "Otro", "logo": None, "icono": "wallet"},
         ]
-        for inicio in range(0, len(fondos), 2):
-            cols = st.columns(2, gap="medium")
+
+        def mostrar_tarjeta_fondo(fondo):
+            slug = fondo["slug"]
+            with st.container(key=f"fund_card_{slug}"):
+                # El nombre va arriba, en tipografía grande, y el logo debajo.
+                st.markdown(
+                    f'<div class="fund-card-title">{html.escape(fondo["nombre"])}</div>',
+                    unsafe_allow_html=True
+                )
+                logo_path = buscar_logo_fondo(fondo["logo"]) if fondo["logo"] else None
+                if logo_path:
+                    with open(logo_path, "rb") as archivo_logo:
+                        logo_b64 = base64.b64encode(archivo_logo.read()).decode("ascii")
+                    mime = mimetypes.guess_type(logo_path)[0] or "image/png"
+                    logo_html = (
+                        f'<img src="data:{mime};base64,{logo_b64}" '
+                        f'alt="Logo de {html.escape(fondo["nombre"])}">'
+                    )
+                else:
+                    logo_html = icon_svg(fondo["icono"])
+                st.markdown(
+                    f'<div class="fund-card-logo">{logo_html}</div>',
+                    unsafe_allow_html=True
+                )
+
+                # Botón transparente superpuesto a la tarjeta completa:
+                # tocar el nombre, el logo o cualquier espacio de la tarjeta selecciona el fondo.
+                if st.button(
+                    f"Seleccionar {fondo['nombre']}",
+                    key=f"fund_pick_{slug}",
+                    use_container_width=True,
+                    help=f"Seleccionar {fondo['nombre']}"
+                ):
+                    st.session_state.fondo = fondo["valor"]
+                    st.session_state.step = "datos_personales"
+                    st.rerun()
+
+        # Dos fondos por fila: Porvenir/Colfondos y Protección/FNA.
+        for inicio in range(0, 4, 2):
+            cols = st.columns(2, gap="large")
             for col, fondo in zip(cols, fondos[inicio:inicio + 2]):
                 with col:
-                    with st.container(border=True):
-                        logo_path = buscar_logo_fondo(fondo["logo"]) if fondo["logo"] else None
-                        if logo_path:
-                            with open(logo_path, "rb") as archivo_logo:
-                                logo_b64 = base64.b64encode(archivo_logo.read()).decode("ascii")
-                            mime = mimetypes.guess_type(logo_path)[0] or "image/png"
-                            st.markdown(f'<div class="fund-logo-box"><img src="data:{mime};base64,{logo_b64}" alt="Logo de {html.escape(fondo["nombre"])}"></div>', unsafe_allow_html=True)
-                        else:
-                            st.markdown(f'<div class="fund-logo-box fund-fallback">{icon_svg(fondo["icono"])}</div>', unsafe_allow_html=True)
-                        marcado = st.session_state.get("fondo") == fondo["nombre"]
-                        st.markdown(f'<div class="fund-name">{html.escape(fondo["nombre"])}</div>', unsafe_allow_html=True)
-                        if st.button("✓ Seleccionado" if marcado else "Seleccionar fondo", key=f"fund_{fondo['nombre'].lower().replace('ó','o')}", use_container_width=True):
-                            st.session_state.fondo = fondo["nombre"]
-                            st.session_state.step = "datos_personales"
-                            st.rerun()
+                    mostrar_tarjeta_fondo(fondo)
+
+        # La única opción adicional va sola y centrada al final.
+        left, center, right = st.columns([1, 2, 1], gap="medium")
+        with center:
+            mostrar_tarjeta_fondo(fondos[4])
+
         if st.button("← Volver al inicio", key="fund_back", use_container_width=True):
             st.session_state.step = "landing"
             st.rerun()
