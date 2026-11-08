@@ -1094,6 +1094,102 @@ st.markdown(r"""
 </style>
 """, unsafe_allow_html=True)
 
+
+
+# ---------- DISEÑO DE MAQUETA PARA DATOS, EMPRESA, RESUMEN Y FINAL ----------
+st.markdown(r"""
+<style>
+:root{--mock-navy:#062b68;--mock-blue:#086fd0;--mock-cyan:#10bce8;--mock-line:#c9dced;--mock-ink:#18345b;--mock-muted:#526984}
+.st-key-screen_data,.st-key-screen_company,.st-key-screen_summary,.st-key-screen_mission,.st-key-screen_processing,.st-key-screen_success{
+ width:100%!important;max-width:1080px!important;margin:.6rem auto 1rem!important;padding:clamp(1rem,2.5vw,1.85rem)!important;
+ box-sizing:border-box!important;border:1px solid #c9dff2!important;border-radius:24px!important;
+ background:linear-gradient(180deg,#fff 0%,#fbfdff 72%,#eff7ff 100%)!important;
+ box-shadow:0 16px 44px rgba(0,25,70,.22)!important;color:var(--mock-ink)!important
+}
+.st-key-screen_data [data-testid="stVerticalBlock"],.st-key-screen_company [data-testid="stVerticalBlock"],.st-key-screen_summary [data-testid="stVerticalBlock"],.st-key-screen_mission [data-testid="stVerticalBlock"]{gap:.66rem!important}
+.st-key-screen_data .screen-heading,.st-key-screen_company .screen-heading,.st-key-screen_summary .screen-heading,.st-key-screen_mission .screen-heading{margin:.05rem 0 1rem!important;gap:.8rem!important}
+.st-key-screen_data .screen-heading h2,.st-key-screen_company .screen-heading h2,.st-key-screen_summary .screen-heading h2,.st-key-screen_mission .screen-heading h2{color:#082e6b!important;font-weight:900!important;letter-spacing:-.035em!important}
+.st-key-screen_data .screen-heading p,.st-key-screen_company .screen-heading p,.st-key-screen_summary .screen-heading p,.st-key-screen_mission .screen-heading p{color:#405873!important;opacity:1!important}
+.st-key-screen_data .section-label,.st-key-screen_data .field-label,.st-key-screen_company .field-label{color:#12396e!important;font-weight:850!important}
+.st-key-screen_data .field-label,.st-key-screen_company .field-label{margin:.35rem 0 .24rem!important;font-size:.88rem!important}
+.st-key-screen_data [data-testid="stTextInput"] input,.st-key-screen_data [data-testid="stSelectbox"] [data-baseweb="select"]>div,.st-key-screen_company [data-testid="stTextInput"] input,.st-key-screen_company [data-testid="stSelectbox"] [data-baseweb="select"]>div{
+ min-height:47px!important;border:1.5px solid #c3d8eb!important;border-radius:12px!important;background:#fff!important;color:#18345b!important;opacity:1!important
+}
+.st-key-screen_data input::placeholder,.st-key-screen_company input::placeholder{color:#758aa2!important;opacity:1!important}
+.st-key-screen_data [data-testid="stWidgetLabel"],.st-key-screen_company [data-testid="stWidgetLabel"]{color:#16375f!important;opacity:1!important}
+.st-key-screen_data [data-testid="stCaptionContainer"] p{color:#58708b!important}
+.st-key-screen_data .personal-tip{padding:.82rem 1rem!important;margin:.15rem 0 .8rem!important;border-radius:15px!important;background:linear-gradient(110deg,#e9f6ff,#d8f1ff)!important;border:1px solid #b9e3f7!important}
+.st-key-screen_data .personal-tip strong{color:#073575!important;font-size:1.08rem!important}
+.st-key-screen_data .personal-tip p{color:#405d7c!important;font-size:.87rem!important}
+.st-key-screen_data .section-label{margin:.65rem 0 .28rem!important;font-size:1rem!important}
+.st-key-screen_company .company-intro{display:flex;align-items:center;gap:.8rem;padding:.85rem 1rem;margin:.1rem 0 .8rem;border-radius:15px;border:1px solid #c5e5f7;background:linear-gradient(110deg,#eef8ff,#e1f4ff)}
+.st-key-screen_company .company-intro-icon{width:48px;height:48px;flex:0 0 48px;display:flex;align-items:center;justify-content:center;border-radius:14px;background:linear-gradient(145deg,#0874d8,#10bce8);color:#fff}
+.st-key-screen_company .company-intro-icon svg{width:26px;height:26px;stroke:#fff;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.st-key-screen_company .company-intro strong{display:block;color:#073575;font-size:1rem;font-weight:900}
+.st-key-screen_company .company-intro p{margin:.16rem 0 0;color:#48627e;font-size:.85rem;line-height:1.45}
+.st-key-screen_company .company-selected-card{display:flex;align-items:center;gap:.8rem;margin:.55rem 0 .85rem;padding:.72rem .9rem;border:1.5px solid #bcd9f2;border-radius:15px;background:linear-gradient(110deg,#fff,#f2f8ff);box-shadow:0 4px 13px rgba(8,65,135,.06)}
+.st-key-screen_company .company-selected-icon{width:44px;height:44px;flex:0 0 44px;display:flex;align-items:center;justify-content:center;border-radius:12px;background:#e8f4ff;color:#0874d8}
+.st-key-screen_company .company-selected-icon svg{width:27px;height:27px;stroke:currentColor;fill:none;stroke-width:2}
+.st-key-screen_company .company-selected-text{display:flex;flex-direction:column;gap:.12rem;min-width:0;flex:1}
+.st-key-screen_company .company-selected-text strong{color:#082e6b;font-size:1.02rem;font-weight:900;overflow-wrap:anywhere}
+.st-key-screen_company .company-selected-text span{color:#49637e;font-size:.84rem;font-weight:650}
+.st-key-screen_company .company-selected-check{width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:#dff7e7;color:#128a3c;font-weight:950}
+.st-key-screen_company .company-other-heading{display:flex;align-items:center;justify-content:center;gap:.7rem;margin:1rem 0 .25rem;padding:.72rem .9rem;border-radius:14px;background:#eaf5ff;border:1px solid #c1def5;text-align:left}
+.st-key-screen_company .company-plus{width:34px;height:34px;flex:0 0 34px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:linear-gradient(135deg,#0874d8,#10bce8);color:#fff;font-size:1.45rem;font-weight:800}
+.st-key-screen_company .company-other-heading strong{color:#082e6b;font-weight:900}
+.st-key-screen_company .company-other-heading p{margin:.08rem 0 0;color:#405873;font-size:.84rem}
+.st-key-screen_company .summary-item{margin:.2rem 0!important}
+.st-key-summary_panel{width:100%!important;box-sizing:border-box!important;padding:1rem!important;border:1px solid #c6dcef!important;border-radius:18px!important;background:linear-gradient(135deg,#fff,#f2f8ff)!important;box-shadow:0 7px 20px rgba(7,48,103,.08)!important}
+.st-key-screen_summary .summary-layout{display:grid;grid-template-columns:minmax(130px,.27fr) minmax(0,.73fr);gap:1.15rem;align-items:center;width:100%}
+.st-key-screen_summary .summary-check-column{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:.35rem;padding:.55rem}
+.st-key-screen_summary .summary-check{width:96px;height:96px;margin:0;border-radius:50%;display:flex;align-items:center;justify-content:center;background:linear-gradient(145deg,#22ce44,#0da52d);color:#fff;font-size:3.6rem;font-weight:950;box-shadow:0 10px 25px rgba(24,184,55,.27)}
+.st-key-screen_summary .summary-check-column strong{color:#0a7430;font-size:.9rem;font-weight:900}
+.st-key-screen_summary .summary-check-column span{color:#5d7187;font-size:.76rem;line-height:1.35}
+.st-key-screen_summary .summary-details{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.42rem .55rem;min-width:0}
+.st-key-screen_summary .summary-item{min-width:0;padding:.48rem .62rem;margin:0;border:1px solid #e0ebf5;border-radius:10px;background:#fff;overflow:hidden}
+.st-key-screen_summary .summary-item small{display:block;color:#58708b;font-size:.66rem;font-weight:850;text-transform:uppercase;letter-spacing:.035em}
+.st-key-screen_summary .summary-item strong{display:block;color:#0d2e5b;font-size:.88rem;font-weight:850;overflow-wrap:anywhere;line-height:1.3}
+.st-key-screen_summary .summary-note{display:flex;align-items:center;gap:.7rem;margin:.8rem 0 .45rem;padding:.75rem .9rem;border-radius:14px;background:#e3f1ff;border:1px solid #c8e0f6;color:#194a7d;font-size:.87rem;line-height:1.45}
+.st-key-screen_summary .summary-note-icon{width:28px;height:28px;flex:0 0 28px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:#0b82dc;color:white;font-weight:950;font-size:1.05rem}
+.st-key-screen_mission .mission-hero{margin:.1rem 0 .8rem!important;padding:1.15rem 1.25rem!important;border-radius:17px!important}
+.st-key-screen_mission .mission-card{min-height:150px!important}
+.st-key-screen_mission .mission-footnote{margin:.8rem 0 .35rem;color:#526b85;font-size:.82rem;line-height:1.5}
+.st-key-screen_success .success-shell{max-width:850px;margin:.2rem auto 1rem;padding:clamp(1.3rem,3.5vw,2.5rem);border-radius:23px;background:radial-gradient(circle at 50% 12%,#e2f4ff,#fff 58%,#eef8ff);border:1px solid #d3e5f4;box-shadow:0 12px 34px rgba(0,25,65,.10);text-align:center;position:relative;overflow:hidden}
+.st-key-screen_success .success-check{width:104px;height:104px;margin:.2rem auto .8rem;border-radius:50%;display:flex;align-items:center;justify-content:center;background:linear-gradient(145deg,#0ebcf0,#0756c4);color:#fff;font-size:4rem;font-weight:950;box-shadow:0 10px 25px #0874d833}
+.st-key-screen_success .success-shell h1{color:#082e6b;font-size:clamp(2rem,4vw,2.8rem);font-weight:950;letter-spacing:-.04em;margin:.2rem 0 .45rem}
+.st-key-screen_success .success-shell p{color:#173d76;font-size:1rem;line-height:1.5}
+.st-key-screen_success .success-delivery{max-width:700px;margin:1rem auto;padding:.85rem 1rem;border-radius:15px;background:#dceeff;color:#083a7b;font-weight:750;text-align:left;line-height:1.5;display:flex;align-items:center;gap:.7rem}
+.st-key-screen_success .success-mail-icon{width:42px;height:42px;flex:0 0 42px;border-radius:11px;background:linear-gradient(135deg,#0754a6,#0a94dc);color:#fff;display:flex;align-items:center;justify-content:center;font-size:1.35rem}
+.st-key-screen_success .success-number{display:inline-flex;flex-direction:column;gap:.22rem;margin:.35rem auto .4rem;padding:.65rem 1.2rem;border:1px solid #d5e6f4;border-radius:13px;background:#fff}
+.st-key-screen_success .success-number small{color:#62778f;font-size:.68rem;font-weight:850;letter-spacing:.06em}
+.st-key-screen_success .success-number strong{color:#0b3471;font-size:1.05rem;font-weight:950;letter-spacing:.04em}
+.st-key-screen_success .footer-brand{color:#063574;font-weight:850;font-style:italic;margin-top:1.05rem}
+.st-key-screen_data [data-testid="stButton"] button,.st-key-screen_company [data-testid="stButton"] button,.st-key-screen_summary [data-testid="stButton"] button,.st-key-screen_mission [data-testid="stButton"] button,.st-key-screen_success [data-testid="stButton"] button{min-height:48px;border-radius:13px!important}
+.st-key-screen_data .st-key-data_back button,.st-key-screen_company .st-key-company_back button,.st-key-screen_summary .st-key-summary_back button,.st-key-screen_mission .st-key-mission_back button{background:#fff!important;color:#0752a0!important;border:1.5px solid #8fc6f0!important;box-shadow:none!important}
+.st-key-screen_data .st-key-data_continue button,.st-key-screen_company .st-key-company_submit button,.st-key-screen_summary .st-key-summary_continue button,.st-key-screen_mission .st-key-mission_continue button{background:linear-gradient(110deg,#073b8a,#0874d4 70%,#0aa6dc)!important;color:#fff!important}
+@media(max-width:760px){
+ .st-key-screen_data,.st-key-screen_company,.st-key-screen_summary,.st-key-screen_mission,.st-key-screen_processing,.st-key-screen_success{width:100%!important;max-width:100%!important;margin:.4rem auto!important;padding:1rem .78rem!important;border-radius:18px!important}
+ .st-key-screen_data [data-testid="stHorizontalBlock"],.st-key-screen_company [data-testid="stHorizontalBlock"],.st-key-screen_summary [data-testid="stHorizontalBlock"],.st-key-screen_mission [data-testid="stHorizontalBlock"]{flex-wrap:wrap!important;gap:.42rem!important}
+ .st-key-screen_data [data-testid="stHorizontalBlock"]>[data-testid="column"],.st-key-screen_company [data-testid="stHorizontalBlock"]>[data-testid="column"],.st-key-screen_mission [data-testid="stHorizontalBlock"]>[data-testid="column"]{flex:1 1 100%!important;min-width:100%!important;width:100%!important}
+ .st-key-screen_data .screen-heading,.st-key-screen_company .screen-heading,.st-key-screen_summary .screen-heading,.st-key-screen_mission .screen-heading{gap:.58rem!important;margin-bottom:.8rem!important}
+ .st-key-screen_data .screen-heading h2,.st-key-screen_company .screen-heading h2,.st-key-screen_summary .screen-heading h2,.st-key-screen_mission .screen-heading h2{font-size:1.25rem!important}
+ .st-key-screen_data .screen-heading p,.st-key-screen_company .screen-heading p,.st-key-screen_summary .screen-heading p,.st-key-screen_mission .screen-heading p{font-size:.83rem!important}
+ .st-key-screen_data .personal-tip{align-items:flex-start!important;padding:.7rem!important;gap:.62rem!important}
+ .st-key-screen_data .personal-tip-icon{width:39px!important;height:39px!important;flex-basis:39px!important}
+ .st-key-screen_company .company-selected-card{padding:.65rem!important;gap:.55rem!important}
+ .st-key-screen_summary .summary-layout{grid-template-columns:1fr!important;gap:.7rem!important}
+ .st-key-screen_summary .summary-check{width:76px!important;height:76px!important;font-size:2.8rem!important}
+ .st-key-screen_summary .summary-details{grid-template-columns:1fr!important;gap:.35rem!important}
+ .st-key-screen_summary .summary-item{padding:.52rem .62rem!important}
+ .st-key-screen_summary .summary-note{align-items:flex-start!important;font-size:.82rem!important}
+ .st-key-screen_mission .mission-card{min-height:0!important;margin-bottom:.45rem!important}
+ .st-key-screen_success .success-shell{padding:1.25rem .78rem!important;border-radius:18px!important}
+ .st-key-screen_success .success-check{width:82px!important;height:82px!important;font-size:3rem!important}
+ .st-key-screen_success .success-delivery{align-items:flex-start!important;padding:.7rem!important;font-size:.82rem!important}
+}
+</style>
+""", unsafe_allow_html=True)
+
 # ---------- ESTADO INICIAL ----------
 if 'step' not in st.session_state:
     st.session_state.step = 'landing'
@@ -1830,7 +1926,7 @@ def render_field_label(icono, texto):
 
 
 def render_brand_header(etapa=2):
-    """Marca y progreso del recorrido definitivo de seis pantallas."""
+    """Encabezado de marca y progreso del flujo nuevo de seis etapas."""
     logo_uri = imagen_data_uri(obtener_logo_app_path())
     logo_html = f'<img src="{logo_uri}" alt="Cesantías al Instante">' if logo_uri else '<strong>Cesantías al Instante</strong>'
     st.markdown(
@@ -1838,17 +1934,17 @@ def render_brand_header(etapa=2):
         '<div class="brand-trust"><span>✓</span> Trámite fácil y seguro</div></div>',
         unsafe_allow_html=True
     )
-    etiquetas = ["Inicio", "Fondo", "Datos", "Resumen", "Misión", "Empresa"]
+    # Orden definitivo: fondo, datos, empresa, resumen y misión.
+    etiquetas = ["Inicio", "Fondo", "Datos", "Empresa", "Resumen", "Misión"]
     pasos = []
     for n, etiqueta in enumerate(etiquetas, 1):
-        clase = "active" if n == etapa else ("done" if n < etapa else "")
-        simbolo = "✓" if n < etapa else str(n)
+        clase = "active" if n == etapa else ("done" if n < etapa or etapa > 6 else "")
+        simbolo = "✓" if n < etapa or etapa > 6 else str(n)
         pasos.append(
             f'<div class="journey-step {clase}"><div class="journey-dot">{simbolo}</div>'
             f'<span>{etiqueta}</span></div>'
         )
     st.markdown('<div class="journey-wrap"><div class="journey">' + ''.join(pasos) + '</div></div>', unsafe_allow_html=True)
-
 
 def reiniciar_solicitud():
     """Limpia únicamente los datos del trámite; la autorización y servicios permanecen intactos."""
@@ -2006,9 +2102,14 @@ def limpiar_cedula_widget():
 
 
 def render_datos_personales():
+    """Pantalla 3: datos personales y valores del retiro, en una tarjeta limpia."""
     render_brand_header(3)
-    with st.container(key="screen_data"): 
-        render_screen_heading("user", "Datos personales", "Completa tu información para preparar correctamente la carta de retiro.")
+    with st.container(key="screen_data"):
+        render_screen_heading(
+            "user", "Datos de tu solicitud",
+            "Completa tus datos para preparar correctamente la carta de retiro."
+        )
+
         numeros = {
             "Porvenir": "01 8000 111 222", "Colfondos": "01 8000 123 456",
             "Protección": "01 8000 789 012", "FNA": "01 8000 456 789", "Otro": "01 8000 000 000"
@@ -2016,9 +2117,10 @@ def render_datos_personales():
         numero = numeros.get(st.session_state.get("fondo", "Otro"), "01 8000 000 000")
         st.markdown(
             f'<div class="personal-tip"><div class="personal-tip-icon">{icon_svg("phone")}</div>'
-            f'<div><strong>{html.escape(numero)}</strong><p>Consulta tu saldo en los canales oficiales de tu fondo. Marca, sigue las indicaciones y escribe abajo el saldo que te informen.</p></div></div>',
+            f'<div><strong>{html.escape(numero)}</strong><p>Consulta tu saldo en los canales oficiales de tu fondo. Sigue las indicaciones y escribe abajo el saldo que te informen.</p></div></div>',
             unsafe_allow_html=True
         )
+
         st.markdown(f'<div class="section-label">{icon_svg("wallet")} Información del retiro</div>', unsafe_allow_html=True)
         c_saldo, c_monto = st.columns(2, gap="medium")
         with c_saldo:
@@ -2027,38 +2129,53 @@ def render_datos_personales():
         with c_monto:
             render_field_label("wallet", "Monto que deseas retirar (COP)")
             monto_raw = st.text_input("Monto que deseas retirar (COP)", label_visibility="collapsed", placeholder="Ej. 900000", key="monto_raw_widget")
-        for valor, etiqueta in ((saldo_raw, "Saldo"), (monto_raw, "Monto")):
-            limpio = re.sub(r"\D", "", str(valor))
+        c_saldo_caption, c_monto_caption = st.columns(2, gap="medium")
+        with c_saldo_caption:
+            limpio = re.sub(r"\D", "", str(saldo_raw))
             if limpio:
-                st.caption(f"{etiqueta}: ${int(limpio):,}".replace(",", "."))
+                st.caption("Saldo: $" + f"{int(limpio):,}".replace(",", "."))
+        with c_monto_caption:
+            limpio = re.sub(r"\D", "", str(monto_raw))
+            if limpio:
+                st.caption("Monto: $" + f"{int(limpio):,}".replace(",", "."))
 
-        st.markdown(f'<div class="section-label">{icon_svg("user")} Tus datos de contacto</div>', unsafe_allow_html=True)
-        c1, c2 = st.columns(2, gap="large")
-        with c1:
+        st.markdown(f'<div class="section-label">{icon_svg("user")} Tus datos personales</div>', unsafe_allow_html=True)
+        departamentos = [
+            "Amazonas", "Antioquia", "Arauca", "Atlántico", "Bogotá, D.C.", "Bolívar", "Boyacá", "Caldas", "Caquetá", "Casanare", "Cauca", "Cesar", "Chocó", "Córdoba", "Cundinamarca", "Guainía", "Guaviare", "Huila", "La Guajira", "Magdalena", "Meta", "Nariño", "Norte de Santander", "Putumayo", "Quindío", "Risaralda", "San Andrés y Providencia", "Santander", "Sucre", "Tolima", "Valle del Cauca", "Vaupés", "Vichada"
+        ]
+
+        # Tres filas de dos campos. Streamlit las apila en móvil conservando el orden.
+        col_nombre, col_cedula = st.columns(2, gap="large")
+        with col_nombre:
             render_field_label("user", "Nombre completo")
             nombre = st.text_input("Nombre completo", label_visibility="collapsed", placeholder="Como aparece en tu cédula", key="nombre_widget")
+        with col_cedula:
             render_field_label("file", "Cédula")
             cedula = st.text_input("Cédula", label_visibility="collapsed", placeholder="Escribe solo números", key="cedula_widget", on_change=limpiar_cedula_widget)
+
+        col_telefono, col_email = st.columns(2, gap="large")
+        with col_telefono:
             render_field_label("phone", "Teléfono / WhatsApp")
             telefono = st.text_input("Teléfono / WhatsApp", label_visibility="collapsed", placeholder="Ej. 3001234567", key="telefono_widget", on_change=limpiar_telefono_widget)
-        with c2:
+        with col_email:
             render_field_label("mail", "Correo electrónico")
             email_val = st.text_input("Correo electrónico", label_visibility="collapsed", placeholder="nombre@correo.com", key="email_widget")
-            departamentos = [
-                "Amazonas", "Antioquia", "Arauca", "Atlántico", "Bogotá, D.C.", "Bolívar", "Boyacá", "Caldas", "Caquetá", "Casanare", "Cauca", "Cesar", "Chocó", "Córdoba", "Cundinamarca", "Guainía", "Guaviare", "Huila", "La Guajira", "Magdalena", "Meta", "Nariño", "Norte de Santander", "Putumayo", "Quindío", "Risaralda", "San Andrés y Providencia", "Santander", "Sucre", "Tolima", "Valle del Cauca", "Vaupés", "Vichada"
-            ]
+
+        col_departamento, col_ciudad = st.columns(2, gap="large")
+        with col_departamento:
             render_field_label("pin", "Departamento")
             departamento = st.selectbox("Departamento", [""] + departamentos, label_visibility="collapsed", key="departamento_widget", placeholder="Selecciona tu departamento")
+        with col_ciudad:
             render_field_label("pin", "Ciudad")
             ciudad = st.text_input("Ciudad", label_visibility="collapsed", placeholder="Escribe tu ciudad", key="ciudad_widget")
 
-        c1, c2 = st.columns([1, 1.8])
-        with c1:
+        nav_back, nav_next = st.columns([1, 1.65], gap="medium")
+        with nav_back:
             if st.button("← Atrás", key="data_back", use_container_width=True):
                 st.session_state.step = "seleccionar_fondo"
                 st.rerun()
-        with c2:
-            if st.button("Continuar al resumen  →", key="data_continue", use_container_width=True):
+        with nav_next:
+            if st.button("Siguiente: empresa  →", key="data_continue", use_container_width=True):
                 saldo_limpio = re.sub(r"\D", "", str(saldo_raw))
                 monto_limpio = re.sub(r"\D", "", str(monto_raw))
                 telefono_limpio = re.sub(r"\D", "", str(telefono))
@@ -2079,8 +2196,8 @@ def render_datos_personales():
                 if int(monto_limpio) > int(saldo_limpio):
                     st.error("El monto a retirar no puede superar el saldo disponible.")
                     st.stop()
-                # Valor general interno para el marcador heredado {{MOTIVO_RETIRO}}.
-                # No existe ni se muestra una pantalla de selección de motivo.
+
+                # Valor general interno para el marcador heredado; no se muestra un motivo.
                 st.session_state.proposito = "Retiro de cesantías"
                 st.session_state.saldo_limpio = saldo_limpio
                 st.session_state.saldo_verificado = f"${int(saldo_limpio):,}".replace(",", ".")
@@ -2092,49 +2209,60 @@ def render_datos_personales():
                 st.session_state.email = email_limpio
                 st.session_state.departamento = departamento
                 st.session_state.ciudad = ciudad.strip()
-                st.session_state.step = "resumen"
+                st.session_state.step = "empresa"
                 st.rerun()
-
 
 def render_resumen():
-    render_brand_header(4)
-    with st.container(key="screen_summary"): 
-        render_screen_heading("file", "Resumen de tu solicitud", "Revisa que la información esté correcta antes de continuar.")
-        with st.container(key="summary_panel"): 
-            st.markdown('<div class="summary-check">✓</div>', unsafe_allow_html=True)
-            filas = [
-                ("Fondo de cesantías", st.session_state.get("fondo", "")),
-                ("Nombre completo", st.session_state.get("nombre", "")),
-                ("Cédula", st.session_state.get("cedula", "")),
-                ("Teléfono / WhatsApp", st.session_state.get("telefono", "")),
-                ("Correo electrónico", st.session_state.get("email", "")),
-                ("Departamento", st.session_state.get("departamento", "")),
-                ("Ciudad", st.session_state.get("ciudad", "")),
-                ("Saldo disponible", st.session_state.get("saldo_verificado", "")),
-                ("Monto solicitado", "$" + str(st.session_state.get("monto", ""))),
-            ]
-            cols = st.columns(2, gap="medium")
-            for i, (etiqueta, valor) in enumerate(filas):
-                with cols[i % 2]:
-                    st.markdown(
-                        f'<div class="summary-item"><small>{html.escape(etiqueta)}</small><strong>{html.escape(str(valor))}</strong></div>',
-                        unsafe_allow_html=True
-                    )
-        st.info("En la siguiente pantalla te explicaremos quiénes somos y cómo acompañamos tu solicitud.")
-        c1, c2 = st.columns([1, 1.8])
-        with c1:
-            if st.button("← Corregir datos", key="summary_back", use_container_width=True):
-                st.session_state.step = "datos_personales"
+    """Pantalla 5: resumen con verificación, empresa y NIT antes de confirmar."""
+    render_brand_header(5)
+    with st.container(key="screen_summary"):
+        render_screen_heading("file", "Resumen de tu solicitud", "Verifica que toda la información esté correcta antes de continuar.")
+
+        filas = [
+            ("Fondo de cesantías", st.session_state.get("fondo", "")),
+            ("Empresa", st.session_state.get("empresa", "")),
+            ("NIT", st.session_state.get("nit", "")),
+            ("Nombre completo", st.session_state.get("nombre", "")),
+            ("Cédula", st.session_state.get("cedula", "")),
+            ("Celular / WhatsApp", st.session_state.get("telefono", "")),
+            ("Correo electrónico", st.session_state.get("email", "")),
+            ("Departamento", st.session_state.get("departamento", "")),
+            ("Ciudad", st.session_state.get("ciudad", "")),
+            ("Saldo disponible", st.session_state.get("saldo_verificado", "")),
+            ("Monto solicitado", "$" + str(st.session_state.get("monto", ""))),
+        ]
+        items_html = "".join(
+            '<div class="summary-item"><small>' + html.escape(etiqueta) + '</small><strong>' + html.escape(str(valor)) + '</strong></div>'
+            for etiqueta, valor in filas
+        )
+        with st.container(key="summary_panel"):
+            st.markdown(
+                '<div class="summary-layout"><div class="summary-check-column">'
+                '<div class="summary-check">✓</div><strong>Información verificada</strong>'
+                '<span>Revisa tus datos antes de avanzar.</span></div>'
+                '<div class="summary-details">' + items_html + '</div></div>',
+                unsafe_allow_html=True
+            )
+
+        st.markdown(
+            '<div class="summary-note"><span class="summary-note-icon">i</span>'
+            '<span>En la siguiente pantalla te contaremos cómo acompañamos tu solicitud. Podrás regresar si necesitas corregir algún dato.</span></div>',
+            unsafe_allow_html=True
+        )
+        nav_back, nav_next = st.columns([1, 1.65], gap="medium")
+        with nav_back:
+            if st.button("← Corregir empresa", key="summary_back", use_container_width=True):
+                st.session_state.step = "empresa"
                 st.rerun()
-        with c2:
+        with nav_next:
             if st.button("Continuar  →", key="summary_continue", use_container_width=True):
                 st.session_state.step = "mision"
                 st.rerun()
 
-
 def render_mision():
-    render_brand_header(5)
-    with st.container(key="screen_mission"): 
+    """Pantalla 6: misión y explicación del acompañamiento antes de generar la carta."""
+    render_brand_header(6)
+    with st.container(key="screen_mission"):
         render_screen_heading("mission", "Nuestra misión", "Queremos que conozcas cómo funciona nuestro acompañamiento.")
         st.markdown("""
         <section class="mission-hero">
@@ -2151,23 +2279,35 @@ def render_mision():
         for col, (simbolo, titulo, texto) in zip(cols, cards):
             with col:
                 st.markdown(f'<div class="mission-card"><div class="mission-symbol">{simbolo}</div><strong>{titulo}</strong><p>{texto}</p></div>', unsafe_allow_html=True)
-        st.markdown('<p style="color:#58708b;font-size:.84rem;margin:1rem 0 0">La preparación de la carta depende de que los datos sean correctos y de que exista una plantilla válida asociada a la empresa seleccionada.</p>', unsafe_allow_html=True)
-        c1, c2 = st.columns([1, 1.8])
-        with c1:
+        st.markdown(
+            '<div class="mission-footnote">La preparación de la carta depende de que los datos sean correctos y de que exista una plantilla válida asociada a la empresa seleccionada.</div>',
+            unsafe_allow_html=True
+        )
+        nav_back, nav_next = st.columns([1, 1.65], gap="medium")
+        with nav_back:
             if st.button("← Atrás", key="mission_back", use_container_width=True):
                 st.session_state.step = "resumen"
                 st.rerun()
-        with c2:
-            if st.button("Continuar a mi empresa  →", key="mission_continue", use_container_width=True):
-                st.session_state.step = "empresa"
+        with nav_next:
+            if st.button("Preparar mi carta  →", key="mission_continue", use_container_width=True):
+                st.session_state.step = "generando"
                 st.rerun()
 
-
 def render_empresa():
-    render_brand_header(6)
-    with st.container(key="screen_company"): 
-        render_screen_heading("building", "Empresa donde trabajas", "Selecciona tu empresa para localizar el NIT y la plantilla de tu carta.")
-        st.markdown('<div class="personal-tip"><div class="personal-tip-icon">' + icon_svg("building") + '</div><div><strong>Buscamos tu empresa en nuestro registro</strong><p>La selección permite asociar automáticamente los datos y la plantilla disponibles en nuestra base de empresas.</p></div></div>', unsafe_allow_html=True)
+    """Pantalla 4: selección de empresa desde Sheets, NIT y plantilla asociada."""
+    render_brand_header(4)
+    with st.container(key="screen_company"):
+        render_screen_heading(
+            "building", "Empresa donde trabajas",
+            "Selecciona tu empresa para localizar su NIT y la plantilla de tu carta."
+        )
+        st.markdown(
+            '<div class="company-intro"><div class="company-intro-icon">' + icon_svg("building") + '</div>'
+            '<div><strong>Tu empresa está en nuestro registro</strong>'
+            '<p>Buscamos su información en Google Sheets para asociar el NIT y la plantilla correspondiente.</p></div></div>',
+            unsafe_allow_html=True
+        )
+
         try:
             df_empresas = conn.read(worksheet="Empresas", ttl=0).dropna(how="all")
             if "Nombre_Empresa" not in df_empresas.columns:
@@ -2178,15 +2318,22 @@ def render_empresa():
             st.error(f"No fue posible cargar la lista de empresas desde Google Sheets: {exc}")
             st.stop()
 
-        render_field_label("building", "Empresa donde trabajas")
+        render_field_label("building", "Busca o selecciona tu empresa")
         empresa_seleccionada = st.selectbox(
-            "Selecciona tu empresa", [""] + lista_empresas + ["Otra"], label_visibility="collapsed", key="empresa_widget",
-            placeholder="Busca o selecciona tu empresa"
+            "Selecciona tu empresa", [""] + lista_empresas + ["Otra"],
+            label_visibility="collapsed", key="empresa_widget",
+            placeholder="Escribe para buscar tu empresa"
         )
+
         empresa_manual = ""
         nit_manual = ""
         if empresa_seleccionada == "Otra":
-            st.markdown('<div class="section-label">' + icon_svg("building") + ' Información de tu empresa</div>', unsafe_allow_html=True)
+            st.markdown(
+                '<div class="company-other-heading"><span class="company-plus">+</span>'
+                '<div><strong>¿No encuentras tu empresa?</strong>'
+                '<p>Ingresa manualmente el nombre y el NIT para continuar.</p></div></div>',
+                unsafe_allow_html=True
+            )
             mc1, mc2 = st.columns(2, gap="medium")
             with mc1:
                 render_field_label("building", "Nombre de la empresa")
@@ -2194,22 +2341,28 @@ def render_empresa():
             with mc2:
                 render_field_label("file", "NIT de la empresa")
                 nit_manual = st.text_input("NIT de la empresa", label_visibility="collapsed", placeholder="Número de NIT", key="nit_manual_widget")
-            st.info("Para la opción “Otra”, la hoja Empresas debe tener una fila con Nombre_Empresa = Otra y el Doc_ID de la plantilla general.")
+            st.caption("La opción Otra utiliza la plantilla general configurada en la hoja Empresas.")
         elif empresa_seleccionada:
             coincidencias = df_empresas[df_empresas["Nombre_Empresa"].astype(str).str.strip() == empresa_seleccionada]
             nit_visible = ""
             if not coincidencias.empty and "NIT" in df_empresas.columns:
                 valor_nit = coincidencias.iloc[0].get("NIT", "")
                 nit_visible = "" if pd.isna(valor_nit) else str(valor_nit).strip()
-            st.markdown(f'<div class="summary-item"><small>NIT registrado</small><strong>{html.escape(nit_visible or "No aparece un NIT en la hoja Empresas")}</strong></div>', unsafe_allow_html=True)
+            st.markdown(
+                '<div class="company-selected-card"><div class="company-selected-icon">' + icon_svg("building") + '</div>'
+                '<div class="company-selected-text"><strong>' + html.escape(empresa_seleccionada) + '</strong>'
+                '<span>NIT: ' + html.escape(nit_visible or "No registrado en la hoja Empresas") + '</span></div>'
+                '<div class="company-selected-check">✓</div></div>',
+                unsafe_allow_html=True
+            )
 
-        c1, c2 = st.columns([1, 1.8])
-        with c1:
+        nav_back, nav_next = st.columns([1, 1.65], gap="medium")
+        with nav_back:
             if st.button("← Atrás", key="company_back", use_container_width=True):
-                st.session_state.step = "mision"
+                st.session_state.step = "datos_personales"
                 st.rerun()
-        with c2:
-            if st.button("Enviar solicitud  ✓", key="company_submit", use_container_width=True):
+        with nav_next:
+            if st.button("Siguiente: resumen  →", key="company_submit", use_container_width=True):
                 if not empresa_seleccionada:
                     st.error("Selecciona la empresa donde trabajas.")
                     st.stop()
@@ -2231,7 +2384,7 @@ def render_empresa():
                         st.error("Esta empresa no tiene una plantilla asignada. Verifica la columna Doc_ID de la hoja Empresas.")
                         st.stop()
                     st.session_state.empresa_seleccionada = empresa_seleccionada
-                    st.session_state.step = "generando"
+                    st.session_state.step = "resumen"
                     st.rerun()
                 except Exception as exc:
                     st.error(f"No se pudo validar la empresa o localizar su plantilla: {exc}")
@@ -2328,29 +2481,29 @@ def render_generando():
 
 
 def render_final():
-    """Confirmación final de la solicitud, con número y acceso al PDF."""
-    render_brand_header(7)  # Los seis pasos del recorrido aparecen completados.
+    """Confirmación final con número de solicitud y acceso al PDF generado."""
+    render_brand_header(7)  # Los seis pasos aparecen completados.
     with st.container(key="screen_success"):
         numero_solicitud_html = html.escape(str(st.session_state.solicitud_id))
         st.markdown(f"""
         <section class="success-shell">
+          <div class="success-confetti" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
           <div class="success-check">✓</div>
-          <h1>¡Tu solicitud fue enviada!</h1>
-          <p>Registramos correctamente tu solicitud de retiro de cesantías.</p>
-          <div class="success-delivery">✉ &nbsp; Nuestro equipo gestionará la entrega de tu carta al correo electrónico y al WhatsApp que registraste, dentro de las próximas 24 horas.</div>
-          <p><strong>Número de solicitud:</strong> {numero_solicitud_html}</p>
+          <h1>¡Solicitud enviada!</h1>
+          <p>Tu solicitud de retiro de cesantías quedó registrada correctamente.</p>
+          <div class="success-delivery"><span class="success-mail-icon">✉</span><span>Recibirás la carta por correo electrónico y WhatsApp dentro de las próximas 24 horas. También puedes consultar el PDF desde esta pantalla.</span></div>
+          <div class="success-number"><small>NÚMERO DE SOLICITUD</small><strong>{numero_solicitud_html}</strong></div>
           <div class="footer-brand">Cesantías al Instante... siempre contigo</div>
         </section>
         """, unsafe_allow_html=True)
         if st.session_state.pdf_url:
-            st.link_button("Abrir o descargar mi carta (PDF)", st.session_state.pdf_url, use_container_width=True)
+            st.link_button("Abrir o descargar mi carta (PDF)  ↓", st.session_state.pdf_url, use_container_width=True)
         if st.session_state.url_copia:
             st.link_button("Abrir documento editable", st.session_state.url_copia, use_container_width=True)
-        if st.button("Volver al inicio", key="finish_home", use_container_width=True):
+        if st.button("⌂  Volver al inicio", key="finish_home", use_container_width=True):
             reiniciar_solicitud()
             st.session_state.step = "landing"
             st.rerun()
-
 
 def render_whatsapp_entrega():
     render_brand_header()
