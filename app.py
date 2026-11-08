@@ -1127,6 +1127,205 @@ st.markdown(r"""
 </style>
 """, unsafe_allow_html=True)
 
+# ---------- AJUSTE DEFINITIVO MÓVIL: TARJETAS CUADRADAS ----------
+# Este bloque afecta solo pantallas de hasta 600px. Escritorio conserva su diseño.
+st.markdown(r"""
+<style>
+@media (max-width: 600px) {
+  /* Contenedor interior: nunca debe producir desbordamiento horizontal. */
+  .st-key-screen_fund {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    box-sizing: border-box !important;
+    overflow: hidden !important;
+  }
+
+  /* Dos columnas reales con tracks que pueden encogerse en teléfonos estrechos. */
+  .st-key-screen_fund [data-testid="stHorizontalBlock"]:not(:has(.st-key-fund_card_otro_fondo)) {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    gap: .55rem !important;
+    box-sizing: border-box !important;
+    align-items: stretch !important;
+  }
+  .st-key-screen_fund [data-testid="stHorizontalBlock"]:not(:has(.st-key-fund_card_otro_fondo)) > [data-testid="column"] {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    flex: initial !important;
+    padding: 0 !important;
+    box-sizing: border-box !important;
+  }
+
+  /* Tarjeta cuadrada. El alto se calcula desde el ancho disponible de cada columna. */
+  .st-key-screen_fund [class*="st-key-fund_card_"] {
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 0 !important;
+    height: auto !important;
+    max-height: none !important;
+    aspect-ratio: 1 / 1 !important;
+    padding: .48rem .28rem .38rem !important;
+    margin: 0 !important;
+    gap: .12rem !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+    border-radius: 14px !important;
+    box-sizing: border-box !important;
+    overflow: hidden !important;
+  }
+
+  /* El título ocupa una franja propia en la parte superior. */
+  .st-key-screen_fund .fund-card-title {
+    position: relative !important;
+    z-index: 1 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    flex: 0 0 auto !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 1.35rem !important;
+    height: 1.35rem !important;
+    margin: 0 !important;
+    padding: 0 .08rem !important;
+    font-size: clamp(.78rem, 3.6vw, .94rem) !important;
+    line-height: 1.1 !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    text-align: center !important;
+  }
+
+  /* Logo/icono debajo del nombre: tamaño limitado para que nunca lo tape. */
+  .st-key-screen_fund .fund-card-logo {
+    position: relative !important;
+    z-index: 1 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    flex: 1 1 auto !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 0 !important;
+    height: auto !important;
+    max-height: calc(100% - 1.5rem) !important;
+    padding: .08rem .12rem .12rem !important;
+    margin: 0 !important;
+    overflow: hidden !important;
+    box-sizing: border-box !important;
+  }
+  .st-key-screen_fund .fund-card-logo img {
+    display: block !important;
+    width: auto !important;
+    height: auto !important;
+    max-width: 78% !important;
+    max-height: 64px !important;
+    object-fit: contain !important;
+  }
+  .st-key-screen_fund .fund-card-logo svg {
+    display: block !important;
+    width: 31px !important;
+    height: 31px !important;
+    min-width: 0 !important;
+    max-width: 31px !important;
+    max-height: 31px !important;
+    flex: 0 1 auto !important;
+  }
+
+  /* Mantiene toda la superficie clicable sin mostrar el botón superpuesto. */
+  .st-key-screen_fund [class*="st-key-fund_card_"] [class*="st-key-fund_pick_"] {
+    position: absolute !important;
+    inset: 0 !important;
+    z-index: 5 !important;
+    width: 100% !important;
+    height: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+  .st-key-screen_fund [class*="st-key-fund_card_"] [class*="st-key-fund_pick_"] button {
+    position: absolute !important;
+    inset: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    min-height: 100% !important;
+    max-height: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    opacity: 0 !important;
+    color: transparent !important;
+    background: transparent !important;
+    border: 0 !important;
+    box-shadow: none !important;
+    border-radius: 14px !important;
+  }
+
+  /* Otro Fondo: una tarjeta cuadrada más angosta, centrada. */
+  .st-key-screen_fund [data-testid="stHorizontalBlock"]:has(.st-key-fund_card_otro_fondo) {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    gap: 0 !important;
+    justify-items: center !important;
+    box-sizing: border-box !important;
+  }
+  .st-key-screen_fund [data-testid="stHorizontalBlock"]:has(.st-key-fund_card_otro_fondo) > [data-testid="column"]:not(:has(.st-key-fund_card_otro_fondo)) {
+    display: none !important;
+  }
+  .st-key-screen_fund [data-testid="stHorizontalBlock"]:has(.st-key-fund_card_otro_fondo) > [data-testid="column"]:has(.st-key-fund_card_otro_fondo) {
+    display: block !important;
+    width: min(48%, 150px) !important;
+    max-width: min(48%, 150px) !important;
+    min-width: 0 !important;
+    flex: initial !important;
+    margin: 0 auto !important;
+    padding: 0 !important;
+    box-sizing: border-box !important;
+  }
+  .st-key-screen_fund [class*="st-key-fund_card_otro_fondo"] {
+    width: 100% !important;
+    aspect-ratio: 1 / 1 !important;
+    min-height: 0 !important;
+    height: auto !important;
+    max-height: none !important;
+  }
+}
+
+@media (max-width: 380px) {
+  .st-key-screen_fund [data-testid="stHorizontalBlock"]:not(:has(.st-key-fund_card_otro_fondo)) {
+    gap: .42rem !important;
+  }
+  .st-key-screen_fund [class*="st-key-fund_card_"] {
+    padding: .4rem .2rem .3rem !important;
+    border-radius: 12px !important;
+  }
+  .st-key-screen_fund .fund-card-title {
+    font-size: .76rem !important;
+    min-height: 1.22rem !important;
+    height: 1.22rem !important;
+  }
+  .st-key-screen_fund .fund-card-logo img {
+    max-width: 76% !important;
+    max-height: 54px !important;
+  }
+  .st-key-screen_fund .fund-card-logo svg {
+    width: 27px !important;
+    height: 27px !important;
+    max-width: 27px !important;
+    max-height: 27px !important;
+  }
+}
+</style>
+""", unsafe_allow_html=True)
+
 # ---------- ESTADO INICIAL ----------
 if 'step' not in st.session_state:
     st.session_state.step = 'landing'
