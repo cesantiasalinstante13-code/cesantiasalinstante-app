@@ -446,6 +446,64 @@ div[data-testid="stMainBlockContainer"] {
  .st-key-landing_start{top:390px!important;bottom:auto!important}
 }
 
+
+/* PORTADA V3: mujer a escala natural y logo visible también en PC */
+.st-key-landing_wrap .hero-shell{
+  grid-template-columns:minmax(0,1.12fr) minmax(300px,.88fr)!important;
+  min-height:520px!important;height:520px!important;
+  max-width:1080px!important;align-items:stretch!important;
+}
+.st-key-landing_wrap .hero-copy{
+  padding:1.05rem 1.65rem 5rem!important;
+  min-width:0!important;justify-content:flex-start!important;
+}
+.st-key-landing_wrap .hero-logo{
+  position:relative!important;z-index:5!important;
+  display:flex!important;visibility:visible!important;opacity:1!important;
+  width:300px!important;max-width:100%!important;height:82px!important;
+  margin:0 0 .65rem!important;padding:.22rem .55rem!important;
+  border-radius:12px!important;background:rgba(255,255,255,.94)!important;
+  box-shadow:0 5px 18px rgba(0,25,75,.12)!important;
+}
+.st-key-landing_wrap .hero-logo img{
+  display:block!important;visibility:visible!important;opacity:1!important;
+  width:auto!important;max-width:100%!important;height:auto!important;max-height:76px!important;
+  object-fit:contain!important;object-position:left center!important;
+}
+.st-key-landing_wrap .hero-title{font-size:clamp(2.15rem,3.2vw,2.8rem)!important;line-height:1.03!important;margin:.12rem 0 .65rem!important}
+.st-key-landing_wrap .hero-description{max-width:390px!important;font-size:1rem!important;line-height:1.42!important;margin-bottom:.75rem!important}
+.st-key-landing_wrap .hero-benefits{gap:.42rem!important;margin:.12rem 0 .2rem!important;font-size:.98rem!important}
+.st-key-landing_wrap .hero-benefit i{width:31px!important;height:31px!important;flex-basis:31px!important}
+.st-key-landing_wrap .hero-person{
+  position:relative!important;display:flex!important;align-items:flex-end!important;justify-content:center!important;
+  min-width:0!important;min-height:520px!important;height:520px!important;overflow:hidden!important;
+  border-radius:0 0 0 82px!important;
+  background:linear-gradient(90deg,rgba(5,48,112,.16),rgba(5,48,112,0) 28%),linear-gradient(180deg,#0b4b91 0%,#0b367a 100%)!important;
+}
+.st-key-landing_wrap .hero-person img{
+  position:absolute!important;inset:0!important;width:100%!important;height:100%!important;
+  object-fit:contain!important;object-position:center bottom!important;
+  opacity:.96!important;transform:scale(.94)!important;transform-origin:center bottom!important;
+}
+.st-key-landing_wrap .hero-person:after{
+  background:linear-gradient(90deg,rgba(5,48,112,.28),rgba(5,48,112,0) 36%),linear-gradient(0deg,rgba(0,49,122,.18),transparent 38%)!important;
+}
+.st-key-landing_start{top:auto!important;bottom:1.15rem!important;left:1.65rem!important}
+@media(max-width:760px){
+ .st-key-landing_wrap .hero-shell{grid-template-columns:minmax(0,1.12fr) minmax(0,.88fr)!important;grid-template-rows:minmax(510px,auto)!important;min-height:510px!important;height:510px!important}
+ .st-key-landing_wrap .hero-copy{padding:.72rem .55rem 4.3rem!important}
+ .st-key-landing_wrap .hero-logo{width:100%!important;height:68px!important;padding:.16rem .28rem!important;margin:0 0 .48rem!important}
+ .st-key-landing_wrap .hero-logo img{max-height:62px!important}
+ .st-key-landing_wrap .hero-person{min-height:510px!important;height:510px!important;max-height:none!important}
+ .st-key-landing_wrap .hero-person img{object-fit:cover!important;object-position:50% 18%!important;transform:none!important;opacity:.88!important}
+ .st-key-landing_start{top:auto!important;bottom:.62rem!important;left:.58rem!important;width:calc(56% - .95rem)!important}
+}
+@media(max-width:390px){
+ .st-key-landing_wrap .hero-shell{grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr)!important;min-height:510px!important;height:510px!important;grid-template-rows:510px!important}
+ .st-key-landing_wrap .hero-person{min-height:510px!important;height:510px!important}
+ .st-key-landing_start{top:auto!important;bottom:.55rem!important}
+}
+
 </style>
 """, unsafe_allow_html=True)
 
