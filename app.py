@@ -991,11 +991,14 @@ st.markdown(r"""
     touch-action:manipulation !important;
   }
 
-  /* La fila de Otro Fondo se centra y usa un cuadrado menor. */
+  /* "Otro Fondo": fila flex centrada y tamaño fijo compacto.
+     No depende de los anchos responsivos que Streamlit asigna a st.columns. */
   .st-key-screen_fund [data-testid="stHorizontalBlock"]:has(.st-key-fund_card_otro_fondo) {
-    display:grid !important;
-    grid-template-columns:minmax(0,1fr) !important;
-    justify-items:center !important;
+    display:flex !important;
+    flex-direction:row !important;
+    flex-wrap:nowrap !important;
+    align-items:flex-start !important;
+    justify-content:center !important;
     width:100% !important;
     max-width:100% !important;
     min-width:0 !important;
@@ -1004,25 +1007,35 @@ st.markdown(r"""
   }
   .st-key-screen_fund [data-testid="stHorizontalBlock"]:has(.st-key-fund_card_otro_fondo) > [data-testid="column"]:not(:has(.st-key-fund_card_otro_fondo)) {
     display:none !important;
+    width:0 !important;
+    max-width:0 !important;
+    min-width:0 !important;
+    flex:0 0 0 !important;
+    padding:0 !important;
+    margin:0 !important;
   }
   .st-key-screen_fund [data-testid="stHorizontalBlock"]:has(.st-key-fund_card_otro_fondo) > [data-testid="column"]:has(.st-key-fund_card_otro_fondo) {
     display:block !important;
-    width:min(38vw,138px) !important;
-    max-width:138px !important;
-    min-width:0 !important;
-    flex:initial !important;
+    flex:0 0 120px !important;
+    width:120px !important;
+    min-width:120px !important;
+    max-width:120px !important;
     margin:0 auto !important;
     padding:0 !important;
     box-sizing:border-box !important;
   }
   .st-key-screen_fund [class*="st-key-fund_card_otro_fondo"] {
-    width:100% !important;
-    min-width:0 !important;
+    display:flex !important;
+    width:120px !important;
+    min-width:120px !important;
+    max-width:120px !important;
     aspect-ratio:1 / 1 !important;
-    height:auto !important;
-    min-height:0 !important;
-    max-height:none !important;
+    height:120px !important;
+    min-height:120px !important;
+    max-height:120px !important;
+    margin:0 auto !important;
     padding:.42rem .22rem !important;
+    box-sizing:border-box !important;
   }
   .st-key-screen_fund [class*="st-key-fund_card_otro_fondo"] .fund-card-content {
     grid-template-rows:minmax(1.3rem,auto) minmax(0,1fr) !important;
@@ -1064,8 +1077,18 @@ st.markdown(r"""
     height:27px !important;
   }
   .st-key-screen_fund [data-testid="stHorizontalBlock"]:has(.st-key-fund_card_otro_fondo) > [data-testid="column"]:has(.st-key-fund_card_otro_fondo) {
-    width:min(38vw,126px) !important;
-    max-width:126px !important;
+    flex:0 0 110px !important;
+    width:110px !important;
+    min-width:110px !important;
+    max-width:110px !important;
+  }
+  .st-key-screen_fund [class*="st-key-fund_card_otro_fondo"] {
+    width:110px !important;
+    min-width:110px !important;
+    max-width:110px !important;
+    height:110px !important;
+    min-height:110px !important;
+    max-height:110px !important;
   }
 }
 </style>
