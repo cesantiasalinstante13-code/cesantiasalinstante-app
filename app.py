@@ -739,13 +739,16 @@ st.markdown(r"""
 }
 .st-key-screen_fund .fund-card-logo {
   width:100%;
-  height:112px;
+  height:96px;
+  min-width:0;
   flex:1 1 auto;
   display:flex;
   align-items:center;
   justify-content:center;
-  padding:.15rem .35rem;
+  padding:.12rem .25rem;
   margin:0;
+  overflow:hidden;
+  box-sizing:border-box;
   background:transparent!important;
   border:0!important;
   border-radius:0!important;
@@ -753,15 +756,18 @@ st.markdown(r"""
 .st-key-screen_fund .fund-card-logo img {
   display:block;
   width:auto;
-  max-width:94%;
+  max-width:86%;
   height:auto;
-  max-height:105px;
+  max-height:82px;
   object-fit:contain;
 }
 .st-key-screen_fund .fund-card-logo svg {
   display:block;
-  width:76px;
-  height:76px;
+  width:46px;
+  height:46px;
+  max-width:100%;
+  max-height:100%;
+  flex:0 1 auto;
   color:#0878d8;
   stroke:currentColor;
   fill:none;
@@ -815,15 +821,16 @@ st.markdown(r"""
     min-height:1.55rem;
     font-size:clamp(1rem,4vw,1.18rem);
   }
-  .st-key-screen_fund .fund-card-logo {height:88px;padding:.1rem}
-  .st-key-screen_fund .fund-card-logo img {max-height:82px;max-width:96%}
-  .st-key-screen_fund .fund-card-logo svg {width:62px;height:62px}
+  .st-key-screen_fund .fund-card-logo {height:76px;min-height:76px;padding:.08rem;overflow:hidden}
+  .st-key-screen_fund .fund-card-logo img {max-height:66px;max-width:88%}
+  .st-key-screen_fund .fund-card-logo svg {width:40px;height:40px;max-width:100%;max-height:100%}
 }
 @media(max-width:390px){
   .st-key-screen_fund [class*="st-key-fund_card_"] {min-height:164px!important;padding:.72rem .38rem .55rem!important}
   .st-key-screen_fund .fund-card-title {font-size:.98rem}
-  .st-key-screen_fund .fund-card-logo {height:78px}
-  .st-key-screen_fund .fund-card-logo img {max-height:72px}
+  .st-key-screen_fund .fund-card-logo {height:68px;min-height:68px}
+  .st-key-screen_fund .fund-card-logo img {max-height:58px;max-width:86%}
+  .st-key-screen_fund .fund-card-logo svg {width:35px;height:35px}
 }
 </style>
 """, unsafe_allow_html=True)
@@ -926,17 +933,22 @@ st.markdown(r"""
     white-space: nowrap !important;
   }
   .st-key-screen_fund .fund-card-logo {
-    height: 82px !important;
-    min-height: 82px !important;
-    padding: .02rem .12rem !important;
+    height: 70px !important;
+    min-height: 70px !important;
+    padding: .02rem .1rem !important;
+    overflow: hidden !important;
+    box-sizing: border-box !important;
   }
   .st-key-screen_fund .fund-card-logo img {
-    max-height: 75px !important;
-    max-width: 96% !important;
+    max-height: 60px !important;
+    max-width: 88% !important;
+    width: auto !important;
   }
   .st-key-screen_fund .fund-card-logo svg {
-    width: 53px !important;
-    height: 53px !important;
+    width: 38px !important;
+    height: 38px !important;
+    max-width: 100% !important;
+    max-height: 100% !important;
   }
   .st-key-screen_fund [class*="st-key-fund_card_"] [class*="st-key-fund_pick_"] {
     inset: 0 !important;
@@ -968,8 +980,9 @@ st.markdown(r"""
   }
   .st-key-screen_fund [class*="st-key-fund_card_"] { min-height: 138px !important; padding: .62rem .2rem .5rem !important; }
   .st-key-screen_fund .fund-card-title { font-size: .96rem !important; }
-  .st-key-screen_fund .fund-card-logo { height: 76px !important; min-height: 76px !important; }
-  .st-key-screen_fund .fund-card-logo img { max-height: 69px !important; }
+  .st-key-screen_fund .fund-card-logo { height: 62px !important; min-height: 62px !important; }
+  .st-key-screen_fund .fund-card-logo img { max-height: 54px !important; max-width: 84% !important; }
+  .st-key-screen_fund .fund-card-logo svg { width: 33px !important; height: 33px !important; }
 }
 </style>
 """, unsafe_allow_html=True)
