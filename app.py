@@ -3740,6 +3740,109 @@ st.markdown(r"""
 """, unsafe_allow_html=True)
 
 
+# ---------- AJUSTE FINAL DE POSICION VERTICAL EN MOVIL ----------
+# Mantiene un margen superior pequeño y consistente en las pantallas 1, 2 y 3.
+# Se corrige el flujo del contenedor principal de Streamlit, no solo el header.
+st.markdown(r"""
+<style>
+@media screen and (max-width: 760px) {
+  :root {
+    --header-height: 0px !important;
+    --top-bar-height: 0px !important;
+    --block-container-vertical-padding: .45rem !important;
+  }
+
+  /* Quitar del flujo las barras superiores de Streamlit. */
+  header,
+  [data-testid="stHeader"],
+  [data-testid="stAppHeader"],
+  [data-testid="stToolbar"],
+  [data-testid="stDecoration"] {
+    display: none !important;
+    height: 0 !important;
+    min-height: 0 !important;
+    max-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+  }
+
+  /* Evitar que el viewport o el main centren verticalmente el contenido. */
+  html,
+  body,
+  #root,
+  .stApp,
+  [data-testid="stAppViewContainer"],
+  section.main {
+    margin-block-start: 0 !important;
+    padding-block-start: 0 !important;
+  }
+
+  [data-testid="stAppViewContainer"] {
+    display: block !important;
+    min-height: 100dvh !important;
+  }
+
+  section.main {
+    display: block !important;
+    min-height: 0 !important;
+    height: auto !important;
+  }
+
+  /* Contenedores principales conocidos de Streamlit (versiones recientes y anteriores). */
+  section.main > div,
+  section.main > div > div,
+  .main .block-container,
+  div[data-testid="stMainBlockContainer"],
+  div[data-testid="stAppViewBlockContainer"] {
+    margin-block-start: 0 !important;
+    padding-block-start: .45rem !important;
+    align-self: flex-start !important;
+    justify-self: start !important;
+    transform: none !important;
+  }
+
+  /* El primer bloque debe arrancar arriba; se conserva el margen lateral existente. */
+  .main .block-container:has(.st-key-landing_wrap),
+  div[data-testid="stMainBlockContainer"]:has(.st-key-landing_wrap),
+  div[data-testid="stAppViewBlockContainer"]:has(.st-key-landing_wrap),
+  .main .block-container:has(.st-key-screen_fund),
+  div[data-testid="stMainBlockContainer"]:has(.st-key-screen_fund),
+  div[data-testid="stAppViewBlockContainer"]:has(.st-key-screen_fund),
+  .main .block-container:has(.st-key-screen_data),
+  div[data-testid="stMainBlockContainer"]:has(.st-key-screen_data),
+  div[data-testid="stAppViewBlockContainer"]:has(.st-key-screen_data) {
+    margin-block-start: 0 !important;
+    padding-block-start: .45rem !important;
+  }
+
+  /* Asegurar que el bloque vertical raíz no distribuya el contenido hacia el centro. */
+  .main .block-container > [data-testid="stVerticalBlock"],
+  div[data-testid="stMainBlockContainer"] > [data-testid="stVerticalBlock"],
+  div[data-testid="stAppViewBlockContainer"] > [data-testid="stVerticalBlock"] {
+    justify-content: flex-start !important;
+    align-content: flex-start !important;
+    align-items: stretch !important;
+    margin-block-start: 0 !important;
+  }
+
+  .st-key-landing_wrap,
+  .st-key-screen_fund,
+  .st-key-screen_data {
+    margin-block-start: 0 !important;
+  }
+
+  /* Solo un pequeño aire entre el borde superior y el primer contenido. */
+  .st-key-landing_wrap { padding-block-start: .12rem !important; }
+  .main .block-container:has(.st-key-screen_fund) .brand-header,
+  .main .block-container:has(.st-key-screen_data) .brand-header {
+    margin-block-start: 0 !important;
+  }
+}
+</style>
+""", unsafe_allow_html=True)
+
+
 # ---------- MAIN ----------
 def main():
     # Google vuelve a la URL principal con code/state después de autorizar.
