@@ -2852,48 +2852,49 @@ def render_datos_personales():
             render_field_label("pin", "Ciudad")
             ciudad = st.text_input("Ciudad", label_visibility="collapsed", placeholder="Escribe tu ciudad", key="ciudad_widget")
 
-        nav_back, nav_next = st.columns([1, 1.65], gap="medium")
-        with nav_back:
-            if st.button("← Atrás", key="data_back", use_container_width=True):
-                st.session_state.step = "seleccionar_fondo"
-                st.rerun()
-        with nav_next:
-            if st.button("Siguiente: empresa  →", key="data_continue", use_container_width=True):
-                saldo_limpio = re.sub(r"\D", "", str(saldo_raw))
-                monto_limpio = re.sub(r"\D", "", str(monto_raw))
-                telefono_limpio = re.sub(r"\D", "", str(telefono))
-                cedula_limpia = re.sub(r"\D", "", str(cedula))
-                email_limpio = str(email_val).strip()
-                if not all([saldo_limpio, monto_limpio, nombre.strip(), cedula_limpia, telefono_limpio, email_limpio, departamento, ciudad.strip()]):
-                    st.error("Completa el saldo, el monto y los seis datos personales antes de continuar.")
-                    st.stop()
-                if not st.session_state.get("fondo"):
-                    st.error("Selecciona primero tu fondo de cesantías.")
-                    st.stop()
-                if len(telefono_limpio) != 10:
-                    st.error("El teléfono / WhatsApp debe tener exactamente 10 dígitos.")
-                    st.stop()
-                if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email_limpio):
-                    st.error("Escribe un correo electrónico válido.")
-                    st.stop()
-                if int(monto_limpio) > int(saldo_limpio):
-                    st.error("El monto a retirar no puede superar el saldo disponible.")
-                    st.stop()
+        with st.container(key="data_navigation"):
+            nav_back, nav_next = st.columns([1, 1.65], gap="medium")
+            with nav_back:
+                if st.button("← Atrás", key="data_back", use_container_width=True):
+                    st.session_state.step = "seleccionar_fondo"
+                    st.rerun()
+            with nav_next:
+                if st.button("Siguiente: empresa  →", key="data_continue", use_container_width=True):
+                    saldo_limpio = re.sub(r"\D", "", str(saldo_raw))
+                    monto_limpio = re.sub(r"\D", "", str(monto_raw))
+                    telefono_limpio = re.sub(r"\D", "", str(telefono))
+                    cedula_limpia = re.sub(r"\D", "", str(cedula))
+                    email_limpio = str(email_val).strip()
+                    if not all([saldo_limpio, monto_limpio, nombre.strip(), cedula_limpia, telefono_limpio, email_limpio, departamento, ciudad.strip()]):
+                        st.error("Completa el saldo, el monto y los seis datos personales antes de continuar.")
+                        st.stop()
+                    if not st.session_state.get("fondo"):
+                        st.error("Selecciona primero tu fondo de cesantías.")
+                        st.stop()
+                    if len(telefono_limpio) != 10:
+                        st.error("El teléfono / WhatsApp debe tener exactamente 10 dígitos.")
+                        st.stop()
+                    if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email_limpio):
+                        st.error("Escribe un correo electrónico válido.")
+                        st.stop()
+                    if int(monto_limpio) > int(saldo_limpio):
+                        st.error("El monto a retirar no puede superar el saldo disponible.")
+                        st.stop()
 
-                # Valor general interno para el marcador heredado; no se muestra un motivo.
-                st.session_state.proposito = "Retiro de cesantías"
-                st.session_state.saldo_limpio = saldo_limpio
-                st.session_state.saldo_verificado = f"${int(saldo_limpio):,}".replace(",", ".")
-                st.session_state.monto = f"{int(monto_limpio):,}".replace(",", ".")
-                st.session_state.monto_limpio = monto_limpio
-                st.session_state.nombre = nombre.strip()
-                st.session_state.cedula = cedula_limpia
-                st.session_state.telefono = telefono_limpio
-                st.session_state.email = email_limpio
-                st.session_state.departamento = departamento
-                st.session_state.ciudad = ciudad.strip()
-                st.session_state.step = "empresa"
-                st.rerun()
+                    # Valor general interno para el marcador heredado; no se muestra un motivo.
+                    st.session_state.proposito = "Retiro de cesantías"
+                    st.session_state.saldo_limpio = saldo_limpio
+                    st.session_state.saldo_verificado = f"${int(saldo_limpio):,}".replace(",", ".")
+                    st.session_state.monto = f"{int(monto_limpio):,}".replace(",", ".")
+                    st.session_state.monto_limpio = monto_limpio
+                    st.session_state.nombre = nombre.strip()
+                    st.session_state.cedula = cedula_limpia
+                    st.session_state.telefono = telefono_limpio
+                    st.session_state.email = email_limpio
+                    st.session_state.departamento = departamento
+                    st.session_state.ciudad = ciudad.strip()
+                    st.session_state.step = "empresa"
+                    st.rerun()
 
 def render_resumen():
     """Pantalla 5: resumen con verificación, empresa y NIT antes de confirmar."""
@@ -3319,6 +3320,178 @@ def render_pago():
         st.session_state.step = 'generando'
         st.rerun()
     st.markdown("</div>", unsafe_allow_html=True)
+
+
+
+# ---------- AJUSTE CONSOLIDADO: ESPACIADO Y CAMPOS DE PANTALLA 3 ----------
+st.markdown(r"""
+<style>
+/* Reducir el azul vertical solo cuando está visible la pantalla 3.
+   Los paddings izquierdo y derecho no se modifican. */
+.main .block-container:has(.st-key-screen_data),
+div[data-testid="stMainBlockContainer"]:has(.st-key-screen_data) {
+  padding-top:.42rem!important;
+  padding-bottom:.62rem!important;
+}
+.main .block-container:has(.st-key-screen_data) .brand-header {
+  margin-top:0!important;
+  margin-bottom:.38rem!important;
+}
+.main .block-container:has(.st-key-screen_data) .journey-wrap {
+  margin-bottom:.38rem!important;
+}
+.st-key-screen_data {
+  margin:.32rem auto .42rem!important;
+  padding-top:1.05rem!important;
+  padding-bottom:1.08rem!important;
+  box-sizing:border-box!important;
+}
+
+/* Separación específica entre Departamento/Ciudad y los botones inferiores. */
+.st-key-screen_data .st-key-data_navigation {
+  display:block!important;
+  width:100%!important;
+  box-sizing:border-box!important;
+  margin-top:1.08rem!important;
+  padding-top:.52rem!important;
+  border-top:1px solid #dce8f3!important;
+}
+.st-key-screen_data .st-key-data_navigation [data-testid="stHorizontalBlock"] {
+  margin-top:.12rem!important;
+}
+
+@media(max-width:760px) {
+  /* Menos espacio azul arriba y abajo; se preservan los márgenes laterales. */
+  .main .block-container:has(.st-key-screen_data),
+  div[data-testid="stMainBlockContainer"]:has(.st-key-screen_data) {
+    padding-top:.28rem!important;
+    padding-bottom:.42rem!important;
+  }
+  .main .block-container:has(.st-key-screen_data) .brand-header {
+    margin-bottom:.28rem!important;
+  }
+  .main .block-container:has(.st-key-screen_data) .journey-wrap {
+    margin-bottom:.28rem!important;
+  }
+  .st-key-screen_data {
+    margin:.24rem auto .32rem!important;
+    padding-top:.78rem!important;
+    padding-bottom:.82rem!important;
+  }
+
+  /* Dos columnas reales: cada campo ocupa exactamente media fila disponible. */
+  .st-key-screen_data [data-testid="stHorizontalBlock"] {
+    display:flex!important;
+    flex-direction:row!important;
+    flex-wrap:nowrap!important;
+    align-items:flex-end!important;
+    gap:.36rem!important;
+    width:100%!important;
+    max-width:100%!important;
+    min-width:0!important;
+  }
+  .st-key-screen_data [data-testid="stHorizontalBlock"] > [data-testid="column"] {
+    flex:1 1 calc((100% - .36rem)/2)!important;
+    width:calc((100% - .36rem)/2)!important;
+    min-width:0!important;
+    max-width:calc((100% - .36rem)/2)!important;
+    padding:0!important;
+    box-sizing:border-box!important;
+  }
+
+  /* Campos compactos en alto y relleno, sin reducir la fuente de entrada por debajo de 16px. */
+  .st-key-screen_data .field-label {
+    display:flex!important;
+    align-items:flex-start!important;
+    gap:.22rem!important;
+    margin:.22rem 0 .16rem!important;
+    min-width:0!important;
+    font-size:.69rem!important;
+    line-height:1.18!important;
+    overflow-wrap:anywhere!important;
+  }
+  .st-key-screen_data .field-label svg {
+    width:14px!important;
+    height:14px!important;
+    flex:0 0 14px!important;
+    margin-top:1px!important;
+  }
+  .st-key-screen_data [data-testid="stTextInput"] input {
+    width:100%!important;
+    min-width:0!important;
+    height:39px!important;
+    min-height:39px!important;
+    padding:.32rem .38rem!important;
+    font-size:16px!important;
+    line-height:1.2!important;
+    box-sizing:border-box!important;
+  }
+  .st-key-screen_data [data-testid="stSelectbox"] [data-baseweb="select"] > div {
+    width:100%!important;
+    min-width:0!important;
+    min-height:39px!important;
+    height:39px!important;
+    padding-left:.34rem!important;
+    padding-right:.28rem!important;
+    font-size:16px!important;
+    box-sizing:border-box!important;
+  }
+  .st-key-screen_data [data-testid="stTextInput"] input::placeholder {
+    font-size:.70rem!important;
+    opacity:1!important;
+  }
+  .st-key-screen_data .section-label {
+    margin:.52rem 0 .22rem!important;
+    font-size:.9rem!important;
+    line-height:1.2!important;
+  }
+  .st-key-screen_data .personal-tip {
+    padding:.62rem .68rem!important;
+    gap:.5rem!important;
+    margin:.05rem 0 .62rem!important;
+  }
+  .st-key-screen_data .personal-tip-icon {
+    width:36px!important;height:36px!important;flex-basis:36px!important;
+  }
+  .st-key-screen_data .personal-tip strong {font-size:.92rem!important}
+  .st-key-screen_data .personal-tip p {font-size:.75rem!important;line-height:1.36!important}
+
+  /* Separación visible entre la última fila de campos y Atrás/Siguiente. */
+  .st-key-screen_data .st-key-data_navigation {
+    margin-top:1.22rem!important;
+    padding-top:.62rem!important;
+  }
+  .st-key-screen_data .st-key-data_navigation [data-testid="stHorizontalBlock"] {
+    gap:.42rem!important;
+    align-items:stretch!important;
+  }
+  .st-key-screen_data .st-key-data_navigation [data-testid="column"] {
+    min-width:0!important;
+    flex:1 1 0!important;
+    width:auto!important;
+    max-width:none!important;
+  }
+  .st-key-screen_data .st-key-data_navigation button {
+    min-height:43px!important;
+    padding:.52rem .38rem!important;
+    font-size:.78rem!important;
+    white-space:normal!important;
+    line-height:1.2!important;
+  }
+}
+@media(max-width:380px) {
+  .st-key-screen_data [data-testid="stHorizontalBlock"] {gap:.30rem!important}
+  .st-key-screen_data [data-testid="stHorizontalBlock"] > [data-testid="column"] {
+    flex-basis:calc((100% - .30rem)/2)!important;
+    width:calc((100% - .30rem)/2)!important;
+    max-width:calc((100% - .30rem)/2)!important;
+  }
+  .st-key-screen_data .field-label {font-size:.66rem!important}
+  .st-key-screen_data .st-key-data_navigation button {font-size:.74rem!important}
+}
+</style>
+""", unsafe_allow_html=True)
+
 
 # ---------- MAIN ----------
 def main():
