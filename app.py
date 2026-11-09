@@ -3882,12 +3882,72 @@ st.markdown(r"""
     white-space: normal !important;
     overflow-wrap: anywhere !important;
   }
-  /* Conserva el selector dentro del ancho disponible en la pantalla Empresa. */
+  /* En teléfono, los selectores de empresa se apilan: nunca quedan uno al lado
+     del otro ni fuerzan el ancho de la pantalla. En PC se conserva la fila original. */
   .st-key-screen_company .st-key-company_selectors,
-  .st-key-screen_company .st-key-company_selectors [data-testid="stSelectbox"] {
+  .st-key-screen_company .st-key-company_selectors [data-testid="stSelectbox"],
+  .st-key-screen_company .st-key-company_manual_fields [data-testid="stTextInput"] {
     width: 100% !important;
     max-width: 100% !important;
     min-width: 0 !important;
+    box-sizing: border-box !important;
+  }
+  .st-key-screen_company .st-key-company_selectors [data-testid="stHorizontalBlock"],
+  .st-key-screen_company .st-key-company_manual_fields [data-testid="stHorizontalBlock"] {
+    display: flex !important;
+    flex-direction: column !important;
+    flex-wrap: nowrap !important;
+    align-items: stretch !important;
+    gap: .72rem !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+  }
+  .st-key-screen_company .st-key-company_selectors [data-testid="column"],
+  .st-key-screen_company .st-key-company_manual_fields [data-testid="column"] {
+    flex: 1 1 100% !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    padding: 0 !important;
+    box-sizing: border-box !important;
+  }
+
+  /* Menús desplegables claros en TODAS las pantallas del teléfono.
+     El panel, las opciones, el buscador y el texto usan fondo blanco y tinta oscura. */
+  body [data-baseweb="popover"],
+  body [data-baseweb="popover"] > div,
+  body [data-baseweb="menu"],
+  body [data-testid="stSelectboxVirtualDropdown"],
+  body ul[role="listbox"] {
+    background: #ffffff !important;
+    color: #26384d !important;
+    border: 1px solid #d5e2ee !important;
+    box-shadow: 0 10px 28px rgba(12, 37, 66, .18) !important;
+  }
+  body [data-baseweb="popover"] *,
+  body [data-baseweb="menu"] *,
+  body [data-testid="stSelectboxVirtualDropdown"] *,
+  body [role="listbox"] * {
+    color: #26384d !important;
+    -webkit-text-fill-color: #26384d !important;
+  }
+  body [role="option"],
+  body [data-baseweb="menu"] li {
+    background: #ffffff !important;
+    color: #26384d !important;
+  }
+  body [role="option"]:hover,
+  body [role="option"][aria-selected="true"],
+  body [data-baseweb="menu"] li:hover {
+    background: #eaf4ff !important;
+    color: #12396e !important;
+  }
+  body [data-baseweb="popover"] input {
+    background: #ffffff !important;
+    color: #26384d !important;
+    border-color: #cbd9e7 !important;
+    -webkit-text-fill-color: #26384d !important;
   }
 }
 </style>
