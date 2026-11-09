@@ -3493,6 +3493,157 @@ div[data-testid="stMainBlockContainer"]:has(.st-key-screen_data) {
 """, unsafe_allow_html=True)
 
 
+
+
+# ---------- CORRECCION REAL PARA TELEFONO: ESPACIO SUPERIOR Y ANCHO DE PANTALLA 3 ----------
+# Este bloque va al final de los estilos existentes para que prevalezca sobre reglas antiguas.
+st.markdown(r"""
+<style>
+@media (max-width: 760px) {
+  /* Streamlit conserva una franja para el header aunque se oculte con visibility:hidden.
+     En móvil se retira del flujo y se elimina el padding superior del contenedor real. */
+  header,
+  [data-testid="stHeader"],
+  [data-testid="stAppHeader"],
+  [data-testid="stDecoration"] {
+    display: none !important;
+    height: 0 !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+  }
+
+  html, body, #root, .stApp,
+  [data-testid="stAppViewContainer"],
+  [data-testid="stAppViewContainer"] > .main,
+  section.main {
+    margin-top: 0 !important;
+    padding-top: 0 !important;
+  }
+
+  .main .block-container,
+  div[data-testid="stMainBlockContainer"] {
+    padding-top: 0 !important;
+    margin-top: 0 !important;
+  }
+
+  /* El espacio azul no debe quedar reservado por los wrappers del primer bloque. */
+  .main .block-container:has(.st-key-landing_wrap),
+  div[data-testid="stMainBlockContainer"]:has(.st-key-landing_wrap),
+  .main .block-container:has(.st-key-screen_fund),
+  div[data-testid="stMainBlockContainer"]:has(.st-key-screen_fund),
+  .main .block-container:has(.st-key-screen_data),
+  div[data-testid="stMainBlockContainer"]:has(.st-key-screen_data) {
+    padding-top: 0 !important;
+    margin-top: 0 !important;
+  }
+
+  .st-key-landing_wrap,
+  .st-key-screen_fund,
+  .st-key-screen_data {
+    margin-top: 0 !important;
+  }
+
+  /* Pantalla 3: el panel y todos sus descendientes quedan dentro del ancho del móvil. */
+  .st-key-screen_data {
+    display: block !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    box-sizing: border-box !important;
+    overflow-x: clip !important;
+    padding-left: .58rem !important;
+    padding-right: .58rem !important;
+  }
+
+  .st-key-screen_data *,
+  .st-key-screen_data *::before,
+  .st-key-screen_data *::after {
+    box-sizing: border-box !important;
+    min-width: 0 !important;
+  }
+
+  .st-key-screen_data [data-testid="stHorizontalBlock"] {
+    display: flex !important;
+    flex-direction: row !important;
+    flex-wrap: nowrap !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    gap: .32rem !important;
+    overflow: visible !important;
+  }
+
+  .st-key-screen_data [data-testid="stHorizontalBlock"] > [data-testid="column"] {
+    flex: 0 0 calc((100% - .32rem) / 2) !important;
+    width: calc((100% - .32rem) / 2) !important;
+    max-width: calc((100% - .32rem) / 2) !important;
+    min-width: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  .st-key-screen_data [data-testid="stTextInput"],
+  .st-key-screen_data [data-testid="stSelectbox"],
+  .st-key-screen_data [data-testid="stTextInput"] > div,
+  .st-key-screen_data [data-testid="stSelectbox"] > div,
+  .st-key-screen_data [data-baseweb="select"],
+  .st-key-screen_data [data-testid="stTextInput"] input,
+  .st-key-screen_data [data-testid="stSelectbox"] [data-baseweb="select"] > div {
+    display: block !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  .st-key-screen_data [data-testid="stTextInput"] input {
+    height: 38px !important;
+    min-height: 38px !important;
+    padding: .28rem .32rem !important;
+    font-size: 16px !important;
+  }
+
+  .st-key-screen_data [data-testid="stSelectbox"] [data-baseweb="select"] > div {
+    min-height: 38px !important;
+    height: 38px !important;
+    padding-left: .28rem !important;
+    padding-right: .22rem !important;
+    font-size: 16px !important;
+  }
+
+  .st-key-screen_data .field-label {
+    font-size: .65rem !important;
+    line-height: 1.15 !important;
+    overflow-wrap: anywhere !important;
+    word-break: break-word !important;
+  }
+
+  .st-key-screen_data .field-label svg {
+    width: 12px !important;
+    height: 12px !important;
+    flex: 0 0 12px !important;
+  }
+}
+
+@media (max-width: 390px) {
+  .st-key-screen_data {
+    padding-left: .48rem !important;
+    padding-right: .48rem !important;
+  }
+  .st-key-screen_data [data-testid="stHorizontalBlock"] {
+    gap: .24rem !important;
+  }
+  .st-key-screen_data [data-testid="stHorizontalBlock"] > [data-testid="column"] {
+    flex-basis: calc((100% - .24rem) / 2) !important;
+    width: calc((100% - .24rem) / 2) !important;
+    max-width: calc((100% - .24rem) / 2) !important;
+  }
+}
+</style>
+""", unsafe_allow_html=True)
+
+
 # ---------- MAIN ----------
 def main():
     # Google vuelve a la URL principal con code/state después de autorizar.
