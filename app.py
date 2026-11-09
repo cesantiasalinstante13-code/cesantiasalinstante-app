@@ -38,6 +38,18 @@ st.markdown(r"""
  --cia-ink:#18345b;--cia-muted:#60748d;--cia-line:#d8e6f4;--cia-pale:#eff7ff;
 }
 html,body,[class*="css"],.stApp{font-family:Inter,Arial,sans-serif!important}
+
+/* IMPORTANTE: cada st.markdown(<style>) crea un wrapper vacío en el flujo vertical
+   de Streamlit. Los 15 bloques CSS acumulaban separaciones y generaban la franja azul.
+   Se oculta únicamente el wrapper que contiene una hoja de estilos; las reglas CSS
+   permanecen activas y los componentes visibles de la aplicación no se modifican. */
+div[data-testid="stElementContainer"]:has(style) {
+  display: none !important;
+  height: 0 !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
 #MainMenu,footer,header{visibility:hidden}
 .stApp{background:linear-gradient(118deg,#06295f 0%,#07539a 53%,#079dcc 100%)!important;color:var(--cia-ink)!important}
 .main .block-container{max-width:1160px!important;padding:1.1rem clamp(.65rem,2.2vw,1.6rem) 2.6rem!important}
