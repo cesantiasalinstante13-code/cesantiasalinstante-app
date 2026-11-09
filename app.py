@@ -3644,6 +3644,102 @@ st.markdown(r"""
 """, unsafe_allow_html=True)
 
 
+# ---------- AJUSTE MOVIL: ELIMINAR FRANJA SUPERIOR Y MEJORAR CAMPOS ----------
+st.markdown(r"""
+<style>
+@media (max-width: 760px) {
+  /* Colapsar la zona superior que Streamlit reserva para sus barras. */
+  :root {
+    --header-height: 0px !important;
+    --top-bar-height: 0px !important;
+  }
+  [data-testid="stHeader"],
+  [data-testid="stAppHeader"],
+  [data-testid="stToolbar"],
+  [data-testid="stDecoration"],
+  header {
+    display: none !important;
+    height: 0 !important;
+    min-height: 0 !important;
+    max-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+  }
+  [data-testid="stAppViewContainer"],
+  [data-testid="stAppViewContainer"] > .main,
+  section.main,
+  section.main > div,
+  .main .block-container,
+  div[data-testid="stMainBlockContainer"] {
+    margin-top: 0 !important;
+    padding-top: 0 !important;
+    align-items: flex-start !important;
+    justify-content: flex-start !important;
+  }
+  .main .block-container:has(.st-key-landing_wrap),
+  div[data-testid="stMainBlockContainer"]:has(.st-key-landing_wrap),
+  .main .block-container:has(.st-key-screen_fund),
+  div[data-testid="stMainBlockContainer"]:has(.st-key-screen_fund),
+  .main .block-container:has(.st-key-screen_data),
+  div[data-testid="stMainBlockContainer"]:has(.st-key-screen_data) {
+    padding-top: 0 !important;
+    margin-top: 0 !important;
+  }
+  .st-key-landing_wrap,
+  .st-key-screen_fund,
+  .st-key-screen_data {
+    margin-top: 0 !important;
+  }
+
+  /* Pantalla 3: conservar las dimensiones ya aprobadas y aclarar los controles. */
+  .st-key-screen_data [data-testid="stTextInput"] input,
+  .st-key-screen_data [data-testid="stSelectbox"] [data-baseweb="select"] > div {
+    background: #ffffff !important;
+    color: #17345b !important;
+    -webkit-text-fill-color: #17345b !important;
+    border: 1.3px solid #b9d1e8 !important;
+    border-radius: 10px !important;
+    box-shadow: 0 1px 4px rgba(13, 54, 99, .07) !important;
+    opacity: 1 !important;
+  }
+  .st-key-screen_data [data-testid="stTextInput"] input::placeholder {
+    color: #7b8fa6 !important;
+    -webkit-text-fill-color: #7b8fa6 !important;
+    opacity: 1 !important;
+  }
+  .st-key-screen_data [data-testid="stSelectbox"] [data-baseweb="select"] *,
+  .st-key-screen_data [data-testid="stSelectbox"] [data-baseweb="select"] span {
+    color: #17345b !important;
+    -webkit-text-fill-color: #17345b !important;
+    opacity: 1 !important;
+  }
+  /* Etiquetas separadas de sus cajas; filas con aire entre sí. */
+  .st-key-screen_data .field-label {
+    color: #173d70 !important;
+    margin: .34rem 0 .34rem !important;
+    line-height: 1.24 !important;
+    font-weight: 800 !important;
+  }
+  .st-key-screen_data [data-testid="stHorizontalBlock"] {
+    column-gap: .62rem !important;
+    row-gap: .48rem !important;
+    margin-bottom: .32rem !important;
+  }
+  .st-key-screen_data [data-testid="stTextInput"],
+  .st-key-screen_data [data-testid="stSelectbox"] {
+    margin-bottom: .22rem !important;
+  }
+  .st-key-screen_data .section-label {
+    margin-top: .72rem !important;
+    margin-bottom: .38rem !important;
+    color: #12396e !important;
+  }
+}
+</style>
+""", unsafe_allow_html=True)
+
+
 # ---------- MAIN ----------
 def main():
     # Google vuelve a la URL principal con code/state después de autorizar.
