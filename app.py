@@ -3949,6 +3949,34 @@ st.markdown(r"""
     border-color: #cbd9e7 !important;
     -webkit-text-fill-color: #26384d !important;
   }
+
+  /* Refuerzo para los nodos internos que BaseWeb pinta con el tema oscuro.
+     Se aplica solo al menú emergente en móvil; no altera los selectores cerrados. */
+  body [data-baseweb="popover"] [data-baseweb="menu"],
+  body [data-baseweb="popover"] [data-baseweb="menu"] > div,
+  body [data-baseweb="popover"] [role="listbox"],
+  body [data-baseweb="popover"] [role="listbox"] > div,
+  body [data-baseweb="popover"] ul,
+  body [data-baseweb="popover"] li,
+  body [data-baseweb="popover"] [role="option"],
+  body [data-testid="stSelectboxVirtualDropdown"],
+  body [data-testid="stSelectboxVirtualDropdown"] > div,
+  body [data-testid="stSelectboxVirtualDropdown"] ul,
+  body [data-testid="stSelectboxVirtualDropdown"] li {
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+    color: #26384d !important;
+    -webkit-text-fill-color: #26384d !important;
+  }
+  body [data-baseweb="popover"] [role="option"]:hover,
+  body [data-baseweb="popover"] [role="option"][aria-selected="true"],
+  body [data-testid="stSelectboxVirtualDropdown"] [role="option"]:hover,
+  body [data-testid="stSelectboxVirtualDropdown"] [role="option"][aria-selected="true"] {
+    background: #eaf4ff !important;
+    background-color: #eaf4ff !important;
+    color: #12396e !important;
+    -webkit-text-fill-color: #12396e !important;
+  }
 }
 </style>
 """, unsafe_allow_html=True)
