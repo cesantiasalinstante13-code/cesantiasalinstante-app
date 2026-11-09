@@ -3852,6 +3852,48 @@ st.markdown(r"""
 """, unsafe_allow_html=True)
 
 
+# ---------- AJUSTES SOLICITADOS: MENUS MOVILES Y ESPACIADO PANTALLA 3 ----------
+st.markdown(r"""
+<style>
+/* Pantalla 3: un poco más de aire entre cada encabezado y su primer campo.
+   No cambia el tamaño, color ni separación interna de las cajas aprobadas. */
+.st-key-screen_data .section-label {
+  margin-bottom: .82rem !important;
+}
+
+/* Pantalla 4: los menús de BaseWeb deben permanecer dentro del ancho visible
+   del teléfono y por encima de las tarjetas/contenedores de la pantalla. */
+@media (max-width: 760px) {
+  body [data-baseweb="popover"] {
+    z-index: 999999 !important;
+    max-width: calc(100vw - 20px) !important;
+    box-sizing: border-box !important;
+  }
+  body [data-baseweb="popover"] > div,
+  body [data-baseweb="menu"],
+  body [role="listbox"] {
+    max-width: calc(100vw - 20px) !important;
+    max-height: min(48vh, 340px) !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    box-sizing: border-box !important;
+  }
+  body [data-baseweb="popover"] [role="option"] {
+    white-space: normal !important;
+    overflow-wrap: anywhere !important;
+  }
+  /* Conserva el selector dentro del ancho disponible en la pantalla Empresa. */
+  .st-key-screen_company .st-key-company_selectors,
+  .st-key-screen_company .st-key-company_selectors [data-testid="stSelectbox"] {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+  }
+}
+</style>
+""", unsafe_allow_html=True)
+
+
 # ---------- MAIN ----------
 def main():
     # Google vuelve a la URL principal con code/state después de autorizar.
