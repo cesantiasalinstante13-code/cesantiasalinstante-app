@@ -505,6 +505,26 @@ div[data-testid="stMainBlockContainer"] {
  .st-key-landing_start{top:auto!important;bottom:.55rem!important}
 }
 
+
+/* Pantalla Empresa: dos búsquedas independientes y sincronizadas con Google Sheets. */
+.st-key-screen_company .st-key-company_selectors {
+  width:100%!important; margin:.9rem 0 .9rem!important; padding:0!important;
+}
+.st-key-screen_company .st-key-company_selectors .field-label {
+  min-height:26px!important; margin:.15rem 0 .48rem!important;
+  color:#12396e!important; font-size:.9rem!important; font-weight:850!important;
+}
+.st-key-screen_company .st-key-company_selectors [data-testid="stSelectbox"] [data-baseweb="select"]>div {
+  min-height:48px!important; border-radius:12px!important; border:1.4px solid #b8d2ea!important;
+  background:#fff!important;
+}
+.st-key-screen_company .st-key-company_selectors [data-testid="stSelectbox"] input {
+  color:#18345b!important;
+}
+@media(max-width:760px){
+  .st-key-screen_company .st-key-company_selectors {margin:.65rem 0 .8rem!important;}
+  .st-key-screen_company .st-key-company_selectors .field-label {font-size:.84rem!important;}
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -2548,7 +2568,7 @@ def reiniciar_solicitud():
         st.session_state[key] = ""
     widgets = [
         "ciudad_widget", "departamento_widget", "empresa_manual_widget", "nit_manual_widget",
-        "empresa_widget", "saldo_widget", "monto_raw_widget", "telefono_widget",
+        "empresa_widget", "nit_busqueda_widget", "saldo_widget", "monto_raw_widget", "telefono_widget",
         "nombre_widget", "cedula_widget", "email_widget",
     ]
     for key in widgets:
@@ -2900,7 +2920,7 @@ def render_mision():
                 st.rerun()
 
 def render_empresa():
-    """Pantalla Empresa: selector separado de los datos de empresa/NIT y del aviso Otra."""
+    """Selecciona la empresa por nombre o NIT usando la misma hoja de Google Sheets."""
     render_brand_header(4)
     with st.container(key="screen_company"):
         render_screen_heading(
@@ -2914,36 +2934,141 @@ def render_empresa():
             unsafe_allow_html=True
         )
 
+        # La misma hoja alimenta los dos selectores: por nombre y por NIT.
         try:
             df_empresas = conn.read(worksheet="Empresas", ttl=0).dropna(how="all")
             if "Nombre_Empresa" not in df_empresas.columns:
                 raise ValueError("La hoja Empresas debe tener la columna Nombre_Empresa.")
-            lista_empresas = df_empresas["Nombre_Empresa"].dropna().astype(str).str.strip().tolist()
-            lista_empresas = list(dict.fromkeys([x for x in lista_empresas if x and x.casefold() != "otra"]))
+            if "NIT" not in df_empresas.columns:
+                raise ValueError("La hoja Empresas debe tener la columna NIT para habilitar la búsqueda por NIT.")
+
+            def valor_texto(valor):
+                if pd.isna(valor):
+                    return ""
+                texto = str(valor).strip()
+                # Google Sheets puede devolver NIT numéricos como 900123456.0.
+                if re.fullmatch(r"\d+\.0", texto):
+                    texto = texto[:-2]
+                return texto
+
+            filas_validas = []
+            for _, fila in df_empresas.iterrows():
+                nombre_fila = valor_texto(fila.get("Nombre_Empresa", ""))
+                nit_fila = valor_texto(fila.get("NIT", ""))
+                if nombre_fila and nombre_fila.casefold() != "otra":
+                    filas_validas.append((nombre_fila, nit_fila))
+
+            lista_empresas = list(dict.fromkeys(nombre for nombre, _ in filas_validas))
+            nit_por_empresa = {}
+            empresa_por_nit = {}
+            lista_nit = []
+            for nombre_fila, nit_fila in filas_validas:
+                if nit_fila:
+                    nit_por_empresa.setdefault(nombre_fila, nit_fila)
+                    if nit_fila not in empresa_por_nit:
+                        empresa_por_nit[nit_fila] = nombre_fila
+                        lista_nit.append(nit_fila)
         except Exception as exc:
-            st.error(f"No fue posible cargar la lista de empresas desde Google Sheets: {exc}")
+            st.error(f"No fue posible cargar las empresas y sus NIT desde Google Sheets: {exc}")
             st.stop()
 
-        # Etiqueta y espacio independientes: el desplegable ya no queda pegado al texto.
-        render_field_label("building", "Busca o selecciona tu empresa")
-        st.markdown('<div class="company-dropdown-spacer"></div>', unsafe_allow_html=True)
         opciones_empresa = [""] + ["Otra"] + lista_empresas
-        empresa_seleccionada = st.selectbox(
-            "Selecciona tu empresa", opciones_empresa,
-            label_visibility="collapsed", key="empresa_widget",
-            placeholder="Escribe para buscar o selecciona tu empresa",
-            help="«Otra» aparece al inicio del listado, después de la opción vacía."
-        )
+        opciones_nit = [""] + lista_nit
+
+        # Evita que valores guardados de una sesión anterior queden fuera de las opciones.
+        if st.session_state.get("empresa_widget", "") not in opciones_empresa:
+            st.session_state["empresa_widget"] = ""
+        if st.session_state.get("nit_busqueda_widget", "") not in opciones_nit:
+            st.session_state["nit_busqueda_widget"] = ""
+
+        # Mantiene sincronizados ambos desplegables sin modificar las claves después
+        # de que Streamlit haya creado los widgets.
+        empresa_actual = st.session_state.get("empresa_widget", "")
+        if empresa_actual == "Otra":
+            st.session_state["nit_busqueda_widget"] = ""
+        elif empresa_actual and nit_por_empresa.get(empresa_actual):
+            st.session_state["nit_busqueda_widget"] = nit_por_empresa[empresa_actual]
+        elif not empresa_actual and st.session_state.get("nit_busqueda_widget"):
+            empresa_desde_nit = empresa_por_nit.get(st.session_state["nit_busqueda_widget"], "")
+            if empresa_desde_nit:
+                st.session_state["empresa_widget"] = empresa_desde_nit
+
+        def sincronizar_nit_desde_empresa():
+            seleccion = st.session_state.get("empresa_widget", "")
+            st.session_state["nit_busqueda_widget"] = nit_por_empresa.get(seleccion, "")
+            if seleccion == "Otra":
+                st.session_state["empresa_manual_widget"] = ""
+                st.session_state["nit_manual_widget"] = ""
+
+        def sincronizar_empresa_desde_nit():
+            nit_elegido = st.session_state.get("nit_busqueda_widget", "")
+            empresa_encontrada = empresa_por_nit.get(nit_elegido, "")
+            if empresa_encontrada:
+                st.session_state["empresa_widget"] = empresa_encontrada
+
+        with st.container(key="company_selectors"):
+            col_empresa, col_nit = st.columns([1.12, .88], gap="medium")
+            with col_empresa:
+                render_field_label("building", "Busca o selecciona tu empresa")
+                empresa_seleccionada = st.selectbox(
+                    "Busca o selecciona tu empresa", opciones_empresa,
+                    label_visibility="collapsed", key="empresa_widget",
+                    placeholder="Escribe para buscar tu empresa",
+                    help="Selecciona «Otra» si tu empresa no aparece en Google Sheets.",
+                    on_change=sincronizar_nit_desde_empresa
+                )
+            with col_nit:
+                render_field_label("file", "Buscar tu empresa por NIT")
+                nit_busqueda = st.selectbox(
+                    "Buscar tu empresa por NIT", opciones_nit,
+                    label_visibility="collapsed", key="nit_busqueda_widget",
+                    placeholder="Busca o selecciona el NIT",
+                    help="Este listado se consulta desde la columna NIT de la hoja Empresas.",
+                    disabled=not bool(lista_nit),
+                    on_change=sincronizar_empresa_desde_nit
+                )
 
         empresa_manual = ""
         nit_manual = ""
         nit_visible = ""
 
-        # Justo debajo del selector: empresa y NIT en dos tarjetas alineadas.
-        # Para «Otra» se muestran dos campos editables; para las demás, los datos de Sheets.
+        # Para empresas registradas, se muestran nombre y NIT completos.
+        # Al elegir «Otra», las tarjetas informativas desaparecen y los campos manuales
+        # aparecen debajo del aviso, como solicitó el usuario.
+        if empresa_seleccionada and empresa_seleccionada != "Otra":
+            nit_visible = nit_por_empresa.get(empresa_seleccionada, "")
+            empresa_segura = html.escape(empresa_seleccionada)
+            nit_seguro = html.escape(nit_visible or "No registrado en Google Sheets")
+            st.markdown(
+                '<div class="company-meta-grid">'
+                '<div class="company-meta-card"><small>NOMBRE DE LA EMPRESA</small>'
+                f'<strong>{empresa_segura}</strong></div>'
+                '<div class="company-meta-card"><small>NIT</small>'
+                f'<strong>{nit_seguro}</strong></div>'
+                '</div>',
+                unsafe_allow_html=True
+            )
+        elif not empresa_seleccionada:
+            st.markdown(
+                '<div class="company-meta-grid">'
+                '<div class="company-meta-card company-meta-empty"><small>NOMBRE DE LA EMPRESA</small>'
+                '<strong>Se mostrará al seleccionar</strong></div>'
+                '<div class="company-meta-card company-meta-empty"><small>NIT</small>'
+                '<strong>Se mostrará al seleccionar</strong></div>'
+                '</div>',
+                unsafe_allow_html=True
+            )
+
+        st.markdown(
+            '<div class="company-other-heading"><span class="company-plus">+</span>'
+            '<div><strong>¿No encuentras tu empresa?</strong>'
+            '<p>Selecciona «Otra» al inicio del listado para escribir el nombre y el NIT manualmente.</p></div></div>',
+            unsafe_allow_html=True
+        )
+
         if empresa_seleccionada == "Otra":
             with st.container(key="company_manual_fields"):
-                mc1, mc2 = st.columns([1.15, .85], gap="small")
+                mc1, mc2 = st.columns([1.12, .88], gap="medium")
                 with mc1:
                     render_field_label("building", "Nombre de la empresa")
                     empresa_manual = st.text_input(
@@ -2956,42 +3081,6 @@ def render_empresa():
                         "NIT de la empresa", label_visibility="collapsed",
                         placeholder="Escribe el NIT", key="nit_manual_widget"
                     )
-        elif empresa_seleccionada:
-            coincidencias = df_empresas[
-                df_empresas["Nombre_Empresa"].astype(str).str.strip() == empresa_seleccionada
-            ]
-            if not coincidencias.empty and "NIT" in df_empresas.columns:
-                valor_nit = coincidencias.iloc[0].get("NIT", "")
-                nit_visible = "" if pd.isna(valor_nit) else str(valor_nit).strip()
-            empresa_segura = html.escape(empresa_seleccionada)
-            nit_seguro = html.escape(nit_visible or "No registrado en Google Sheets")
-            st.markdown(
-                '<div class="company-meta-grid">'
-                '<div class="company-meta-card"><small>NOMBRE DE LA EMPRESA</small>'
-                f'<strong>{empresa_segura}</strong></div>'
-                '<div class="company-meta-card"><small>NIT</small>'
-                f'<strong>{nit_seguro}</strong></div>'
-                '</div>',
-                unsafe_allow_html=True
-            )
-        else:
-            st.markdown(
-                '<div class="company-meta-grid">'
-                '<div class="company-meta-card company-meta-empty"><small>NOMBRE DE LA EMPRESA</small>'
-                '<strong>Se mostrará al seleccionar</strong></div>'
-                '<div class="company-meta-card company-meta-empty"><small>NIT</small>'
-                '<strong>Se mostrará al seleccionar</strong></div>'
-                '</div>',
-                unsafe_allow_html=True
-            )
-
-        # El aviso queda después de los datos de empresa/NIT, no encima de los campos.
-        st.markdown(
-            '<div class="company-other-heading"><span class="company-plus">+</span>'
-            '<div><strong>¿No encuentras tu empresa?</strong>'
-            '<p>Selecciona «Otra» al inicio del listado para escribir el nombre y el NIT manualmente.</p></div></div>',
-            unsafe_allow_html=True
-        )
 
         with st.container(key="company_nav"):
             nav_back, nav_next = st.columns([1, 1.65], gap="medium")
@@ -3002,7 +3091,7 @@ def render_empresa():
             with nav_next:
                 if st.button("Siguiente: resumen  →", key="company_submit", use_container_width=True):
                     if not empresa_seleccionada:
-                        st.error("Selecciona tu empresa del listado o elige «Otra».")
+                        st.error("Selecciona tu empresa por nombre o por NIT, o elige «Otra».")
                         st.stop()
                     try:
                         if empresa_seleccionada == "Otra":
