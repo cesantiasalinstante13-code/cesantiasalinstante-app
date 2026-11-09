@@ -1495,6 +1495,192 @@ st.markdown(r"""
 </style>
 """, unsafe_allow_html=True)
 
+
+
+# ---------- AJUSTE FINAL DE CONTRASTE Y ESPACIADO: DATOS / EMPRESA ----------
+st.markdown(r"""
+<style>
+/* Pantalla 3: el texto del botón siguiente debe ser blanco, incluso dentro del Markdown interno de Streamlit. */
+.st-key-screen_data .st-key-data_continue button,
+.st-key-screen_data .st-key-data_continue button *,
+.st-key-screen_data .st-key-data_continue button [data-testid="stMarkdownContainer"] p {
+  color:#ffffff!important;
+  -webkit-text-fill-color:#ffffff!important;
+  opacity:1!important;
+  font-weight:900!important;
+}
+
+/* Pantalla 4: títulos y etiquetas del selector con altura y separación reales. */
+.st-key-screen_company .field-label {
+  display:flex!important;
+  position:relative!important;
+  z-index:1!important;
+  width:100%!important;
+  min-height:25px!important;
+  height:auto!important;
+  margin:1rem 0 .38rem!important;
+  padding:0!important;
+  line-height:1.4!important;
+  overflow:visible!important;
+  white-space:normal!important;
+  color:#103a73!important;
+  font-size:.92rem!important;
+  font-weight:900!important;
+}
+.st-key-screen_company [data-testid="stSelectbox"] {
+  display:block!important;
+  position:relative!important;
+  z-index:1!important;
+  width:100%!important;
+  min-width:0!important;
+  margin:.08rem 0 .45rem!important;
+  overflow:visible!important;
+}
+.st-key-screen_company [data-testid="stSelectbox"] [data-baseweb="select"] > div {
+  min-height:52px!important;
+  background:#ffffff!important;
+  border:2px solid #8bbce9!important;
+  border-radius:13px!important;
+  color:#12396e!important;
+  box-shadow:0 3px 10px rgba(8,74,145,.08)!important;
+}
+.st-key-screen_company [data-testid="stSelectbox"] [data-baseweb="select"] * {
+  color:#12396e!important;
+  opacity:1!important;
+}
+.st-key-screen_company .company-other-heading {
+  display:flex!important;
+  position:relative!important;
+  z-index:0!important;
+  width:100%!important;
+  min-height:74px!important;
+  height:auto!important;
+  box-sizing:border-box!important;
+  align-items:center!important;
+  margin:1rem 0 1.35rem!important;
+  padding:.85rem 1rem!important;
+  overflow:visible!important;
+  border-radius:15px!important;
+  background:linear-gradient(110deg,#0750a0,#0876bf)!important;
+  border:1px solid #0a83cb!important;
+}
+.st-key-screen_company .company-other-heading > div {
+  flex:1 1 0!important;
+  min-width:0!important;
+}
+.st-key-screen_company .company-other-heading strong,
+.st-key-screen_company .company-other-heading p {
+  display:block!important;
+  position:static!important;
+  height:auto!important;
+  max-height:none!important;
+  overflow:visible!important;
+  white-space:normal!important;
+  overflow-wrap:anywhere!important;
+  color:#ffffff!important;
+  -webkit-text-fill-color:#ffffff!important;
+  opacity:1!important;
+}
+.st-key-screen_company .company-other-heading strong {
+  font-size:1rem!important;
+  line-height:1.35!important;
+  font-weight:900!important;
+}
+.st-key-screen_company .company-other-heading p {
+  margin:.2rem 0 0!important;
+  font-size:.86rem!important;
+  line-height:1.45!important;
+}
+.st-key-screen_company .company-plus {
+  width:38px!important;
+  height:38px!important;
+  flex:0 0 38px!important;
+  display:flex!important;
+  align-items:center!important;
+  justify-content:center!important;
+  margin-right:.2rem!important;
+  color:#ffffff!important;
+  background:linear-gradient(135deg,#16b9e8,#0874d8)!important;
+}
+/* La fila de navegación queda debajo del aviso de Otra, nunca encima. */
+.st-key-screen_company .st-key-company_nav {
+  display:block!important;
+  position:relative!important;
+  z-index:2!important;
+  width:100%!important;
+  min-height:52px!important;
+  height:auto!important;
+  margin:1rem 0 .1rem!important;
+  padding-top:.15rem!important;
+  clear:both!important;
+}
+.st-key-screen_company .st-key-company_nav [data-testid="stHorizontalBlock"] {
+  position:relative!important;
+  z-index:2!important;
+  width:100%!important;
+  margin:0!important;
+  align-items:stretch!important;
+}
+
+/* Texto blanco inequívoco en los botones principales de las pantallas 3 a 6. */
+.st-key-screen_company .st-key-company_submit button,
+.st-key-screen_company .st-key-company_submit button *,
+.st-key-screen_summary .st-key-summary_continue button,
+.st-key-screen_summary .st-key-summary_continue button *,
+.st-key-screen_mission .st-key-mission_continue button,
+.st-key-screen_mission .st-key-mission_continue button * {
+  color:#ffffff!important;
+  -webkit-text-fill-color:#ffffff!important;
+  opacity:1!important;
+  font-weight:900!important;
+}
+.st-key-screen_data .st-key-data_continue button,
+.st-key-screen_company .st-key-company_submit button,
+.st-key-screen_summary .st-key-summary_continue button,
+.st-key-screen_mission .st-key-mission_continue button {
+  background:linear-gradient(110deg,#073b8a 0%,#0874d4 70%,#0aa6dc 100%)!important;
+  border:1px solid #0a85d6!important;
+  text-shadow:0 1px 1px rgba(0,0,0,.12)!important;
+}
+
+@media(max-width:760px) {
+  .st-key-screen_company .field-label {
+    min-height:24px!important;
+    margin:.8rem 0 .32rem!important;
+    font-size:.84rem!important;
+    line-height:1.35!important;
+  }
+  .st-key-screen_company [data-testid="stSelectbox"] [data-baseweb="select"] > div {
+    min-height:49px!important;
+  }
+  .st-key-screen_company .company-other-heading {
+    min-height:78px!important;
+    margin:.85rem 0 1.25rem!important;
+    padding:.76rem .78rem!important;
+    align-items:center!important;
+  }
+  .st-key-screen_company .company-other-heading strong {font-size:.9rem!important;line-height:1.35!important}
+  .st-key-screen_company .company-other-heading p {font-size:.78rem!important;line-height:1.45!important}
+  .st-key-screen_company .st-key-company_nav {
+    margin:1rem 0 .2rem!important;
+    padding-top:.1rem!important;
+  }
+  .st-key-screen_company .st-key-company_nav [data-testid="stHorizontalBlock"] {
+    gap:.5rem!important;
+  }
+  .st-key-screen_company .st-key-company_nav [data-testid="column"] {
+    min-width:0!important;
+    flex:1 1 0!important;
+  }
+  .st-key-screen_data .st-key-data_continue button,
+  .st-key-screen_company .st-key-company_submit button {
+    color:#ffffff!important;
+    -webkit-text-fill-color:#ffffff!important;
+  }
+}
+</style>
+""", unsafe_allow_html=True)
+
 # ---------- ESTADO INICIAL ----------
 if 'step' not in st.session_state:
     st.session_state.step = 'landing'
@@ -2650,10 +2836,13 @@ def render_empresa():
             st.stop()
 
         render_field_label("building", "Busca o selecciona tu empresa")
+        # "Otra" aparece inmediatamente después del marcador vacío para que sea fácil encontrarla.
+        opciones_empresa = [""] + ["Otra"] + lista_empresas
         empresa_seleccionada = st.selectbox(
-            "Selecciona tu empresa", [""] + lista_empresas + ["Otra"],
+            "Selecciona tu empresa", opciones_empresa,
             label_visibility="collapsed", key="empresa_widget",
-            placeholder="Escribe para buscar tu empresa"
+            placeholder="Escribe para buscar o selecciona tu empresa",
+            help="La opción «Otra» está al inicio del listado, justo debajo del espacio vacío."
         )
 
         # Este bloque queda siempre visible, como en la maqueta, para que la opción
@@ -2661,7 +2850,7 @@ def render_empresa():
         st.markdown(
             '<div class="company-other-heading"><span class="company-plus">+</span>'
             '<div><strong>¿No encuentras tu empresa?</strong>'
-            '<p>Selecciona «Otra» en el listado para escribir el nombre y el NIT manualmente.</p></div></div>',
+            '<p>Selecciona «Otra» al inicio del listado para escribir el nombre y el NIT manualmente.</p></div></div>',
             unsafe_allow_html=True
         )
 
@@ -2698,39 +2887,40 @@ def render_empresa():
                 unsafe_allow_html=True
             )
 
-        nav_back, nav_next = st.columns([1, 1.65], gap="medium")
-        with nav_back:
-            if st.button("← Atrás", key="company_back", use_container_width=True):
-                st.session_state.step = "datos_personales"
-                st.rerun()
-        with nav_next:
-            if st.button("Siguiente: resumen  →", key="company_submit", use_container_width=True):
-                if not empresa_seleccionada:
-                    st.error("Selecciona la empresa donde trabajas.")
-                    st.stop()
-                try:
-                    if empresa_seleccionada == "Otra":
-                        if not empresa_manual.strip() or not nit_manual.strip():
-                            st.error("Escribe el nombre y el NIT de tu empresa.")
-                            st.stop()
-                        resolver_empresa_y_plantilla(empresa_seleccionada, empresa_manual, nit_manual)
-                        st.session_state.empresa = empresa_manual.strip()
-                        st.session_state.nit = nit_manual.strip()
-                    else:
-                        resolver_empresa_y_plantilla(empresa_seleccionada)
-                        st.session_state.empresa = empresa_seleccionada
-                    if not st.session_state.get("nit"):
-                        st.error("No encontramos un NIT asociado a esta empresa. Revisa la columna NIT de la hoja Empresas.")
-                        st.stop()
-                    if not st.session_state.get("doc_id_plantilla"):
-                        st.error("Esta empresa no tiene una plantilla asignada. Verifica la columna Doc_ID de la hoja Empresas.")
-                        st.stop()
-                    st.session_state.empresa_seleccionada = empresa_seleccionada
-                    st.session_state.step = "resumen"
+        with st.container(key="company_nav"):
+            nav_back, nav_next = st.columns([1, 1.65], gap="medium")
+            with nav_back:
+                if st.button("← Atrás", key="company_back", use_container_width=True):
+                    st.session_state.step = "datos_personales"
                     st.rerun()
-                except Exception as exc:
-                    st.error(f"No se pudo validar la empresa o localizar su plantilla: {exc}")
-                    st.stop()
+            with nav_next:
+                if st.button("Siguiente: resumen  →", key="company_submit", use_container_width=True):
+                    if not empresa_seleccionada:
+                        st.error("Selecciona la empresa donde trabajas.")
+                        st.stop()
+                    try:
+                        if empresa_seleccionada == "Otra":
+                            if not empresa_manual.strip() or not nit_manual.strip():
+                                st.error("Escribe el nombre y el NIT de tu empresa.")
+                                st.stop()
+                            resolver_empresa_y_plantilla(empresa_seleccionada, empresa_manual, nit_manual)
+                            st.session_state.empresa = empresa_manual.strip()
+                            st.session_state.nit = nit_manual.strip()
+                        else:
+                            resolver_empresa_y_plantilla(empresa_seleccionada)
+                            st.session_state.empresa = empresa_seleccionada
+                        if not st.session_state.get("nit"):
+                            st.error("No encontramos un NIT asociado a esta empresa. Revisa la columna NIT de la hoja Empresas.")
+                            st.stop()
+                        if not st.session_state.get("doc_id_plantilla"):
+                            st.error("Esta empresa no tiene una plantilla asignada. Verifica la columna Doc_ID de la hoja Empresas.")
+                            st.stop()
+                        st.session_state.empresa_seleccionada = empresa_seleccionada
+                        st.session_state.step = "resumen"
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(f"No se pudo validar la empresa o localizar su plantilla: {exc}")
+                        st.stop()
 
 def render_generando():
     """Crea registro, copia la plantilla, la rellena y exporta el PDF; luego muestra la confirmación."""
