@@ -1790,6 +1790,66 @@ st.markdown(r"""
 </style>
 """, unsafe_allow_html=True)
 
+
+# ---------- AJUSTE EXCLUSIVO DE ESPACIOS VERTICALES: PANTALLAS 1 Y 2 ----------
+# Pantalla 1: reduce únicamente el espacio azul superior/inferior en móvil.
+# Pantalla 2: reduce el espacio vertical en PC y móvil; no altera márgenes laterales.
+st.markdown(r"""
+<style>
+/* PORTADA: solo móvil. PC y márgenes laterales permanecen tal como están. */
+@media (max-width:760px) {
+  .main .block-container:has(.st-key-landing_wrap) {
+    padding-top:.16rem!important;
+    padding-bottom:.22rem!important;
+  }
+  .st-key-landing_wrap {
+    margin-top:0!important;
+    margin-bottom:.16rem!important;
+  }
+}
+
+/* SELECCIÓN DE FONDO: menos espacio azul arriba y abajo en todos los tamaños. */
+.main .block-container:has(.st-key-screen_fund) {
+  padding-top:.32rem!important;
+  padding-bottom:.42rem!important;
+}
+.main .block-container:has(.st-key-screen_fund) .brand-header {
+  margin-top:0!important;
+  margin-bottom:.34rem!important;
+}
+.main .block-container:has(.st-key-screen_fund) .journey-wrap {
+  margin-top:0!important;
+  margin-bottom:.34rem!important;
+}
+.main .block-container:has(.st-key-screen_fund) .st-key-screen_fund {
+  margin-top:.18rem!important;
+  margin-bottom:.22rem!important;
+  padding-top:1.22rem!important;
+  padding-bottom:1.22rem!important;
+}
+
+/* En móvil reducimos un poco más el espacio vertical, sin tocar los lados. */
+@media (max-width:760px) {
+  .main .block-container:has(.st-key-screen_fund) {
+    padding-top:.24rem!important;
+    padding-bottom:.30rem!important;
+  }
+  .main .block-container:has(.st-key-screen_fund) .brand-header {
+    margin-bottom:.26rem!important;
+  }
+  .main .block-container:has(.st-key-screen_fund) .journey-wrap {
+    margin-bottom:.26rem!important;
+  }
+  .main .block-container:has(.st-key-screen_fund) .st-key-screen_fund {
+    margin-top:.14rem!important;
+    margin-bottom:.18rem!important;
+    padding-top:.88rem!important;
+    padding-bottom:.88rem!important;
+  }
+}
+</style>
+""", unsafe_allow_html=True)
+
 # ---------- ESTADO INICIAL ----------
 if 'step' not in st.session_state:
     st.session_state.step = 'landing'
