@@ -3977,7 +3977,57 @@ st.markdown(r"""
     color: #12396e !important;
     -webkit-text-fill-color: #12396e !important;
   }
+
+  /* Último refuerzo: el selectbox de Departamento usa el popover de BaseWeb.
+     Se fuerza el fondo de todos los niveles del menú, no solo del contenedor externo. */
+  body [data-baseweb="layer"] [data-baseweb="popover"],
+  body [data-baseweb="layer"] [data-baseweb="popover"] > *,
+  body [data-baseweb="layer"] [data-baseweb="popover"] [role="listbox"],
+  body [data-baseweb="layer"] [data-baseweb="popover"] [role="option"],
+  body [data-baseweb="popover"] [data-baseweb="select"],
+  body [data-baseweb="popover"] [data-baseweb="select"] > * {
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+    color: #26384d !important;
+    -webkit-text-fill-color: #26384d !important;
+  }
+  body [data-baseweb="layer"] [data-baseweb="popover"] [role="option"]:hover,
+  body [data-baseweb="layer"] [data-baseweb="popover"] [role="option"][aria-selected="true"] {
+    background: #eaf4ff !important;
+    background-color: #eaf4ff !important;
+    color: #12396e !important;
+    -webkit-text-fill-color: #12396e !important;
+  }
 }
+
+/* Refuerzo final para los tres selectores móviles: Departamento, Empresa y NIT.
+   Los menús de Streamlit se montan en una capa/portal separado del formulario. */
+@media (max-width: 760px) {
+  body [data-baseweb="layer"] [data-baseweb="menu"],
+  body [data-baseweb="layer"] [data-baseweb="menu"] *,
+  body [data-baseweb="layer"] [role="listbox"],
+  body [data-baseweb="layer"] [role="listbox"] *,
+  body [data-baseweb="layer"] [role="option"],
+  body [data-baseweb="popover"] [data-baseweb="menu"],
+  body [data-baseweb="popover"] [data-baseweb="menu"] *,
+  body [data-baseweb="popover"] [role="listbox"],
+  body [data-baseweb="popover"] [role="listbox"] *,
+  body [data-baseweb="popover"] [role="option"] {
+    background-color: #ffffff !important;
+    color: #26384d !important;
+    -webkit-text-fill-color: #26384d !important;
+  }
+
+  body [data-baseweb="layer"] [role="option"]:hover,
+  body [data-baseweb="layer"] [role="option"][aria-selected="true"],
+  body [data-baseweb="popover"] [role="option"]:hover,
+  body [data-baseweb="popover"] [role="option"][aria-selected="true"] {
+    background-color: #eaf4ff !important;
+    color: #12396e !important;
+    -webkit-text-fill-color: #12396e !important;
+  }
+}
+
 </style>
 """, unsafe_allow_html=True)
 
