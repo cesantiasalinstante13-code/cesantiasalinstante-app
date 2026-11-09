@@ -4000,6 +4000,31 @@ st.markdown(r"""
   }
 }
 
+
+/* El control cerrado también estaba heredando el tema oscuro.
+   Afecta Departamento, Empresa y NIT únicamente en móvil. */
+@media (max-width: 760px) {
+  body [data-testid="stSelectbox"] [data-baseweb="select"] > div,
+  body [data-testid="stSelectbox"] [data-baseweb="select"] [role="combobox"] {
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+    color: #26384d !important;
+    border-color: #cbd9e7 !important;
+    -webkit-text-fill-color: #26384d !important;
+  }
+  body [data-testid="stSelectbox"] [data-baseweb="select"] *,
+  body [data-testid="stSelectbox"] [data-baseweb="select"] svg {
+    color: #26384d !important;
+    fill: #26384d !important;
+    -webkit-text-fill-color: #26384d !important;
+  }
+  body [data-testid="stSelectbox"] [data-baseweb="select"] input {
+    background: #ffffff !important;
+    color: #26384d !important;
+    -webkit-text-fill-color: #26384d !important;
+  }
+}
+
 /* Refuerzo final para los tres selectores móviles: Departamento, Empresa y NIT.
    Los menús de Streamlit se montan en una capa/portal separado del formulario. */
 @media (max-width: 760px) {
