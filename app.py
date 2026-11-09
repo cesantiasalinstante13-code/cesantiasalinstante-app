@@ -1739,6 +1739,37 @@ st.markdown(r"""
 </style>
 """, unsafe_allow_html=True)
 
+# ---------- AJUSTE FINAL: SEPARACIÓN DEL DESPLEGABLE DE EMPRESA ----------
+st.markdown(r"""
+<style>
+/* Separa claramente la etiqueta del selector. El contenido posterior baja
+   con el flujo natural del documento, sin posiciones absolutas. */
+.st-key-screen_company .company-dropdown-spacer {
+    display:block!important;
+    height:32px!important;
+    min-height:32px!important;
+    width:100%!important;
+    margin:0!important;
+    padding:0!important;
+}
+.st-key-screen_company [data-testid="stSelectbox"] {
+    display:block!important;
+    margin-top:.35rem!important;
+    position:relative!important;
+    top:auto!important;
+}
+@media (max-width:760px) {
+    .st-key-screen_company .company-dropdown-spacer {
+        height:27px!important;
+        min-height:27px!important;
+    }
+    .st-key-screen_company [data-testid="stSelectbox"] {
+        margin-top:.25rem!important;
+    }
+}
+</style>
+""", unsafe_allow_html=True)
+
 # ---------- ESTADO INICIAL ----------
 if 'step' not in st.session_state:
     st.session_state.step = 'landing'
