@@ -4053,6 +4053,36 @@ st.markdown(r"""
   }
 }
 
+
+/* Sobrescritura de alta especificidad para el fondo oscuro del selectbox.
+   Limitada a los tres widgets en móvil; conserva medidas y disposición. */
+@media screen and (max-width: 760px) {
+  .st-key-screen_data [data-testid="stSelectbox"] div[data-baseweb="select"] > div,
+  .st-key-screen_data [data-testid="stSelectbox"] div[data-baseweb="select"] > div > div,
+  .st-key-screen_data [data-testid="stSelectbox"] div[data-baseweb="select"] [role="combobox"],
+  .st-key-screen_company [data-testid="stSelectbox"] div[data-baseweb="select"] > div,
+  .st-key-screen_company [data-testid="stSelectbox"] div[data-baseweb="select"] > div > div,
+  .st-key-screen_company [data-testid="stSelectbox"] div[data-baseweb="select"] [role="combobox"] {
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+    background-image: none !important;
+    color: #26384d !important;
+    -webkit-text-fill-color: #26384d !important;
+    border-color: #cbd9e7 !important;
+    box-shadow: none !important;
+  }
+  .st-key-screen_data [data-testid="stSelectbox"] div[data-baseweb="select"] *,
+  .st-key-screen_company [data-testid="stSelectbox"] div[data-baseweb="select"] * {
+    color: #26384d !important;
+    -webkit-text-fill-color: #26384d !important;
+  }
+  .st-key-screen_data [data-testid="stSelectbox"] div[data-baseweb="select"] svg,
+  .st-key-screen_company [data-testid="stSelectbox"] div[data-baseweb="select"] svg {
+    fill: #26384d !important;
+    color: #26384d !important;
+  }
+}
+
 </style>
 """, unsafe_allow_html=True)
 
