@@ -1681,6 +1681,64 @@ st.markdown(r"""
 </style>
 """, unsafe_allow_html=True)
 
+# ---------- AJUSTE FINAL DE ORDEN Y ESPACIADO: PANTALLA EMPRESA ----------
+st.markdown(r"""
+<style>
+.st-key-screen_company .company-dropdown-spacer {height:14px!important;min-height:14px!important;width:100%!important}
+.st-key-screen_company .company-intro {margin-bottom:1rem!important}
+.st-key-screen_company .company-meta-grid {
+  display:grid!important;grid-template-columns:minmax(0,1.2fr) minmax(0,.8fr)!important;
+  gap:.75rem!important;width:100%!important;margin:.8rem 0 1rem!important;align-items:stretch!important
+}
+.st-key-screen_company .company-meta-card {
+  display:flex!important;flex-direction:column!important;justify-content:center!important;gap:.35rem!important;
+  min-width:0!important;min-height:78px!important;padding:.8rem 1rem!important;box-sizing:border-box!important;
+  border:1.5px solid #c6dcef!important;border-radius:14px!important;
+  background:linear-gradient(135deg,#fff 0%,#f1f8ff 100%)!important;
+  box-shadow:0 4px 12px rgba(8,65,135,.05)!important
+}
+.st-key-screen_company .company-meta-card small {
+  display:block!important;color:#526b86!important;font-size:.7rem!important;font-weight:900!important;
+  letter-spacing:.045em!important;line-height:1.25!important
+}
+.st-key-screen_company .company-meta-card strong {
+  display:block!important;color:#082e6b!important;font-size:.98rem!important;font-weight:900!important;
+  line-height:1.35!important;overflow-wrap:anywhere!important;word-break:break-word!important
+}
+.st-key-screen_company .company-meta-empty strong {color:#8394a8!important;font-size:.84rem!important;font-weight:650!important}
+.st-key-screen_company .company-other-heading {
+  margin:1rem 0 .25rem!important;min-height:0!important;height:auto!important;padding:.85rem 1rem!important;
+  box-sizing:border-box!important;position:relative!important;z-index:0!important
+}
+.st-key-screen_company .st-key-company_nav {
+  margin:1.3rem 0 .15rem!important;padding-top:.8rem!important;border-top:1px solid #dce8f3!important;
+  display:block!important;position:relative!important;z-index:2!important;height:auto!important;min-height:52px!important
+}
+.st-key-screen_company .st-key-company_nav [data-testid="stHorizontalBlock"] {
+  margin:0!important;align-items:stretch!important;position:relative!important;z-index:2!important
+}
+.st-key-screen_company .st-key-company_nav button {min-height:48px!important}
+@media(max-width:760px) {
+  .st-key-screen_company .company-dropdown-spacer {height:12px!important;min-height:12px!important}
+  .st-key-screen_company .st-key-company_manual_fields [data-testid="stHorizontalBlock"] {
+    display:flex!important;flex-direction:row!important;flex-wrap:nowrap!important;gap:.45rem!important;
+    width:100%!important;min-width:0!important
+  }
+  .st-key-screen_company .st-key-company_manual_fields [data-testid="column"] {
+    flex:1 1 0!important;width:50%!important;min-width:0!important;max-width:50%!important;
+    padding:0!important;box-sizing:border-box!important
+  }
+  .st-key-screen_company .company-meta-grid {grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr)!important;gap:.5rem!important;margin:.65rem 0 .8rem!important}
+  .st-key-screen_company .company-meta-card {min-height:76px!important;padding:.65rem .7rem!important}
+  .st-key-screen_company .company-meta-card small {font-size:.61rem!important;line-height:1.2!important}
+  .st-key-screen_company .company-meta-card strong {font-size:.8rem!important;line-height:1.3!important}
+  .st-key-screen_company .company-meta-empty strong {font-size:.72rem!important}
+  .st-key-screen_company .company-other-heading {margin:.85rem 0 .25rem!important;padding:.75rem .78rem!important}
+  .st-key-screen_company .st-key-company_nav {margin:1.1rem 0 .1rem!important;padding-top:.7rem!important}
+}
+</style>
+""", unsafe_allow_html=True)
+
 # ---------- ESTADO INICIAL ----------
 if 'step' not in st.session_state:
     st.session_state.step = 'landing'
@@ -2811,7 +2869,7 @@ def render_mision():
                 st.rerun()
 
 def render_empresa():
-    """Pantalla 4: nombre de la empresa, NIT y plantilla asociados desde Google Sheets."""
+    """Pantalla Empresa: selector separado de los datos de empresa/NIT y del aviso Otra."""
     render_brand_header(4)
     with st.container(key="screen_company"):
         render_screen_heading(
@@ -2835,57 +2893,74 @@ def render_empresa():
             st.error(f"No fue posible cargar la lista de empresas desde Google Sheets: {exc}")
             st.stop()
 
+        # Etiqueta y espacio independientes: el desplegable ya no queda pegado al texto.
         render_field_label("building", "Busca o selecciona tu empresa")
-        # "Otra" aparece inmediatamente después del marcador vacío para que sea fácil encontrarla.
+        st.markdown('<div class="company-dropdown-spacer"></div>', unsafe_allow_html=True)
         opciones_empresa = [""] + ["Otra"] + lista_empresas
         empresa_seleccionada = st.selectbox(
             "Selecciona tu empresa", opciones_empresa,
             label_visibility="collapsed", key="empresa_widget",
             placeholder="Escribe para buscar o selecciona tu empresa",
-            help="La opción «Otra» está al inicio del listado, justo debajo del espacio vacío."
+            help="«Otra» aparece al inicio del listado, después de la opción vacía."
         )
 
-        # Este bloque queda siempre visible, como en la maqueta, para que la opción
-        # Otra no quede escondida debajo del selector.
+        empresa_manual = ""
+        nit_manual = ""
+        nit_visible = ""
+
+        # Justo debajo del selector: empresa y NIT en dos tarjetas alineadas.
+        # Para «Otra» se muestran dos campos editables; para las demás, los datos de Sheets.
+        if empresa_seleccionada == "Otra":
+            with st.container(key="company_manual_fields"):
+                mc1, mc2 = st.columns([1.15, .85], gap="small")
+                with mc1:
+                    render_field_label("building", "Nombre de la empresa")
+                    empresa_manual = st.text_input(
+                        "Nombre de la empresa", label_visibility="collapsed",
+                        placeholder="Escribe la razón social", key="empresa_manual_widget"
+                    )
+                with mc2:
+                    render_field_label("file", "NIT de la empresa")
+                    nit_manual = st.text_input(
+                        "NIT de la empresa", label_visibility="collapsed",
+                        placeholder="Escribe el NIT", key="nit_manual_widget"
+                    )
+        elif empresa_seleccionada:
+            coincidencias = df_empresas[
+                df_empresas["Nombre_Empresa"].astype(str).str.strip() == empresa_seleccionada
+            ]
+            if not coincidencias.empty and "NIT" in df_empresas.columns:
+                valor_nit = coincidencias.iloc[0].get("NIT", "")
+                nit_visible = "" if pd.isna(valor_nit) else str(valor_nit).strip()
+            empresa_segura = html.escape(empresa_seleccionada)
+            nit_seguro = html.escape(nit_visible or "No registrado en Google Sheets")
+            st.markdown(
+                '<div class="company-meta-grid">'
+                '<div class="company-meta-card"><small>NOMBRE DE LA EMPRESA</small>'
+                f'<strong>{empresa_segura}</strong></div>'
+                '<div class="company-meta-card"><small>NIT</small>'
+                f'<strong>{nit_seguro}</strong></div>'
+                '</div>',
+                unsafe_allow_html=True
+            )
+        else:
+            st.markdown(
+                '<div class="company-meta-grid">'
+                '<div class="company-meta-card company-meta-empty"><small>NOMBRE DE LA EMPRESA</small>'
+                '<strong>Se mostrará al seleccionar</strong></div>'
+                '<div class="company-meta-card company-meta-empty"><small>NIT</small>'
+                '<strong>Se mostrará al seleccionar</strong></div>'
+                '</div>',
+                unsafe_allow_html=True
+            )
+
+        # El aviso queda después de los datos de empresa/NIT, no encima de los campos.
         st.markdown(
             '<div class="company-other-heading"><span class="company-plus">+</span>'
             '<div><strong>¿No encuentras tu empresa?</strong>'
             '<p>Selecciona «Otra» al inicio del listado para escribir el nombre y el NIT manualmente.</p></div></div>',
             unsafe_allow_html=True
         )
-
-        empresa_manual = ""
-        nit_manual = ""
-        if empresa_seleccionada == "Otra":
-            mc1, mc2 = st.columns(2, gap="medium")
-            with mc1:
-                render_field_label("building", "Nombre de la empresa")
-                empresa_manual = st.text_input(
-                    "Nombre de la empresa", label_visibility="collapsed",
-                    placeholder="Razón social", key="empresa_manual_widget"
-                )
-            with mc2:
-                render_field_label("file", "NIT de la empresa")
-                nit_manual = st.text_input(
-                    "NIT de la empresa", label_visibility="collapsed",
-                    placeholder="Número de NIT", key="nit_manual_widget"
-                )
-            st.caption("La opción Otra utiliza la plantilla general configurada en la hoja Empresas.")
-        elif empresa_seleccionada:
-            coincidencias = df_empresas[
-                df_empresas["Nombre_Empresa"].astype(str).str.strip() == empresa_seleccionada
-            ]
-            nit_visible = ""
-            if not coincidencias.empty and "NIT" in df_empresas.columns:
-                valor_nit = coincidencias.iloc[0].get("NIT", "")
-                nit_visible = "" if pd.isna(valor_nit) else str(valor_nit).strip()
-            st.markdown(
-                '<div class="company-selected-card"><div class="company-selected-icon">' + icon_svg("building") + '</div>'
-                '<div class="company-selected-text"><strong>' + html.escape(empresa_seleccionada) + '</strong>'
-                '<span>NIT: ' + html.escape(nit_visible or "No registrado en la hoja Empresas") + '</span></div>'
-                '<div class="company-selected-check">✓</div></div>',
-                unsafe_allow_html=True
-            )
 
         with st.container(key="company_nav"):
             nav_back, nav_next = st.columns([1, 1.65], gap="medium")
@@ -2896,7 +2971,7 @@ def render_empresa():
             with nav_next:
                 if st.button("Siguiente: resumen  →", key="company_submit", use_container_width=True):
                     if not empresa_seleccionada:
-                        st.error("Selecciona la empresa donde trabajas.")
+                        st.error("Selecciona tu empresa del listado o elige «Otra».")
                         st.stop()
                     try:
                         if empresa_seleccionada == "Otra":
