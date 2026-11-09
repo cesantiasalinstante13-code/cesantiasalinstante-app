@@ -38,6 +38,9 @@ st.markdown(r"""
  --cia-ink:#18345b;--cia-muted:#60748d;--cia-line:#d8e6f4;--cia-pale:#eff7ff;
 }
 html,body,[class*="css"],.stApp{font-family:Inter,Arial,sans-serif!important}
+/* Evita que el navegador móvil aplique controles nativos con apariencia oscura.
+   El tema de Streamlit también se fija en .streamlit/config.toml. */
+html,body,.stApp{color-scheme:light!important}
 
 /* IMPORTANTE: cada st.markdown(<style>) crea un wrapper vacío en el flujo vertical
    de Streamlit. Los 15 bloques CSS acumulaban separaciones y generaban la franja azul.
