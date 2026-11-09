@@ -1191,6 +1191,310 @@ st.markdown(r"""
 </style>
 """, unsafe_allow_html=True)
 
+
+
+# ---------- AJUSTES RESPONSIVOS FINALES: PANTALLAS 3 A 6 ----------
+st.markdown(r"""
+<style>
+/* Estructura de encabezados: evita que títulos y subtítulos se monten. */
+.st-key-screen_data .screen-heading > div:last-child,
+.st-key-screen_company .screen-heading > div:last-child,
+.st-key-screen_summary .screen-heading > div:last-child,
+.st-key-screen_mission .screen-heading > div:last-child {
+  flex:1 1 0!important;
+  min-width:0!important;
+}
+.st-key-screen_company .screen-heading h2,
+.st-key-screen_company .screen-heading p {
+  max-width:100%!important;
+  overflow-wrap:anywhere!important;
+  word-break:normal!important;
+}
+
+/* Pantalla 3: el recuadro de saldo/monto y los seis campos usan una caja azul
+   de alto contraste. PC conserva su estilo de dos columnas ya aprobado. */
+.st-key-screen_data .personal-tip {
+  background:linear-gradient(112deg,#0750a0 0%,#087fca 100%)!important;
+  border:1px solid #0b83ca!important;
+  box-shadow:0 7px 18px rgba(5,67,137,.16)!important;
+}
+.st-key-screen_data .personal-tip strong,
+.st-key-screen_data .personal-tip p {
+  color:#ffffff!important;
+  opacity:1!important;
+}
+.st-key-screen_data .personal-tip p {line-height:1.48!important}
+
+/* Pantalla 4: texto de empresa con espacios reales, sin solapamiento ni recorte. */
+.st-key-screen_company {
+  height:auto!important;
+  min-height:0!important;
+  max-height:none!important;
+  overflow:visible!important;
+}
+.st-key-screen_company .company-intro {
+  align-items:center!important;
+  min-width:0!important;
+  height:auto!important;
+  min-height:76px!important;
+  box-sizing:border-box!important;
+  overflow:visible!important;
+}
+.st-key-screen_company .company-intro-copy {
+  flex:1 1 0!important;
+  min-width:0!important;
+}
+.st-key-screen_company .company-intro strong,
+.st-key-screen_company .company-intro p,
+.st-key-screen_company .company-other-heading strong,
+.st-key-screen_company .company-other-heading p {
+  display:block!important;
+  position:static!important;
+  height:auto!important;
+  max-height:none!important;
+  white-space:normal!important;
+  overflow:visible!important;
+  overflow-wrap:anywhere!important;
+  line-height:1.42!important;
+}
+.st-key-screen_company .company-other-heading {
+  align-items:center!important;
+  justify-content:flex-start!important;
+  background:linear-gradient(110deg,#0750a0,#0876bf)!important;
+  border:1px solid #0a83cb!important;
+  min-width:0!important;
+  box-sizing:border-box!important;
+}
+.st-key-screen_company .company-other-heading strong,
+.st-key-screen_company .company-other-heading p {
+  color:#ffffff!important;
+  opacity:1!important;
+}
+.st-key-screen_company .company-plus {
+  background:linear-gradient(135deg,#16b9e8,#0874d8)!important;
+  flex:0 0 34px!important;
+}
+.st-key-screen_company .company-selected-card {
+  min-width:0!important;
+  height:auto!important;
+  min-height:66px!important;
+  overflow:visible!important;
+}
+.st-key-screen_company .company-selected-text {
+  min-width:0!important;
+  overflow-wrap:anywhere!important;
+}
+.st-key-screen_company [data-testid="stSelectbox"],
+.st-key-screen_company [data-testid="stTextInput"] {
+  min-width:0!important;
+  width:100%!important;
+}
+
+/* Pantalla 5: los datos del resumen se presentan en dos columnas también en móvil. */
+.st-key-screen_summary .summary-details {
+  grid-template-columns:repeat(2,minmax(0,1fr))!important;
+  min-width:0!important;
+}
+.st-key-screen_summary .summary-item {
+  min-width:0!important;
+  overflow-wrap:anywhere!important;
+}
+.st-key-screen_summary .summary-item small,
+.st-key-screen_summary .summary-item strong {
+  white-space:normal!important;
+  overflow-wrap:anywhere!important;
+  word-break:break-word!important;
+}
+
+/* Pantalla 6: texto de la misión siempre blanco y legible sobre azul. */
+.st-key-screen_mission .mission-explanation {
+  background:linear-gradient(120deg,#062b68 0%,#07549c 56%,#087bc5 100%)!important;
+  border:1px solid #148bd2!important;
+  box-shadow:0 10px 26px rgba(4,42,100,.18)!important;
+  color:#ffffff!important;
+}
+.st-key-screen_mission .mission-explanation h3,
+.st-key-screen_mission .mission-explanation p,
+.st-key-screen_mission .mission-explanation .mission-explanation-kicker {
+  color:#ffffff!important;
+  opacity:1!important;
+}
+.st-key-screen_mission .mission-explanation h3 {
+  font-size:clamp(1.25rem,2.2vw,1.65rem)!important;
+  line-height:1.25!important;
+  margin:.25rem 0 .8rem!important;
+}
+.st-key-screen_mission .mission-explanation-paragraph {
+  margin:.72rem 0!important;
+  font-size:1rem!important;
+  line-height:1.65!important;
+  overflow-wrap:anywhere!important;
+}
+.st-key-screen_mission .mission-explanation-paragraph + .mission-explanation-paragraph {
+  padding-top:.68rem!important;
+  border-top:1px solid rgba(255,255,255,.2)!important;
+}
+.st-key-screen_mission .mission-explanation-kicker {
+  font-size:.72rem!important;
+  font-weight:900!important;
+  letter-spacing:.09em!important;
+  opacity:.9!important;
+}
+
+@media (max-width:760px) {
+  /* Pantalla 3: conservar dos columnas reales en el ancho interior del teléfono. */
+  .st-key-screen_data [data-testid="stHorizontalBlock"] {
+    display:flex!important;
+    flex-direction:row!important;
+    flex-wrap:nowrap!important;
+    align-items:flex-end!important;
+    gap:.48rem!important;
+    width:100%!important;
+    max-width:100%!important;
+    min-width:0!important;
+  }
+  .st-key-screen_data [data-testid="stHorizontalBlock"] > [data-testid="column"] {
+    flex:1 1 0!important;
+    width:50%!important;
+    min-width:0!important;
+    max-width:50%!important;
+    padding:0!important;
+    box-sizing:border-box!important;
+  }
+  .st-key-screen_data .field-label {
+    display:flex!important;
+    align-items:flex-start!important;
+    gap:.28rem!important;
+    margin:.3rem 0 .22rem!important;
+    min-width:0!important;
+    font-size:.73rem!important;
+    line-height:1.22!important;
+    overflow-wrap:anywhere!important;
+  }
+  .st-key-screen_data .field-label svg {
+    width:15px!important;
+    height:15px!important;
+    flex:0 0 15px!important;
+    margin-top:1px!important;
+  }
+  .st-key-screen_data [data-testid="stTextInput"] input,
+  .st-key-screen_data [data-testid="stSelectbox"] [data-baseweb="select"] > div {
+    width:100%!important;
+    min-width:0!important;
+    min-height:44px!important;
+    padding-left:.48rem!important;
+    padding-right:.35rem!important;
+    font-size:16px!important;
+  }
+  .st-key-screen_data [data-testid="stTextInput"] input::placeholder {
+    font-size:.78rem!important;
+    opacity:1!important;
+  }
+  .st-key-screen_data .section-label {
+    font-size:.94rem!important;
+    line-height:1.25!important;
+  }
+  .st-key-screen_data .personal-tip {
+    padding:.72rem .75rem!important;
+    gap:.58rem!important;
+    align-items:center!important;
+  }
+  .st-key-screen_data .personal-tip strong {font-size:.98rem!important}
+  .st-key-screen_data .personal-tip p {font-size:.79rem!important;line-height:1.42!important}
+
+  /* Pantalla 4: título, tarjetas y opción Otra sin texto montado ni contenido cortado. */
+  .st-key-screen_company {
+    padding:1rem .78rem 1.15rem!important;
+    overflow:visible!important;
+  }
+  .st-key-screen_company .screen-heading {
+    align-items:flex-start!important;
+    gap:.58rem!important;
+  }
+  .st-key-screen_company .screen-heading h2 {
+    font-size:1.2rem!important;
+    line-height:1.22!important;
+  }
+  .st-key-screen_company .screen-heading p {
+    font-size:.82rem!important;
+    line-height:1.4!important;
+  }
+  .st-key-screen_company .company-intro {
+    display:flex!important;
+    align-items:flex-start!important;
+    gap:.58rem!important;
+    padding:.75rem!important;
+    margin:.15rem 0 .7rem!important;
+  }
+  .st-key-screen_company .company-intro-icon {
+    width:39px!important;
+    height:39px!important;
+    flex:0 0 39px!important;
+  }
+  .st-key-screen_company .company-intro-copy {flex:1 1 0!important;min-width:0!important}
+  .st-key-screen_company .company-intro strong {font-size:.88rem!important;line-height:1.3!important}
+  .st-key-screen_company .company-intro p {font-size:.78rem!important;line-height:1.4!important}
+  .st-key-screen_company .company-other-heading {
+    align-items:flex-start!important;
+    gap:.55rem!important;
+    margin:.7rem 0 .5rem!important;
+    padding:.68rem!important;
+  }
+  .st-key-screen_company .company-other-heading > div {flex:1 1 0!important;min-width:0!important}
+  .st-key-screen_company .company-other-heading strong {font-size:.88rem!important}
+  .st-key-screen_company .company-other-heading p {font-size:.77rem!important}
+  .st-key-screen_company .company-selected-card {padding:.62rem!important}
+  .st-key-screen_company [data-testid="stHorizontalBlock"] {
+    align-items:flex-end!important;
+    min-width:0!important;
+  }
+  .st-key-screen_company .st-key-company_back,
+  .st-key-screen_company .st-key-company_submit {min-width:0!important}
+
+  /* Pantalla 5: resumen en dos columnas incluso en teléfonos estrechos. */
+  .st-key-screen_summary .summary-layout {grid-template-columns:1fr!important;gap:.55rem!important}
+  .st-key-screen_summary .summary-check-column {
+    flex-direction:row!important;
+    flex-wrap:wrap!important;
+    justify-content:center!important;
+    gap:.55rem!important;
+    padding:.1rem!important;
+  }
+  .st-key-screen_summary .summary-check {width:58px!important;height:58px!important;font-size:2.15rem!important}
+  .st-key-screen_summary .summary-details {
+    grid-template-columns:repeat(2,minmax(0,1fr))!important;
+    gap:.38rem!important;
+  }
+  .st-key-screen_summary .summary-item {padding:.48rem .52rem!important}
+  .st-key-screen_summary .summary-item small {font-size:.61rem!important;line-height:1.2!important}
+  .st-key-screen_summary .summary-item strong {font-size:.78rem!important;line-height:1.28!important}
+  .st-key-screen_summary .summary-note {font-size:.8rem!important;line-height:1.4!important}
+
+  /* Pantalla 6: párrafos blancos, separados y fáciles de leer. */
+  .st-key-screen_mission .mission-explanation {
+    padding:.95rem .88rem!important;
+    margin:.1rem 0 .8rem!important;
+    border-radius:17px!important;
+  }
+  .st-key-screen_mission .mission-explanation h3 {font-size:1.18rem!important}
+  .st-key-screen_mission .mission-explanation-paragraph {
+    font-size:.88rem!important;
+    line-height:1.55!important;
+    margin:.62rem 0!important;
+  }
+}
+
+@media (max-width:380px) {
+  .st-key-screen_data [data-testid="stHorizontalBlock"] {gap:.36rem!important}
+  .st-key-screen_data .field-label {font-size:.68rem!important}
+  .st-key-screen_data [data-testid="stTextInput"] input,
+  .st-key-screen_data [data-testid="stSelectbox"] [data-baseweb="select"] > div {font-size:16px!important}
+  .st-key-screen_summary .summary-item small {font-size:.57rem!important}
+  .st-key-screen_summary .summary-item strong {font-size:.73rem!important}
+}
+</style>
+""", unsafe_allow_html=True)
+
 # ---------- ESTADO INICIAL ----------
 if 'step' not in st.session_state:
     st.session_state.step = 'landing'
@@ -2284,29 +2588,32 @@ def render_resumen():
                 st.rerun()
 
 def render_mision():
-    """Pantalla 6: misión y explicación del acompañamiento antes de generar la carta."""
+    """Pantalla 6: explicación del proceso y acompañamiento de Cesantías al Instante."""
     render_brand_header(6)
     with st.container(key="screen_mission"):
-        render_screen_heading("mission", "Nuestra misión", "Queremos que conozcas cómo funciona nuestro acompañamiento.")
-        st.markdown("""
-        <section class="mission-hero">
-          <h3>Hacemos más sencillo tu proceso de retiro de cesantías</h3>
-          <p>En Cesantías al Instante te acompañamos en la organización de la información y en la preparación de la carta correspondiente, utilizando los datos y la plantilla asociados a tu empresa.</p>
-        </section>
-        """, unsafe_allow_html=True)
-        cols = st.columns(3, gap="medium")
-        cards = [
-            (icon_svg("shield"), "Acompañamiento", "Te guiamos paso a paso para reunir la información necesaria de tu solicitud."),
-            (icon_svg("file"), "Gestión organizada", "Registramos la solicitud y preparamos el documento con la plantilla correspondiente."),
-            (icon_svg("check"), "Claridad y seguridad", "Puedes revisar tus datos antes de confirmar y mantener un registro de tu trámite."),
+        render_screen_heading(
+            "mission", "Nuestra misión",
+            "Conoce cómo te acompañamos durante el proceso de retiro de tus cesantías."
+        )
+        parrafos = [
+            "Te explico en qué consiste: manejamos personal interno que se encarga de hacer todo el proceso.",
+            "Se sube directamente el permiso a la plataforma de Porvenir y se te genera un certificado bajo el concepto de mejora de vivienda, con el cual vas a poder realizar el retiro de tus cesantías.",
+            "Ese certificado lo vas a imprimir a color y te diriges directamente a un banco AV Villas con tu cédula. El dinero únicamente se entrega a ti.",
+            "Lo que hacemos es generar el permiso directamente con el fondo sin mediar con tu empresa. Es un trámite 100% seguro y rápido."
         ]
-        for col, (simbolo, titulo, texto) in zip(cols, cards):
-            with col:
-                st.markdown(f'<div class="mission-card"><div class="mission-symbol">{simbolo}</div><strong>{titulo}</strong><p>{texto}</p></div>', unsafe_allow_html=True)
+        parrafos_html = "".join(
+            '<p class="mission-explanation-paragraph">' + html.escape(p) + '</p>'
+            for p in parrafos
+        )
         st.markdown(
-            '<div class="mission-footnote">La preparación de la carta depende de que los datos sean correctos y de que exista una plantilla válida asociada a la empresa seleccionada.</div>',
+            '<section class="mission-hero mission-explanation">'
+            '<div class="mission-explanation-kicker">ASÍ FUNCIONA EL PROCESO</div>'
+            '<h3>Te acompañamos de principio a fin</h3>'
+            + parrafos_html +
+            '</section>',
             unsafe_allow_html=True
         )
+
         nav_back, nav_next = st.columns([1, 1.65], gap="medium")
         with nav_back:
             if st.button("← Atrás", key="mission_back", use_container_width=True):
@@ -2318,17 +2625,17 @@ def render_mision():
                 st.rerun()
 
 def render_empresa():
-    """Pantalla 4: selección de empresa desde Sheets, NIT y plantilla asociada."""
+    """Pantalla 4: nombre de la empresa, NIT y plantilla asociados desde Google Sheets."""
     render_brand_header(4)
     with st.container(key="screen_company"):
         render_screen_heading(
-            "building", "Empresa donde trabajas",
-            "Selecciona tu empresa para localizar su NIT y la plantilla de tu carta."
+            "building", "Nombre de la empresa",
+            "Selecciona tu empresa para asociar su NIT y encontrar la plantilla de tu carta."
         )
         st.markdown(
             '<div class="company-intro"><div class="company-intro-icon">' + icon_svg("building") + '</div>'
-            '<div><strong>Tu empresa está en nuestro registro</strong>'
-            '<p>Buscamos su información en Google Sheets para asociar el NIT y la plantilla correspondiente.</p></div></div>',
+            '<div class="company-intro-copy"><strong>Selecciona tu empresa del listado</strong>'
+            '<p>Consultamos Google Sheets para localizar el NIT y la plantilla correspondiente a tu empresa.</p></div></div>',
             unsafe_allow_html=True
         )
 
@@ -2349,25 +2656,36 @@ def render_empresa():
             placeholder="Escribe para buscar tu empresa"
         )
 
+        # Este bloque queda siempre visible, como en la maqueta, para que la opción
+        # Otra no quede escondida debajo del selector.
+        st.markdown(
+            '<div class="company-other-heading"><span class="company-plus">+</span>'
+            '<div><strong>¿No encuentras tu empresa?</strong>'
+            '<p>Selecciona «Otra» en el listado para escribir el nombre y el NIT manualmente.</p></div></div>',
+            unsafe_allow_html=True
+        )
+
         empresa_manual = ""
         nit_manual = ""
         if empresa_seleccionada == "Otra":
-            st.markdown(
-                '<div class="company-other-heading"><span class="company-plus">+</span>'
-                '<div><strong>¿No encuentras tu empresa?</strong>'
-                '<p>Ingresa manualmente el nombre y el NIT para continuar.</p></div></div>',
-                unsafe_allow_html=True
-            )
             mc1, mc2 = st.columns(2, gap="medium")
             with mc1:
                 render_field_label("building", "Nombre de la empresa")
-                empresa_manual = st.text_input("Nombre de la empresa", label_visibility="collapsed", placeholder="Razón social", key="empresa_manual_widget")
+                empresa_manual = st.text_input(
+                    "Nombre de la empresa", label_visibility="collapsed",
+                    placeholder="Razón social", key="empresa_manual_widget"
+                )
             with mc2:
                 render_field_label("file", "NIT de la empresa")
-                nit_manual = st.text_input("NIT de la empresa", label_visibility="collapsed", placeholder="Número de NIT", key="nit_manual_widget")
+                nit_manual = st.text_input(
+                    "NIT de la empresa", label_visibility="collapsed",
+                    placeholder="Número de NIT", key="nit_manual_widget"
+                )
             st.caption("La opción Otra utiliza la plantilla general configurada en la hoja Empresas.")
         elif empresa_seleccionada:
-            coincidencias = df_empresas[df_empresas["Nombre_Empresa"].astype(str).str.strip() == empresa_seleccionada]
+            coincidencias = df_empresas[
+                df_empresas["Nombre_Empresa"].astype(str).str.strip() == empresa_seleccionada
+            ]
             nit_visible = ""
             if not coincidencias.empty and "NIT" in df_empresas.columns:
                 valor_nit = coincidencias.iloc[0].get("NIT", "")
