@@ -3740,19 +3740,19 @@ st.markdown(r"""
 """, unsafe_allow_html=True)
 
 
-# ---------- AJUSTE FINAL DE POSICION VERTICAL EN MOVIL ----------
-# Mantiene un margen superior pequeño y consistente en las pantallas 1, 2 y 3.
-# Se corrige el flujo del contenedor principal de Streamlit, no solo el header.
+# ---------- POSICION SUPERIOR MOVIL: OVERRIDE UNICO ----------
+# Elimina el espacio reservado por los wrappers de Streamlit sin cambiar
+# las dimensiones aprobadas de los campos ni el diseño de escritorio.
 st.markdown(r"""
 <style>
 @media screen and (max-width: 760px) {
   :root {
     --header-height: 0px !important;
     --top-bar-height: 0px !important;
-    --block-container-vertical-padding: .45rem !important;
+    --block-container-vertical-padding: 0px !important;
   }
 
-  /* Quitar del flujo las barras superiores de Streamlit. */
+  /* Retirar completamente los encabezados superiores del flujo. */
   header,
   [data-testid="stHeader"],
   [data-testid="stAppHeader"],
@@ -3767,42 +3767,37 @@ st.markdown(r"""
     border: 0 !important;
   }
 
-  /* Evitar que el viewport o el main centren verticalmente el contenido. */
-  html,
-  body,
-  #root,
-  .stApp,
+  /* Los contenedores raíz de Streamlit deben comenzar arriba, nunca centrados. */
+  html, body, #root, .stApp,
   [data-testid="stAppViewContainer"],
+  [data-testid="stAppViewContainer"] > .main,
   section.main {
-    margin-block-start: 0 !important;
-    padding-block-start: 0 !important;
+    margin-top: 0 !important;
+    padding-top: 0 !important;
+    align-items: flex-start !important;
+    justify-content: flex-start !important;
   }
 
   [data-testid="stAppViewContainer"] {
     display: block !important;
     min-height: 100dvh !important;
-  }
-
-  section.main {
-    display: block !important;
-    min-height: 0 !important;
     height: auto !important;
   }
 
-  /* Contenedores principales conocidos de Streamlit (versiones recientes y anteriores). */
+  section.main,
   section.main > div,
   section.main > div > div,
   .main .block-container,
   div[data-testid="stMainBlockContainer"],
   div[data-testid="stAppViewBlockContainer"] {
     margin-block-start: 0 !important;
-    padding-block-start: .45rem !important;
+    padding-block-start: 0 !important;
+    padding-top: 0 !important;
     align-self: flex-start !important;
     justify-self: start !important;
     transform: none !important;
   }
 
-  /* El primer bloque debe arrancar arriba; se conserva el margen lateral existente. */
   .main .block-container:has(.st-key-landing_wrap),
   div[data-testid="stMainBlockContainer"]:has(.st-key-landing_wrap),
   div[data-testid="stAppViewBlockContainer"]:has(.st-key-landing_wrap),
@@ -3813,10 +3808,10 @@ st.markdown(r"""
   div[data-testid="stMainBlockContainer"]:has(.st-key-screen_data),
   div[data-testid="stAppViewBlockContainer"]:has(.st-key-screen_data) {
     margin-block-start: 0 !important;
-    padding-block-start: .45rem !important;
+    padding-block-start: 0 !important;
+    padding-top: 0 !important;
   }
 
-  /* Asegurar que el bloque vertical raíz no distribuya el contenido hacia el centro. */
   .main .block-container > [data-testid="stVerticalBlock"],
   div[data-testid="stMainBlockContainer"] > [data-testid="stVerticalBlock"],
   div[data-testid="stAppViewBlockContainer"] > [data-testid="stVerticalBlock"] {
@@ -3824,6 +3819,7 @@ st.markdown(r"""
     align-content: flex-start !important;
     align-items: stretch !important;
     margin-block-start: 0 !important;
+    padding-block-start: 0 !important;
   }
 
   .st-key-landing_wrap,
@@ -3832,8 +3828,9 @@ st.markdown(r"""
     margin-block-start: 0 !important;
   }
 
-  /* Solo un pequeño aire entre el borde superior y el primer contenido. */
   .st-key-landing_wrap { padding-block-start: .12rem !important; }
+  .st-key-screen_fund .brand-header,
+  .st-key-screen_data .brand-header,
   .main .block-container:has(.st-key-screen_fund) .brand-header,
   .main .block-container:has(.st-key-screen_data) .brand-header {
     margin-block-start: 0 !important;
