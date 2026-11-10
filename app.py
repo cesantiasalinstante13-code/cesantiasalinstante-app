@@ -4260,3 +4260,45 @@ st.markdown("""<style>
   .st-key-landing_start {bottom:.42rem!important;left:.52rem!important;top:auto!important;}
 }
 </style>""", unsafe_allow_html=True)
+
+
+# ---------- CORRECCION PORTADA: CTA DEBAJO DEL PANEL, SIN SOLAPAMIENTOS ----------
+st.markdown(r"""
+<style>
+/* El botón queda en el flujo normal de Streamlit, después del panel visual. */
+.st-key-landing_start {
+  position:relative!important;
+  inset:auto!important;
+  display:block!important;
+  width:max-content!important;
+  max-width:calc(100% - 2rem)!important;
+  margin:14px 0 22px 1.6rem!important;
+  z-index:20!important;
+}
+.st-key-landing_start button {
+  display:inline-flex!important;
+  align-items:center!important;
+  justify-content:center!important;
+  width:auto!important;
+  min-width:205px!important;
+  min-height:49px!important;
+  padding:.75rem 1.65rem!important;
+}
+@media(max-width:760px) {
+  .st-key-landing_start {
+    position:relative!important;
+    inset:auto!important;
+    width:calc(100% - 1.04rem)!important;
+    max-width:190px!important;
+    margin:12px 0 20px .52rem!important;
+  }
+  .st-key-landing_start button {
+    width:100%!important;
+    min-width:0!important;
+    min-height:44px!important;
+    padding:.5rem .35rem!important;
+    font-size:clamp(.72rem,2.8vw,.84rem)!important;
+  }
+}
+</style>
+""", unsafe_allow_html=True)
