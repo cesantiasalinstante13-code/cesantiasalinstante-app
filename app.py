@@ -2382,22 +2382,42 @@ def copiar_plantilla(doc_id, solicitud_id, nombre_persona):
 
 
 def rellenar_plantilla_google_docs(document_id, valores):
-    """Sustituye los marcadores de la copia sin modificar la plantilla original."""
-    servicio = obtener_servicio_docs()
-    solicitudes = []
-    for marcador, valor in valores.items():
-        solicitudes.append({
-            "replaceAllText": {
-                "containsText": {"text": marcador, "matchCase": True},
-                "replaceText": str(valor or "").upper()
-            }
-        })
-
-    resultado = servicio.documents().batchUpdate(
-        documentId=document_id,
-        body={"requests": solicitudes}
-    ).execute()
-    return resultado
+    """Sustituye marcadores en la copia; reintenta fallos transitorios de conexión."""
+    solicitudes = [
+        {"replaceAllText": {
+            "containsText": {"text": marcador, "matchCase": True},
+            "replaceText": str(valor or "").upper()
+        }}
+        for marcador, valor in valores.items()
+    ]
+    ultimo_error = None
+    for intento in range(3):
+        try:
+            # Crear un cliente nuevo en cada intento evita reutilizar un socket roto.
+            datos = obtener_config_oauth()
+            refresh_token = str(datos.get("refresh_token", "")).strip()
+            credenciales = UserCredentials(
+                token=None,
+                refresh_token=refresh_token,
+                token_uri="https://oauth2.googleapis.com/token",
+                client_id=datos["client_id"],
+                client_secret=datos["client_secret"],
+                scopes=[GOOGLE_DRIVE_SCOPE]
+            )
+            servicio = build("docs", "v1", credentials=credenciales, cache_discovery=False)
+            return servicio.documents().batchUpdate(
+                documentId=document_id,
+                body={"requests": solicitudes}
+            ).execute(num_retries=2)
+        except (BrokenPipeError, ConnectionError, TimeoutError, OSError) as exc:
+            ultimo_error = exc
+            if intento < 2:
+                time.sleep(1.5 * (intento + 1))
+                continue
+            raise RuntimeError(f"Falló la conexión temporal con Google Docs después de 3 intentos: {exc}") from exc
+        except Exception:
+            raise
+    raise RuntimeError(f"No se pudo actualizar la copia de Google Docs: {ultimo_error}")
 
 
 def exportar_google_doc_a_pdf(document_id, solicitud_id, nombre_persona):
@@ -3000,12 +3020,6 @@ def render_empresa():
             "building", "Nombre de la empresa",
             "Selecciona tu empresa para asociar su NIT."
         )
-        st.markdown(
-            '<div class="company-intro"><div class="company-intro-icon">' + icon_svg("building") + '</div>'
-            '<div class="company-intro-copy"><strong>Selecciona tu empresa del listado</strong>'
-            '<p>Consultamos Google Sheets para localizar el NIT y la plantilla correspondiente a tu empresa.</p></div></div>',
-            unsafe_allow_html=True
-        )
 
         # La misma hoja alimenta los dos selectores: por nombre y por NIT.
         try:
@@ -3181,7 +3195,10 @@ def render_empresa():
                             st.error("No encontramos un NIT asociado a esta empresa. Revisa la columna NIT de la hoja Empresas.")
                             st.stop()
                         if not st.session_state.get("doc_id_plantilla"):
-                            st.error("Esta empresa no tiene una plantilla asignada. Verifica la columna Doc_ID de la hoja Empresas.")
+                            if empresa_seleccionada == "Otra":
+                                st.error("No encontramos la plantilla universal. En la fila «Otra» de la hoja Empresas, coloca el ID del Google Docs universal en la columna Doc_ID.")
+                            else:
+                                st.error("Esta empresa no tiene un Google Docs asignado. Verifica que la columna Doc_ID de su fila en la hoja Empresas contenga el ID de su plantilla.")
                             st.stop()
                         st.session_state.empresa_seleccionada = empresa_seleccionada
                         st.session_state.tipo_empresa = "Nueva" if empresa_seleccionada == "Otra" else "Registrada"
@@ -3244,6 +3261,8 @@ def render_generando():
             motivo = re.sub(r"^[^\wÁÉÍÓÚáéíóúÑñ]+", "", motivo).strip()
             fecha_documento = datetime.now(ZoneInfo("America/Bogota")).strftime("%d/%m/%Y")
             valores = {
+                "{{NOMBRE EMPRESA}}": str(st.session_state.empresa).upper(),
+                "{{NIT_EMPRESA}}": str(st.session_state.nit).upper(),
                 "{{FONDO_CESANTIAS}}": str(st.session_state.fondo).upper(),
                 "{{NOMBRE_TRABAJADOR}}": str(st.session_state.nombre).upper(),
                 "{{CEDULA}}": str(st.session_state.cedula),
@@ -3310,8 +3329,6 @@ def render_whatsapp_entrega():
     render_brand_header()
     st.markdown('<div class="glass-container" style="text-align:center"><div class="screen-heading" style="justify-content:center"><div class="screen-icon">✉</div><div><h2>Tu carta está lista</h2><p>Vista previa de la entrega de tu solicitud.</p></div></div>', unsafe_allow_html=True)
     st.info(f"Hola {st.session_state.nombre}. La copia de tu plantilla quedó creada para la solicitud {st.session_state.solicitud_id}.")
-    if st.session_state.pdf_url:
-        st.link_button("📄 Abrir o descargar PDF", st.session_state.pdf_url, use_container_width=True)
     if st.session_state.url_copia:
         st.link_button("Abrir copia de la plantilla", st.session_state.url_copia, use_container_width=True)
     if st.button("Continuar al pago", use_container_width=True):
@@ -4165,3 +4182,16 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+st.markdown("""<style>
+
+/* AJUSTE DEFINITIVO: reservar una franja independiente para el botón de portada. */
+@media (min-width:761px) {
+  .st-key-landing_wrap .hero-copy {padding-bottom:6.2rem!important;}
+  .st-key-landing_start {margin-top:-72px!important;}
+}
+@media (max-width:760px) {
+  .st-key-landing_wrap .hero-copy {padding-bottom:6.4rem!important;}
+  .st-key-landing_start {bottom:.42rem!important;left:.52rem!important;top:auto!important;}
+}
+</style>""", unsafe_allow_html=True)
