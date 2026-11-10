@@ -2360,25 +2360,90 @@ def obtener_id_carpeta_solicitudes():
     return folder_id
 
 
-def copiar_plantilla(doc_id, solicitud_id, nombre_persona):
-    """Copia la plantilla directamente dentro de Solicitudes_Cesantias."""
-    servicio = obtener_servicio_drive()
-    folder_id = obtener_id_carpeta_solicitudes()
+def _crear_servicio_drive_nuevo():
+    """Crea un cliente Drive nuevo para no reutilizar conexiones/sockets dañados."""
+    datos = obtener_config_oauth()
+    refresh_token = str(datos.get("refresh_token", "")).strip()
+    if not refresh_token:
+        raise RuntimeError("Falta refresh_token en [google_oauth] de Streamlit Secrets.")
 
+    credenciales = UserCredentials(
+        token=None,
+        refresh_token=refresh_token,
+        token_uri="https://oauth2.googleapis.com/token",
+        client_id=datos["client_id"],
+        client_secret=datos["client_secret"],
+        scopes=[GOOGLE_DRIVE_SCOPE]
+    )
+    return build("drive", "v3", credentials=credenciales, cache_discovery=False)
+
+
+def _es_error_transitorio_drive(exc):
+    """Identifica fallos de red/SSL y respuestas temporales de Google."""
+    nombre = type(exc).__name__.lower()
+    mensaje = str(exc).lower()
+    if isinstance(exc, (BrokenPipeError, ConnectionError, TimeoutError, OSError)):
+        return True
+    if "ssl" in nombre or "ssl" in mensaje or "record layer failure" in mensaje:
+        return True
+    estado = getattr(getattr(exc, "resp", None), "status", None)
+    return estado in (429, 500, 502, 503, 504)
+
+
+def copiar_plantilla(doc_id, solicitud_id, nombre_persona):
+    """Copia la plantilla en Drive con conexión nueva, reintentos e idempotencia."""
     nombre_seguro = re.sub(
         r"[^A-Za-z0-9ÁÉÍÓÚáéíóúÑñ_-]+",
         "_",
         str(nombre_persona)
     ).strip("_")
     nombre_archivo = f"Solicitud_{solicitud_id}_{nombre_seguro}"[:180]
+    ultimo_error = None
 
-    copia = servicio.files().copy(
-        fileId=str(doc_id).strip(),
-        body={"name": nombre_archivo, "parents": [folder_id]},
-        supportsAllDrives=True,
-        fields="id,name,webViewLink,parents"
-    ).execute()
-    return copia
+    for intento in range(3):
+        try:
+            # Un cliente nuevo por intento evita conservar un socket SSL defectuoso.
+            servicio = _crear_servicio_drive_nuevo()
+            folder_id = str(obtener_config_oauth().get("solicitudes_folder_id", "")).strip()
+            if not folder_id:
+                raise RuntimeError("Falta solicitudes_folder_id en [google_oauth] de Streamlit Secrets.")
+
+            # Si la petición anterior sí creó el archivo pero se perdió la respuesta,
+            # recuperamos esa copia por nombre y carpeta para no duplicarla.
+            consulta = (
+                "name = '" + nombre_archivo.replace("\\", "\\\\").replace("'", "\\'") + "' "
+                "and '" + folder_id + "' in parents and trashed = false"
+            )
+            encontrados = servicio.files().list(
+                q=consulta,
+                pageSize=10,
+                orderBy="createdTime desc",
+                supportsAllDrives=True,
+                includeItemsFromAllDrives=True,
+                fields="files(id,name,webViewLink,parents)"
+            ).execute(num_retries=2).get("files", [])
+            if encontrados:
+                return encontrados[0]
+
+            return servicio.files().copy(
+                fileId=str(doc_id).strip(),
+                body={"name": nombre_archivo, "parents": [folder_id]},
+                supportsAllDrives=True,
+                fields="id,name,webViewLink,parents"
+            ).execute(num_retries=2)
+
+        except Exception as exc:
+            ultimo_error = exc
+            if not _es_error_transitorio_drive(exc):
+                raise RuntimeError(f"Google Drive rechazó la copia de la plantilla: {exc}") from exc
+            if intento < 2:
+                time.sleep(1.5 * (intento + 1))
+                continue
+
+    raise RuntimeError(
+        "Google Drive presentó un fallo temporal de conexión/SSL al copiar la plantilla "
+        f"después de 3 intentos. Detalle técnico: {ultimo_error}"
+    ) from ultimo_error
 
 
 def rellenar_plantilla_google_docs(document_id, valores):
@@ -3248,8 +3313,8 @@ def render_generando():
             st.session_state.doc_id_copia = copia["id"]
             st.session_state.url_copia = copia.get("webViewLink", "")
         except Exception as e:
-            st.error("La solicitud quedó guardada en Google Sheets, pero no se pudo copiar la plantilla. " + f"Detalle de Google Drive: {e}")
-            st.info("Verifica que el administrador haya conectado la cuenta Gmail propietaria de la plantilla mediante OAuth, que esa cuenta tenga acceso de Editor y que refresh_token esté guardado en Streamlit Secrets.")
+            st.error("La solicitud quedó guardada en Google Sheets, pero Google Drive no pudo copiar la plantilla. " + f"Detalle: {e}")
+            st.info("La aplicación ya reintentó la conexión. Si el error continúa, revisaremos la conexión SSL de Streamlit y los permisos de la cuenta administradora en Google Drive. No cambies ni compartas tus credenciales.")
             if st.button("Reintentar copia de plantilla", key="retry_copy"):
                 st.rerun()
             st.stop()
