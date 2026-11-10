@@ -38,9 +38,6 @@ st.markdown(r"""
  --cia-ink:#18345b;--cia-muted:#60748d;--cia-line:#d8e6f4;--cia-pale:#eff7ff;
 }
 html,body,[class*="css"],.stApp{font-family:Inter,Arial,sans-serif!important}
-/* Evita que el navegador móvil aplique controles nativos con apariencia oscura.
-   El tema de Streamlit también se fija en .streamlit/config.toml. */
-html,body,.stApp{color-scheme:light!important}
 
 /* IMPORTANTE: cada st.markdown(<style>) crea un wrapper vacío en el flujo vertical
    de Streamlit. Los 15 bloques CSS acumulaban separaciones y generaban la franja azul.
@@ -2637,7 +2634,7 @@ def reiniciar_solicitud():
         "empresa", "nit", "ciudad", "departamento", "empresa_manual", "nit_manual",
         "empresa_seleccionada", "saldo_verificado", "saldo_limpio", "solicitud_guardada",
         "doc_id_plantilla", "nombre_plantilla", "plantilla_url", "doc_id_copia", "url_copia",
-        "solicitud_id", "documento_rellenado", "pdf_id", "pdf_url", "pdf_generado",
+        "solicitud_id", "documento_rellenado", "pdf_id", "pdf_url", "pdf_generado", "tipo_empresa",
     ]
     for key in llaves:
         st.session_state[key] = ""
@@ -2676,7 +2673,7 @@ def render_landing():
           <div class="hero-copy">
             <div class="hero-logo">{logo_html}</div>
             <h1 class="hero-title">Tus cesantías,<span>más cerca de ti</span></h1>
-            <p class="hero-description">Gestiona tu solicitud de retiro de cesantías de manera fácil, rápida y segura.</p>
+            <p class="hero-description">El retiro de cesantías está integrado principalmente en el Decreto 1072 de 2015 (Decreto Único Reglamentario del Sector Trabajo), el cual fue adicionado y actualizado de forma integral por el Decreto 1562 de 2019 para consolidar los plazos y trámites de retiro.</p>
             <div class="hero-benefits">
               <div class="hero-benefit"><i>ϟ</i> Rápido</div>
               <div class="hero-benefit"><i>✓</i> Seguro</div>
@@ -2970,7 +2967,7 @@ def render_mision():
             "Te explico en qué consiste: manejamos personal interno que se encarga de hacer todo el proceso.",
             "Se sube directamente el permiso a la plataforma de Porvenir y se te genera un certificado bajo el concepto de mejora de vivienda, con el cual vas a poder realizar el retiro de tus cesantías.",
             "Ese certificado lo vas a imprimir a color y te diriges directamente a un banco AV Villas con tu cédula. El dinero únicamente se entrega a ti.",
-            "Lo que hacemos es generar el permiso directamente con el fondo sin mediar con tu empresa. Es un trámite 100% seguro y rápido."
+            "Generamos el permiso directamente con el fondo sin mediar con tu empresa. Es un trámite 100% seguro y rápido."
         ]
         parrafos_html = "".join(
             '<p class="mission-explanation-paragraph">' + html.escape(p) + '</p>'
@@ -3001,7 +2998,7 @@ def render_empresa():
     with st.container(key="screen_company"):
         render_screen_heading(
             "building", "Nombre de la empresa",
-            "Selecciona tu empresa para asociar su NIT y encontrar la plantilla de tu carta."
+            "Selecciona tu empresa para asociar su NIT."
         )
         st.markdown(
             '<div class="company-intro"><div class="company-intro-icon">' + icon_svg("building") + '</div>'
@@ -3187,6 +3184,7 @@ def render_empresa():
                             st.error("Esta empresa no tiene una plantilla asignada. Verifica la columna Doc_ID de la hoja Empresas.")
                             st.stop()
                         st.session_state.empresa_seleccionada = empresa_seleccionada
+                        st.session_state.tipo_empresa = "Nueva" if empresa_seleccionada == "Otra" else "Registrada"
                         st.session_state.step = "resumen"
                         st.rerun()
                     except Exception as exc:
@@ -3196,8 +3194,8 @@ def render_empresa():
 def render_generando():
     """Crea registro, copia la plantilla, la rellena y exporta el PDF; luego muestra la confirmación."""
     render_brand_header(6)
-    with st.container(key="screen_processing"): 
-        render_screen_heading("file", "Estamos preparando tu carta", "Estamos registrando la solicitud y generando tu documento.")
+    with st.container(key="screen_processing"):
+        st.markdown('<div class="processing-only-message">Estamos registrando tu solicitud</div>', unsafe_allow_html=True)
 
     # ---------- GUARDAR SOLICITUD EN GOOGLE SHEETS ----------
     if not st.session_state.solicitud_guardada:
@@ -3211,7 +3209,9 @@ def render_generando():
                 "nombre": st.session_state.nombre, "cedula": st.session_state.cedula,
                 "telefono": st.session_state.telefono, "email": st.session_state.email,
                 "nit": st.session_state.nit, "empresa": st.session_state.empresa,
-                "fondo": st.session_state.fondo, "motivo": st.session_state.proposito,
+                "fondo": st.session_state.fondo,
+                "Tipo_Empresa": st.session_state.get("tipo_empresa") or ("Nueva" if st.session_state.get("empresa_seleccionada") == "Otra" else "Registrada"),
+                "motivo": st.session_state.proposito,
                 "monto": str(st.session_state.monto_limpio), "ciudad": st.session_state.ciudad,
                 "departamento": st.session_state.departamento, "estado": "Pendiente"
             }])
@@ -3294,15 +3294,13 @@ def render_final():
           <div class="success-check">✓</div>
           <h1>¡Solicitud enviada!</h1>
           <p>Tu solicitud de retiro de cesantías quedó registrada correctamente.</p>
-          <div class="success-delivery"><span class="success-mail-icon">✉</span><span>Recibirás la carta por correo electrónico y WhatsApp dentro de las próximas 24 horas. También puedes consultar el PDF desde esta pantalla.</span></div>
+          <div class="success-delivery"><span class="success-mail-icon">✉</span><span>Recibirás la carta por correo electrónico y <span class="whatsapp-inline"><span class="whatsapp-icon" aria-hidden="true">☎</span> <strong>WhatsApp</strong></span> dentro de las próximas <strong>4 horas.</strong></span></div>
           <div class="success-number"><small>NÚMERO DE SOLICITUD</small><strong>{numero_solicitud_html}</strong></div>
           <div class="footer-brand">Cesantías al Instante... siempre contigo</div>
         </section>
         """, unsafe_allow_html=True)
         if st.session_state.pdf_url:
-            st.link_button("Abrir o descargar mi carta (PDF)  ↓", st.session_state.pdf_url, use_container_width=True)
-        if st.session_state.url_copia:
-            st.link_button("Abrir documento editable", st.session_state.url_copia, use_container_width=True)
+            st.link_button("Abrir o descargar mi carta PDF  ↓", st.session_state.pdf_url, use_container_width=True)
         if st.button("⌂  Volver al inicio", key="finish_home", use_container_width=True):
             reiniciar_solicitud()
             st.session_state.step = "landing"
@@ -4086,6 +4084,38 @@ st.markdown(r"""
   }
 }
 
+</style>
+""", unsafe_allow_html=True)
+
+# Espacio adicional entre el contenido y los botones en las pantallas 5 y 6.
+st.markdown(r"""
+<style>
+.st-key-screen_summary [data-testid="stHorizontalBlock"]:has(.st-key-summary_back),
+.st-key-screen_mission [data-testid="stHorizontalBlock"]:has(.st-key-mission_back) {
+  margin-top:1.2rem!important;
+  padding-top:.4rem!important;
+  gap:.85rem!important;
+}
+.st-key-screen_processing .processing-only-message {
+  text-align:center!important;color:#082e6b!important;
+  font-size:clamp(1.15rem,2.5vw,1.55rem)!important;
+  line-height:1.4!important;font-weight:900!important;
+  padding:1.5rem .5rem!important;
+}
+.st-key-screen_success .whatsapp-inline {
+  display:inline-flex;align-items:center;gap:.22rem;white-space:nowrap;color:#087d42!important;
+}
+.st-key-screen_success .whatsapp-icon {
+  display:inline-flex;align-items:center;justify-content:center;
+  width:1.25rem;height:1.25rem;border-radius:50%;
+  background:#20c765;color:#fff;font-size:.82rem;font-weight:900;
+}
+@media(max-width:760px){
+  .st-key-screen_summary [data-testid="stHorizontalBlock"]:has(.st-key-summary_back),
+  .st-key-screen_mission [data-testid="stHorizontalBlock"]:has(.st-key-mission_back) {
+    margin-top:1.4rem!important;padding-top:.5rem!important;gap:.7rem!important;
+  }
+}
 </style>
 """, unsafe_allow_html=True)
 
