@@ -3368,7 +3368,7 @@ def render_generando():
 
 
 def render_final():
-    """Confirmación final con número de solicitud y acceso al PDF generado."""
+    """Confirmación final con número de solicitud."""
     render_brand_header(7)  # Los seis pasos aparecen completados.
     with st.container(key="screen_success"):
         numero_solicitud_html = html.escape(str(st.session_state.solicitud_id))
@@ -3383,8 +3383,6 @@ def render_final():
           <div class="footer-brand">Cesantías al Instante... siempre contigo</div>
         </section>
         """, unsafe_allow_html=True)
-        if st.session_state.pdf_url:
-            st.link_button("Abrir o descargar mi carta PDF  ↓", st.session_state.pdf_url, use_container_width=True)
         if st.button("⌂  Volver al inicio", key="finish_home", use_container_width=True):
             reiniciar_solicitud()
             st.session_state.step = "landing"
