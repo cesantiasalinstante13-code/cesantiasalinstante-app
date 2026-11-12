@@ -18,7 +18,7 @@ from streamlit_gsheets import GSheetsConnection
 from google.oauth2.credentials import Credentials as UserCredentials
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseUpload
+from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
 
 GOOGLE_DRIVE_SCOPE = "https://www.googleapis.com/auth/drive"
 
@@ -1874,7 +1874,8 @@ for key in [
     'solicitud_guardada', 'doc_id_plantilla',
     'nombre_plantilla', 'plantilla_url',
     'doc_id_copia', 'url_copia', 'solicitud_id', 'documento_rellenado',
-    'pdf_id', 'pdf_url', 'pdf_generado'
+    'pdf_id', 'pdf_url', 'pdf_generado', 'whatsapp_autorizado',
+    'whatsapp_confirmacion_estado', 'whatsapp_documento_estado'
 ]:
     if key not in st.session_state:
         st.session_state[key] = ""
@@ -2223,6 +2224,136 @@ def enviar_mensaje_prueba_meta():
         "recipient": destinatario,
         "status": mensajes[0].get("message_status", "accepted")
     }
+
+
+def _whatsapp_api_base(datos):
+    version = str(datos.get("api_version", "v27.0")).strip()
+    if not version.startswith("v"):
+        version = f"v{version}"
+    phone_number_id = str(datos.get("phone_number_id", "")).strip()
+    token = str(datos.get("access_token", "")).strip()
+    if not token or not phone_number_id:
+        raise RuntimeError("Falta access_token o phone_number_id en [whatsapp] de Streamlit Secrets.")
+    return f"https://graph.facebook.com/{version}/{phone_number_id}", {
+        "Authorization": f"Bearer {token}"
+    }
+
+
+def enviar_template_whatsapp(destinatario, nombre_template, parametros_cuerpo, documento_media_id=None):
+    """Envía una plantilla aprobada. Para la plantilla PDF, el encabezado debe ser Documento."""
+    datos = obtener_config_whatsapp()
+    base, headers = _whatsapp_api_base(datos)
+    codigo_pais = re.sub(r"\D", "", str(datos.get("country_code", "57"))) or "57"
+    numero = re.sub(r"\D", "", str(destinatario))
+    if len(numero) == 10:
+        numero = codigo_pais + numero
+    componentes = []
+    if documento_media_id:
+        componentes.append({
+            "type": "header",
+            "parameters": [{
+                "type": "document",
+                "document": {"id": documento_media_id, "filename": "Documento_cesantias.pdf"}
+            }]
+        })
+    if parametros_cuerpo:
+        componentes.append({
+            "type": "body",
+            "parameters": [{"type": "text", "text": str(valor)} for valor in parametros_cuerpo]
+        })
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": numero,
+        "type": "template",
+        "template": {
+            "name": nombre_template,
+            "language": {"code": str(datos.get("template_language", "es_CO"))},
+            **({"components": componentes} if componentes else {})
+        }
+    }
+    respuesta = requests.post(
+        f"{base}/messages", headers={**headers, "Content-Type": "application/json"},
+        json=payload, timeout=40
+    )
+    try:
+        resultado = respuesta.json()
+    except ValueError:
+        resultado = {}
+    if not respuesta.ok:
+        error = resultado.get("error", {}) if isinstance(resultado, dict) else {}
+        raise RuntimeError(f"Meta HTTP {respuesta.status_code}: {error.get('message', 'No se pudo enviar la plantilla.')} (código {error.get('code', 'sin código')})")
+    mensajes = resultado.get("messages", []) if isinstance(resultado, dict) else []
+    if not mensajes:
+        raise RuntimeError("Meta no devolvió identificador del mensaje.")
+    return mensajes[0].get("id", "")
+
+
+def subir_pdf_a_meta(pdf_file_id):
+    """Descarga el PDF privado desde Drive y lo carga en el endpoint de medios de WhatsApp."""
+    datos = obtener_config_whatsapp()
+    base, headers = _whatsapp_api_base(datos)
+    servicio = obtener_servicio_drive()
+    solicitud = servicio.files().get_media(fileId=pdf_file_id)
+    buffer = BytesIO()
+    descargador = MediaIoBaseDownload(buffer, solicitud)
+    terminado = False
+    while not terminado:
+        _, terminado = descargador.next_chunk()
+    buffer.seek(0)
+    respuesta = requests.post(
+        f"{base}/media",
+        headers=headers,
+        files={"file": ("Documento_cesantias.pdf", buffer, "application/pdf")},
+        data={"messaging_product": "whatsapp", "type": "application/pdf"},
+        timeout=90
+    )
+    try:
+        resultado = respuesta.json()
+    except ValueError:
+        resultado = {}
+    if not respuesta.ok or not resultado.get("id"):
+        error = resultado.get("error", {}) if isinstance(resultado, dict) else {}
+        raise RuntimeError(f"Meta no pudo cargar el PDF (HTTP {respuesta.status_code}): {error.get('message', 'Error al cargar el archivo.')}")
+    return resultado["id"]
+
+
+def enviar_whatsapp_solicitud_y_pdf():
+    """Envía solo con autorización expresa y con activación administrativa explícita."""
+    if not st.session_state.get("whatsapp_autorizado", False):
+        return
+    datos = obtener_config_whatsapp()
+    if str(datos.get("enabled", "false")).lower() not in ("1", "true", "yes", "si"):
+        return
+    telefono = st.session_state.get("telefono", "")
+    nombre = st.session_state.get("nombre", "")
+    radicado = st.session_state.get("solicitud_id", "")
+    errores = []
+
+    if not st.session_state.get("whatsapp_confirmacion_estado") == "Enviado":
+        try:
+            template_confirmacion = str(datos.get("template_confirmation", "confirmacion_solicitud_cesantias"))
+            enviar_template_whatsapp(telefono, template_confirmacion, [nombre, radicado])
+            st.session_state.whatsapp_confirmacion_estado = "Enviado"
+        except Exception as exc:
+            st.session_state.whatsapp_confirmacion_estado = "Error"
+            errores.append(f"Confirmación: {exc}")
+
+    # La segunda plantilla debe estar aprobada con encabezado multimedia de tipo Documento.
+    documento_listo = str(datos.get("document_template_ready", "false")).lower() in ("1", "true", "yes", "si")
+    if documento_listo and not st.session_state.get("whatsapp_documento_estado") == "Enviado":
+        try:
+            media_id = subir_pdf_a_meta(st.session_state.pdf_id)
+            template_documento = str(datos.get("template_document", "documento_cesantias_listo"))
+            enviar_template_whatsapp(telefono, template_documento, [nombre, radicado], documento_media_id=media_id)
+            st.session_state.whatsapp_documento_estado = "Enviado"
+        except Exception as exc:
+            st.session_state.whatsapp_documento_estado = "Error"
+            errores.append(f"Documento PDF: {exc}")
+    elif not documento_listo:
+        st.session_state.whatsapp_documento_estado = "Pendiente de plantilla con encabezado Documento"
+
+    if errores:
+        st.session_state.whatsapp_errores = errores
 
 
 def render_configuracion_whatsapp():
@@ -2882,6 +3013,7 @@ def reiniciar_solicitud():
         "empresa_seleccionada", "saldo_verificado", "saldo_limpio", "solicitud_guardada",
         "doc_id_plantilla", "nombre_plantilla", "plantilla_url", "doc_id_copia", "url_copia",
         "solicitud_id", "documento_rellenado", "pdf_id", "pdf_url", "pdf_generado", "tipo_empresa",
+        "whatsapp_autorizado", "whatsapp_confirmacion_estado", "whatsapp_documento_estado", "whatsapp_errores",
     ]
     for key in llaves:
         st.session_state[key] = ""
@@ -3110,6 +3242,12 @@ def render_datos_personales():
         with col_ciudad:
             render_field_label("pin", "Ciudad")
             ciudad = st.text_input("Ciudad", label_visibility="collapsed", placeholder="Escribe tu ciudad", key="ciudad_widget")
+
+        st.session_state.whatsapp_autorizado = st.checkbox(
+            "Autorizo recibir por WhatsApp la confirmación de mi solicitud y el documento PDF.",
+            value=bool(st.session_state.get("whatsapp_autorizado", False)),
+            key="whatsapp_consentimiento_widget"
+        )
 
         with st.container(key="data_navigation"):
             nav_back, nav_next = st.columns([1, 1.65], gap="medium")
@@ -3457,7 +3595,10 @@ def render_generando():
                 "Tipo_Empresa": st.session_state.get("tipo_empresa") or ("Nueva" if st.session_state.get("empresa_seleccionada") == "Otra" else "Registrada"),
                 "motivo": st.session_state.proposito,
                 "monto": str(st.session_state.monto_limpio), "ciudad": st.session_state.ciudad,
-                "departamento": st.session_state.departamento, "estado": "Pendiente"
+                "departamento": st.session_state.departamento, "estado": "Pendiente",
+                "whatsapp_autorizado": bool(st.session_state.get("whatsapp_autorizado", False)),
+                "whatsapp_confirmacion_estado": "Pendiente" if st.session_state.get("whatsapp_autorizado", False) else "No autorizado",
+                "whatsapp_documento_estado": "Pendiente" if st.session_state.get("whatsapp_autorizado", False) else "No autorizado"
             }])
             updated_df = pd.concat([existing_data, nuevo_dato], ignore_index=True)
             conn.update(worksheet="Solicitudes", data=updated_df)
@@ -3522,6 +3663,14 @@ def render_generando():
             if st.button("Reintentar generación del PDF", key="retry_pdf"):
                 st.rerun()
             st.stop()
+
+    # WhatsApp: solo se activa cuando existe autorización del solicitante y
+    # el administrador habilita el envío en Streamlit Secrets.
+    if st.session_state.get("whatsapp_autorizado", False):
+        try:
+            enviar_whatsapp_solicitud_y_pdf()
+        except Exception as exc:
+            st.session_state.whatsapp_errores = [str(exc)]
 
     # La generación terminó correctamente. La confirmación se presenta en
     # una pantalla independiente para que el recorrido tenga un FINAL real.
