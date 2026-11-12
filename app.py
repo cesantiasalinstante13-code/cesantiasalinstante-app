@@ -3014,6 +3014,7 @@ def reiniciar_solicitud():
         "doc_id_plantilla", "nombre_plantilla", "plantilla_url", "doc_id_copia", "url_copia",
         "solicitud_id", "documento_rellenado", "pdf_id", "pdf_url", "pdf_generado", "tipo_empresa",
         "whatsapp_autorizado", "whatsapp_confirmacion_estado", "whatsapp_documento_estado", "whatsapp_errores",
+        "whatsapp_test_message_id", "whatsapp_test_recipient",
     ]
     for key in llaves:
         st.session_state[key] = ""
@@ -3244,11 +3245,11 @@ def render_datos_personales():
             ciudad = st.text_input("Ciudad", label_visibility="collapsed", placeholder="Escribe tu ciudad", key="ciudad_widget")
 
         st.session_state.whatsapp_autorizado = st.checkbox(
-            "Autorizo a Cesantías al Instante a enviarme por WhatsApp la confirmación de mi solicitud y las novedades del documento.",
+            "Autorizo a Cesantías al Instante a enviarme por WhatsApp la confirmación de mi solicitud y las novedades del documento. (Obligatorio)",
             value=bool(st.session_state.get("whatsapp_autorizado", False)),
             key="whatsapp_consentimiento_widget"
         )
-        st.caption("Este permiso es obligatorio para enviar la solicitud. Debes marcar la casilla para continuar.")
+        st.caption("Debes marcar esta autorización para continuar con la solicitud y recibir las comunicaciones por WhatsApp.")
 
         with st.container(key="data_navigation"):
             nav_back, nav_next = st.columns([1, 1.65], gap="medium")
@@ -3258,14 +3259,14 @@ def render_datos_personales():
                     st.rerun()
             with nav_next:
                 if st.button("Siguiente: empresa  →", key="data_continue", use_container_width=True):
-                    if not st.session_state.get("whatsapp_consentimiento_widget", False):
-                        st.error("Para continuar, debes autorizar la comunicación por WhatsApp marcando la casilla.")
-                        st.stop()
                     saldo_limpio = re.sub(r"\D", "", str(saldo_raw))
                     monto_limpio = re.sub(r"\D", "", str(monto_raw))
                     telefono_limpio = re.sub(r"\D", "", str(telefono))
                     cedula_limpia = re.sub(r"\D", "", str(cedula))
                     email_limpio = str(email_val).strip()
+                    if not st.session_state.get("whatsapp_autorizado", False):
+                        st.error("Para continuar, debes autorizar las comunicaciones por WhatsApp marcando la casilla correspondiente.")
+                        st.stop()
                     if not all([saldo_limpio, monto_limpio, nombre.strip(), cedula_limpia, telefono_limpio, email_limpio, departamento, ciudad.strip()]):
                         st.error("Completa el saldo, el monto y los seis datos personales antes de continuar.")
                         st.stop()
@@ -3673,12 +3674,18 @@ def render_generando():
                 st.rerun()
             st.stop()
 
-    # WhatsApp: solo se activa cuando existe autorización del solicitante y
-    # el administrador habilita el envío en Streamlit Secrets.
-    if st.session_state.get("whatsapp_autorizado", False):
+    # PRUEBA AUTOMATICA: al terminar la solicitud, envía hello_world
+    # al destinatario autorizado configurado en [whatsapp].
+    # Meta solo permite usar este destinatario de prueba durante esta etapa.
+    if st.session_state.get("whatsapp_autorizado", False) and st.session_state.get("whatsapp_confirmacion_estado") != "Enviado":
         try:
-            enviar_whatsapp_solicitud_y_pdf()
+            resultado_whatsapp = enviar_mensaje_prueba_meta()
+            st.session_state.whatsapp_confirmacion_estado = "Enviado"
+            st.session_state.whatsapp_test_message_id = resultado_whatsapp.get("message_id", "")
+            st.session_state.whatsapp_test_recipient = resultado_whatsapp.get("recipient", "")
+            st.session_state.whatsapp_errores = []
         except Exception as exc:
+            st.session_state.whatsapp_confirmacion_estado = "Error"
             st.session_state.whatsapp_errores = [str(exc)]
 
     # La generación terminó correctamente. La confirmación se presenta en
@@ -3690,6 +3697,10 @@ def render_generando():
 def render_final():
     """Confirmación final con número de solicitud."""
     render_brand_header(7)  # Los seis pasos aparecen completados.
+    if st.session_state.get("whatsapp_confirmacion_estado") == "Enviado":
+        st.success("WhatsApp: Meta aceptó el mensaje de prueba hello_world y lo envió al destinatario de prueba configurado.")
+    elif st.session_state.get("whatsapp_confirmacion_estado") == "Error":
+        st.warning("La solicitud se completó, pero no se pudo enviar el mensaje de WhatsApp de prueba: " + "; ".join(st.session_state.get("whatsapp_errores", [])))
     with st.container(key="screen_success"):
         numero_solicitud_html = html.escape(str(st.session_state.solicitud_id))
         st.markdown(f"""
