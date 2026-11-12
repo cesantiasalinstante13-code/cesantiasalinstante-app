@@ -3164,9 +3164,9 @@ def render_seleccionar_fondo():
 
 
 def limpiar_telefono_widget():
-    """Mantiene el WhatsApp compuesto únicamente por dígitos."""
+    """Conserva hasta 15 dígitos para admitir números internacionales E.164."""
     valor = str(st.session_state.get("telefono_widget", ""))
-    st.session_state.telefono_widget = re.sub(r"\D", "", valor)[:10]
+    st.session_state.telefono_widget = re.sub(r"\D", "", valor)[:15]
 
 
 def limpiar_cedula_widget():
@@ -3230,7 +3230,7 @@ def render_datos_personales():
         col_telefono, col_email = st.columns(2, gap="large")
         with col_telefono:
             render_field_label("phone", "Teléfono / WhatsApp")
-            telefono = st.text_input("Teléfono / WhatsApp", label_visibility="collapsed", placeholder="Ej. 3001234567", key="telefono_widget", on_change=limpiar_telefono_widget)
+            telefono = st.text_input("Teléfono / WhatsApp", label_visibility="collapsed", placeholder="Ej. +1 5141234567 o +57 3001234567", key="telefono_widget", on_change=limpiar_telefono_widget)
         with col_email:
             render_field_label("mail", "Correo electrónico")
             email_val = st.text_input("Correo electrónico", label_visibility="collapsed", placeholder="nombre@correo.com", key="email_widget")
@@ -3244,10 +3244,11 @@ def render_datos_personales():
             ciudad = st.text_input("Ciudad", label_visibility="collapsed", placeholder="Escribe tu ciudad", key="ciudad_widget")
 
         st.session_state.whatsapp_autorizado = st.checkbox(
-            "Autorizo recibir por WhatsApp la confirmación de mi solicitud y el documento PDF.",
+            "Autorizo a Cesantías al Instante a enviarme por WhatsApp la confirmación de mi solicitud y las novedades del documento.",
             value=bool(st.session_state.get("whatsapp_autorizado", False)),
             key="whatsapp_consentimiento_widget"
         )
+        st.caption("Este permiso es obligatorio para enviar la solicitud. Debes marcar la casilla para continuar.")
 
         with st.container(key="data_navigation"):
             nav_back, nav_next = st.columns([1, 1.65], gap="medium")
@@ -3257,6 +3258,9 @@ def render_datos_personales():
                     st.rerun()
             with nav_next:
                 if st.button("Siguiente: empresa  →", key="data_continue", use_container_width=True):
+                    if not st.session_state.get("whatsapp_consentimiento_widget", False):
+                        st.error("Para continuar, debes autorizar la comunicación por WhatsApp marcando la casilla.")
+                        st.stop()
                     saldo_limpio = re.sub(r"\D", "", str(saldo_raw))
                     monto_limpio = re.sub(r"\D", "", str(monto_raw))
                     telefono_limpio = re.sub(r"\D", "", str(telefono))
@@ -3268,9 +3272,14 @@ def render_datos_personales():
                     if not st.session_state.get("fondo"):
                         st.error("Selecciona primero tu fondo de cesantías.")
                         st.stop()
-                    if len(telefono_limpio) != 10:
-                        st.error("El teléfono / WhatsApp debe tener exactamente 10 dígitos.")
+                    if not (10 <= len(telefono_limpio) <= 15):
+                        st.error("Escribe un teléfono válido con código de país: entre 10 y 15 dígitos en total. Ejemplo Canadá: +1 seguido de los 10 dígitos del número.")
                         st.stop()
+                    # Los números colombianos de 10 dígitos reciben automáticamente el prefijo 57.
+                    # Los números internacionales que ya incluyen código de país se conservan.
+                    telefono_whatsapp = telefono_limpio
+                    if len(telefono_whatsapp) == 10:
+                        telefono_whatsapp = "57" + telefono_whatsapp
                     if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email_limpio):
                         st.error("Escribe un correo electrónico válido.")
                         st.stop()
@@ -3286,7 +3295,7 @@ def render_datos_personales():
                     st.session_state.monto_limpio = monto_limpio
                     st.session_state.nombre = nombre.strip()
                     st.session_state.cedula = cedula_limpia
-                    st.session_state.telefono = telefono_limpio
+                    st.session_state.telefono = telefono_whatsapp
                     st.session_state.email = email_limpio
                     st.session_state.departamento = departamento
                     st.session_state.ciudad = ciudad.strip()
