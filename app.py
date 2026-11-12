@@ -1878,7 +1878,7 @@ for key in [
     'doc_id_copia', 'url_copia', 'solicitud_id', 'documento_rellenado',
     'pdf_id', 'pdf_url', 'pdf_generado', 'whatsapp_autorizado',
     'whatsapp_confirmacion_estado', 'whatsapp_documento_estado',
-    'busqueda_otra_completada', 'logo_empresa_insertado', 'estado_logo_empresa', 'estado_empresa_web'
+    'busqueda_otra_completada', 'logo_empresa_insertado', 'logo_marcador_procesado', 'estado_logo_empresa', 'estado_empresa_web'
 ]:
     if key not in st.session_state:
         st.session_state[key] = ""
@@ -3074,64 +3074,98 @@ def buscar_empresa_y_logo_python(nombre_empresa="", nit_empresa=""):
 
 
 def insertar_logo_en_plantilla(document_id, logo, solicitud_id):
-    """Inserta el logo solo si la plantilla universal contiene {{LOGO_EMPRESA}}.
+    """Reemplaza {{LOGO_EMPRESA}} por el logo o elimina el marcador si no hay logo.
 
-    Si el marcador no existe o el logo no se encuentra, deja la carta sin logo.
+    La ausencia de logo nunca debe dejar texto técnico en la carta ni impedir
+    que el documento continúe generándose.
     """
-    if not logo:
-        return False
-    docs = obtener_servicio_docs()
-    documento = docs.documents().get(documentId=document_id).execute()
-    indice = None
     marcador = "{{LOGO_EMPRESA}}"
+    docs = obtener_servicio_docs()
 
-    def buscar_marcador_en_estructura(elemento):
-        if isinstance(elemento, dict):
-            texto = elemento.get("textRun", {}).get("content", "")
-            if marcador in texto:
-                return elemento.get("startIndex", 1) + texto.index(marcador)
-            for valor in elemento.values():
-                encontrado = buscar_marcador_en_estructura(valor)
-                if encontrado is not None:
-                    return encontrado
-        elif isinstance(elemento, list):
-            for valor in elemento:
-                encontrado = buscar_marcador_en_estructura(valor)
-                if encontrado is not None:
-                    return encontrado
-        return None
+    def localizar_marcador():
+        documento = docs.documents().get(documentId=document_id).execute()
 
-    indice = buscar_marcador_en_estructura(documento.get("body", {}).get("content", []))
+        def buscar(elemento):
+            if isinstance(elemento, dict):
+                text_run = elemento.get("textRun", {})
+                texto = text_run.get("content", "") if isinstance(text_run, dict) else ""
+                if marcador in texto:
+                    inicio = elemento.get("startIndex")
+                    if inicio is not None:
+                        return int(inicio) + texto.index(marcador)
+                for valor in elemento.values():
+                    encontrado = buscar(valor)
+                    if encontrado is not None:
+                        return encontrado
+            elif isinstance(elemento, list):
+                for valor in elemento:
+                    encontrado = buscar(valor)
+                    if encontrado is not None:
+                        return encontrado
+            return None
+
+        return buscar(documento.get("body", {}).get("content", []))
+
+    def eliminar_marcador(indice):
+        if indice is not None:
+            docs.documents().batchUpdate(
+                documentId=document_id,
+                body={"requests": [{"deleteContentRange": {
+                    "range": {"startIndex": indice, "endIndex": indice + len(marcador)}
+                }}]}
+            ).execute()
+
+    indice = localizar_marcador()
     if indice is None:
         return False
 
-    servicio_drive = _crear_servicio_drive_nuevo()
-    folder_id = obtener_id_carpeta_solicitudes()
-    nombre = f"Logo_empresa_{solicitud_id}"
-    media = MediaIoBaseUpload(BytesIO(logo["bytes"]), mimetype=logo["mime"], resumable=False)
-    archivo = servicio_drive.files().create(
-        body={"name": nombre, "parents": [folder_id]},
-        media_body=media,
-        fields="id"
-    ).execute()
-    logo_id = archivo["id"]
-    servicio_drive.permissions().create(
-        fileId=logo_id,
-        body={"type": "anyone", "role": "reader"},
-        fields="id"
-    ).execute()
-    uri_publica = f"https://drive.google.com/uc?export=download&id={logo_id}"
-    docs.documents().batchUpdate(
-        documentId=document_id,
-        body={"requests": [
-            {"deleteContentRange": {"range": {"startIndex": indice, "endIndex": indice + len(marcador)}}},
-            {"insertInlineImage": {"location": {"index": indice}, "uri": uri_publica, "objectSize": {
-                "width": {"magnitude": 95, "unit": "PT"},
-                "height": {"magnitude": 45, "unit": "PT"}
-            }}}
-        ]}
-    ).execute()
-    return True
+    # Si no se encontró logo, se elimina el marcador y se deja el espacio vacío.
+    if not logo:
+        eliminar_marcador(indice)
+        return False
+
+    try:
+        servicio_drive = _crear_servicio_drive_nuevo()
+        folder_id = obtener_id_carpeta_solicitudes()
+        nombre = f"Logo_empresa_{solicitud_id}"
+        media = MediaIoBaseUpload(BytesIO(logo["bytes"]), mimetype=logo["mime"], resumable=False)
+        archivo = servicio_drive.files().create(
+            body={"name": nombre, "parents": [folder_id]},
+            media_body=media,
+            fields="id"
+        ).execute()
+        logo_id = archivo["id"]
+        servicio_drive.permissions().create(
+            fileId=logo_id,
+            body={"type": "anyone", "role": "reader"},
+            fields="id"
+        ).execute()
+        uri_publica = f"https://drive.google.com/uc?export=download&id={logo_id}"
+        docs.documents().batchUpdate(
+            documentId=document_id,
+            body={"requests": [
+                {"deleteContentRange": {"range": {
+                    "startIndex": indice, "endIndex": indice + len(marcador)
+                }}},
+                {"insertInlineImage": {
+                    "location": {"index": indice},
+                    "uri": uri_publica,
+                    "objectSize": {
+                        "width": {"magnitude": 95, "unit": "PT"},
+                        "height": {"magnitude": 45, "unit": "PT"}
+                    }
+                }}
+            ]}
+        ).execute()
+        return True
+    except Exception:
+        # Si falla la carga o inserción de la imagen, volver a consultar el
+        # documento y quitar el marcador de todas formas.
+        try:
+            eliminar_marcador(localizar_marcador())
+        except Exception:
+            pass
+        return False
 
 
 def actualizar_estado_empresa_en_sheets(solicitud_id, resultado):
@@ -3276,7 +3310,7 @@ def reiniciar_solicitud():
         "whatsapp_autorizado", "whatsapp_confirmacion_estado", "whatsapp_documento_estado", "whatsapp_errores",
         "whatsapp_test_message_id", "whatsapp_test_recipient",
         "busqueda_otra_completada", "logo_empresa_pendiente", "logo_empresa_insertado",
-        "estado_logo_empresa", "estado_empresa_web",
+        "logo_marcador_procesado", "estado_logo_empresa", "estado_empresa_web",
     ]
     for key in llaves:
         st.session_state[key] = ""
@@ -3921,15 +3955,18 @@ def render_generando():
                 st.rerun()
             st.stop()
 
-    # ---------- INSERTAR LOGO SI LA PLANTILLA TIENE EL MARCADOR ----------
-    if st.session_state.get("logo_empresa_pendiente") and not st.session_state.get("logo_empresa_insertado", False):
+    # ---------- RESOLVER SIEMPRE EL MARCADOR DEL LOGO ----------
+    # Aunque la búsqueda no encuentre imagen, se elimina {{LOGO_EMPRESA}}
+    # de la copia para que nunca aparezca como texto en la carta final.
+    if not st.session_state.get("logo_marcador_procesado", False):
         try:
             logo_insertado = insertar_logo_en_plantilla(
                 st.session_state.doc_id_copia,
-                st.session_state.logo_empresa_pendiente,
+                st.session_state.get("logo_empresa_pendiente"),
                 st.session_state.solicitud_id
             )
             st.session_state.logo_empresa_insertado = bool(logo_insertado)
+            st.session_state.logo_marcador_procesado = True
             if logo_insertado:
                 st.session_state.estado_logo_empresa = "logo-insertado"
             else:
@@ -3937,6 +3974,8 @@ def render_generando():
         except Exception:
             st.session_state.logo_empresa_insertado = False
             st.session_state.estado_logo_empresa = "falta-logo-revision manual"
+            # No bloqueamos la carta si la operación del logo falla.
+            st.session_state.logo_marcador_procesado = True
     if st.session_state.get("empresa_seleccionada") == "Otra":
         # Conserva el estado final exacto solicitado para revisión administrativa.
         if st.session_state.get("estado_logo_empresa") != "logo-insertado":
