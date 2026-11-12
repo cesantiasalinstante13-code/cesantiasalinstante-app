@@ -11,6 +11,7 @@ import hmac
 import hashlib
 import secrets
 import time
+import requests
 from threading import Lock
 from io import BytesIO
 from streamlit_gsheets import GSheetsConnection
@@ -2135,6 +2136,167 @@ def render_configuracion_drive():
         )
 
 
+
+def obtener_config_whatsapp():
+    """Lee la configuración privada de WhatsApp desde Streamlit Secrets."""
+    try:
+        return dict(st.secrets["whatsapp"])
+    except Exception as exc:
+        raise RuntimeError(
+            "Falta el bloque [whatsapp] en Streamlit Secrets. "
+            "Agrega allí access_token, phone_number_id, api_version y test_recipient."
+        ) from exc
+
+
+def enviar_mensaje_prueba_meta():
+    """Envía el template oficial hello_world solo al destinatario de prueba autorizado."""
+    datos = obtener_config_whatsapp()
+    token = str(datos.get("access_token", "")).strip()
+    phone_number_id = str(datos.get("phone_number_id", "")).strip()
+    destinatario = re.sub(r"\D", "", str(datos.get("test_recipient", "")))
+    version = str(datos.get("api_version", "v27.0")).strip()
+    if not version.startswith("v"):
+        version = f"v{version}"
+
+    faltantes = []
+    if not token:
+        faltantes.append("access_token")
+    if not phone_number_id:
+        faltantes.append("phone_number_id")
+    if not destinatario:
+        faltantes.append("test_recipient")
+    if faltantes:
+        raise RuntimeError(
+            "Faltan estos valores en [whatsapp] de Streamlit Secrets: "
+            + ", ".join(faltantes)
+        )
+
+    url = f"https://graph.facebook.com/{version}/{phone_number_id}/messages"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": destinatario,
+        "type": "template",
+        "template": {
+            "name": "hello_world",
+            "language": {"code": "en_US"}
+        }
+    }
+
+    try:
+        respuesta = requests.post(
+            url,
+            headers=headers,
+            json=payload,
+            timeout=30
+        )
+    except requests.RequestException as exc:
+        raise RuntimeError(
+            f"No se pudo conectar con Meta para enviar la prueba: {exc}"
+        ) from exc
+
+    try:
+        resultado = respuesta.json()
+    except ValueError:
+        resultado = {}
+
+    if not respuesta.ok:
+        error = resultado.get("error", {}) if isinstance(resultado, dict) else {}
+        codigo = error.get("code", "")
+        mensaje = error.get("message", "Meta no aceptó el mensaje.")
+        detalle = f"HTTP {respuesta.status_code}"
+        if codigo:
+            detalle += f" · código Meta {codigo}"
+        raise RuntimeError(f"{detalle}: {mensaje}")
+
+    mensajes = resultado.get("messages", []) if isinstance(resultado, dict) else []
+    if not mensajes or not mensajes[0].get("id"):
+        raise RuntimeError(
+            "Meta respondió sin un identificador de mensaje. Revisa la respuesta desde el panel de Meta."
+        )
+
+    return {
+        "message_id": mensajes[0]["id"],
+        "recipient": destinatario,
+        "status": mensajes[0].get("message_status", "accepted")
+    }
+
+
+def render_configuracion_whatsapp():
+    """Prueba administrativa protegida; no interviene en el recorrido del cliente."""
+    st.title("Prueba privada de WhatsApp · Meta")
+    st.caption(
+        "Esta pantalla es solo para administración. Envía el template hello_world "
+        "al número de prueba autorizado que figura en Streamlit Secrets."
+    )
+
+    try:
+        clave_correcta = str(obtener_config_oauth().get("admin_key", ""))
+        if not clave_correcta:
+            st.error(
+                "Falta admin_key dentro de [google_oauth] en Streamlit Secrets. "
+                "No se puede proteger esta pantalla sin esa clave."
+            )
+            st.stop()
+    except Exception as exc:
+        st.error(str(exc))
+        st.stop()
+
+    with st.form("form_admin_whatsapp"):
+        clave_ingresada = st.text_input("Clave administrativa", type="password")
+        continuar = st.form_submit_button("Continuar")
+
+    if continuar:
+        st.session_state["admin_whatsapp_autorizado"] = hmac.compare_digest(
+            clave_ingresada, clave_correcta
+        )
+        if not st.session_state["admin_whatsapp_autorizado"]:
+            st.error("La clave administrativa no coincide.")
+
+    if not st.session_state.get("admin_whatsapp_autorizado", False):
+        st.info("Introduce la misma clave administrativa que utilizas para la configuración de Google Drive.")
+        st.stop()
+
+    try:
+        datos = obtener_config_whatsapp()
+        phone_number_id = str(datos.get("phone_number_id", "")).strip()
+        version = str(datos.get("api_version", "v27.0")).strip()
+        if not version.startswith("v"):
+            version = f"v{version}"
+        destinatario = re.sub(r"\D", "", str(datos.get("test_recipient", "")))
+        token = str(datos.get("access_token", "")).strip()
+
+        st.success("Se encontró el bloque [whatsapp] en Streamlit Secrets.")
+        st.write(f"**Versión Graph API:** {version}")
+        st.write(f"**Phone Number ID:** {phone_number_id or 'Falta configurar'}")
+        st.write(
+            "**Destinatario de prueba:** "
+            + (f"••••{destinatario[-4:]}" if destinatario else "Falta configurar")
+        )
+        st.write(f"**Token:** {'Configurado' if token else 'Falta configurar'}")
+        st.warning(
+            "Este botón envía un mensaje real de prueba al destinatario autorizado. "
+            "No envía nada a clientes ni modifica el flujo de solicitudes."
+        )
+    except Exception as exc:
+        st.error(str(exc))
+        st.stop()
+
+    if st.button("Enviar mensaje de prueba hello_world", type="primary", use_container_width=True):
+        try:
+            with st.spinner("Enviando mensaje de prueba a través de Meta..."):
+                resultado = enviar_mensaje_prueba_meta()
+            st.success("Meta aceptó el mensaje de prueba.")
+            st.write(f"**Estado:** {resultado['status']}")
+            st.code(resultado["message_id"], language=None)
+            st.caption("Comprueba ahora el WhatsApp del teléfono destinatario.")
+        except Exception as exc:
+            st.error(f"No se pudo enviar el mensaje de prueba: {exc}")
+
+
 def procesar_callback_oauth():
     """Intercambia el código OAuth y muestra el refresh token al administrador."""
     parametros = st.query_params
@@ -4214,6 +4376,11 @@ def main():
     # Configuración administrativa privada de Google Drive.
     if st.query_params.get("configurar_drive") == "1":
         render_configuracion_drive()
+        return
+
+    # Prueba privada de WhatsApp Meta; no altera las pantallas de los clientes.
+    if st.query_params.get("configurar_whatsapp") == "1":
+        render_configuracion_whatsapp()
         return
 
     # Migra sesiones que hubieran quedado en los nombres del flujo anterior.
