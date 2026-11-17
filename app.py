@@ -4065,7 +4065,7 @@ def render_generando():
                 "whatsapp_autorizado": bool(st.session_state.get("whatsapp_autorizado", False)),
                 "whatsapp_confirmacion_estado": "Pendiente" if st.session_state.get("whatsapp_autorizado", False) else "No autorizado",
                 "whatsapp_documento_estado": "Pendiente" if st.session_state.get("whatsapp_autorizado", False) else "No autorizado",
-                "estado_logo": "Pendiente de búsqueda" if st.session_state.get("empresa") else "No aplica",
+                "estado_logo": "Pendiente de búsqueda" if (st.session_state.get("empresa") or st.session_state.get("nit")) else "No aplica",
                 "logo_url": "",
                 "estado_empresa": "Pendiente de verificación" if st.session_state.get("empresa_seleccionada") == "Otra" else "Registrada"
             }])
@@ -4079,9 +4079,10 @@ def render_generando():
             st.stop()
 
     # ---------- BÚSQUEDA DE EMPRESA/LOGO PARA «OTRA» (PYTHON, SIN N8N) ----------
+    # La búsqueda debe ejecutarse también cuando el usuario solo proporciona el NIT.
     # Se ejecuta una sola vez después de registrar la solicitud. La búsqueda tiene
     # tiempos de espera cortos y nunca bloquea la generación de la carta si falla.
-    if st.session_state.get("empresa") and not st.session_state.get("busqueda_otra_completada", False):
+    if (st.session_state.get("empresa") or st.session_state.get("nit")) and not st.session_state.get("busqueda_otra_completada", False):
         with st.spinner("Estamos verificando los datos de la empresa. Si no encontramos el logo, prepararemos la carta sin él..."):
             resultado_busqueda = buscar_empresa_y_logo_python(
                 st.session_state.get("empresa", ""),
@@ -4136,7 +4137,7 @@ def render_generando():
             st.session_state.estado_logo_empresa = "falta-logo-revision manual"
             # No bloqueamos la carta si la operación del logo falla.
             st.session_state.logo_marcador_procesado = True
-    if st.session_state.get("empresa"):
+    if st.session_state.get("empresa") or st.session_state.get("nit"):
         # Conserva el estado final exacto solicitado para revisión administrativa.
         if st.session_state.get("estado_logo_empresa") != "logo-insertado":
             st.session_state.estado_logo_empresa = "falta-logo-revision manual"
