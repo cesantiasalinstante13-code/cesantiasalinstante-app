@@ -3228,12 +3228,145 @@ def _buscar_resultados_empresa(query, max_resultados=12):
         except Exception:
             pass
 
+    # Tercer proveedor: Google Search HTML. Se usa como respaldo cuando los
+    # otros motores no devuelven resúmenes legibles. No se considera válida una
+    # coincidencia por sí sola: la función principal verifica que el resultado
+    # contenga el NIT o el nombre buscado.
+    nit_en_consulta = re.search(r"(?<!\d)(\d(?:[\s.\-]*\d){8,9})(?!\d)", query)
+    nit_clave_consulta = ""
+    if nit_en_consulta:
+        digitos_consulta = _normalizar_nit(nit_en_consulta.group(1))
+        nit_clave_consulta = digitos_consulta[:-1] if len(digitos_consulta) == 10 else digitos_consulta
+    resultado_contiene_nit = bool(
+        nit_clave_consulta and any(
+            nit_clave_consulta in _normalizar_nit(item.get("titulo", "") + " " + item.get("snippet", ""))
+            for item in resultados
+        )
+    )
+    # Cuando la búsqueda es por NIT, consulta también Google si DDG/Bing no
+    # devolvieron el número dentro de título o resumen, aunque sí den otros links.
+    if not resultados or not any(item.get("snippet") for item in resultados) or (nit_clave_consulta and not resultado_contiene_nit):
+        try:
+            respuesta = requests.get(
+                "https://www.google.com/search",
+                params={"q": query, "num": max(10, max_resultados)},
+                headers=headers,
+                timeout=(4, 10)
+            )
+            respuesta.raise_for_status()
+            html_google = respuesta.text
+            for coincidencia in re.finditer(r"<a\b([^>]*)>(.*?)</a>", html_google, re.I | re.S):
+                atributos, interior = coincidencia.group(1), coincidencia.group(2)
+                if not re.search(r"<h3\b", interior, re.I):
+                    continue
+                attrs = {}
+                for clave, comilla, valor in re.findall(
+                    r"([\w:-]+)\s*=\s*([\"'])(.*?)\2", atributos, re.I | re.S
+                ):
+                    attrs[clave.lower()] = html.unescape(valor)
+                href = attrs.get("href", "").strip()
+                if href.startswith("/url?") or "google.com/url?" in href:
+                    href = parse_qs(urlparse(href).query).get("q", [href])[0]
+                href = urljoin("https://www.google.com", href)
+                dominio = urlparse(href).netloc.lower()
+                if (
+                    not href.startswith(("http://", "https://"))
+                    or not dominio
+                    or dominio.endswith("google.com")
+                    or any(x in dominio for x in ("youtube.com/redirect",))
+                ):
+                    continue
+                titulo = _texto_html_limpio(interior)
+                if not titulo:
+                    continue
+                clave_url = href.split("?")[0].rstrip("/").lower()
+                if clave_url in vistos:
+                    continue
+
+                # En Google el resumen aparece habitualmente en VwiC3b/IsZvec;
+                # se extraen esos bloques del fragmento posterior al título.
+                siguiente = html_google[coincidencia.end(): coincidencia.end() + 2600]
+                snippet = ""
+                match_snippet = re.search(
+                    r'<div[^>]+class=["\'][^"\']*(?:VwiC3b|IsZvec|aCOpRe)[^"\']*["\'][^>]*>(.*?)</div>',
+                    siguiente, re.I | re.S
+                )
+                if match_snippet:
+                    snippet = _texto_html_limpio(match_snippet.group(1))
+                vistos.add(clave_url)
+                resultados.insert(0, {"url": href, "titulo": titulo, "snippet": snippet})
+                if len(resultados) >= max(1, int(max_resultados)) * 2:
+                    break
+        except Exception:
+            pass
+
     return resultados[:max(1, int(max_resultados)) * 2]
 
 
-def _nombre_candidato_desde_resultado(titulo="", snippet=""):
+def _nombre_candidato_cercano_al_nit(texto, nit):
+    """Extrae una razón social adyacente al NIT de un snippet o fila de resultados."""
+    texto = _texto_html_limpio(texto)
+    base = _clave_nit(nit)
+    if not texto or not base:
+        return ""
+    patron_nit = r"(?<!\d)" + r"[\s.\-]*".join(map(re.escape, base)) + r"(?:[\s.\-]*\d)?(?!\d)"
+    sufijo_legal = r"(?:S\.?\s*A\.?\s*S\.?|S\.?\s*A\.?|LTDA\.?|LIMITADA|E\.?\s*U\.?|S\.?\s*EN\s*C\.?|S\.?\s*C\.?\s*A\.?)"
+    ruido = {
+        "consulta", "consultas", "empresa", "empresas", "resultado", "resultados",
+        "registro", "registros", "ministerio", "mintrabajo", "trabajo", "gobierno", "calificacion",
+        "calificacion", "estandares", "minimos", "nit", "rut", "numero", "identificacion",
+        "colombia", "informacion", "comercio", "principal", "aceptable", "activo",
+        "activa", "inactivo", "inactiva", "razon", "social", "camara", "camaras",
+        "de", "del", "la", "el", "los", "las", "y", "en", "por", "para", "con"
+    }
+    for match_nit in re.finditer(patron_nit, texto, re.I):
+        antes = texto[max(0, match_nit.start() - 180):match_nit.start()]
+        despues = texto[match_nit.end():match_nit.end() + 180]
+        for contexto in (antes, despues):
+            # Las fichas suelen mostrar NIT | RAZÓN SOCIAL o RAZÓN SOCIAL | NIT.
+            segmentos = re.split(r"[|;\n•]+", contexto)
+            segmentos = [s.strip(" .,:;-–—") for s in segmentos if s.strip(" .,:;-–—")]
+            for segmento in reversed(segmentos) if contexto is antes else segmentos:
+                # Prioriza la razón social que termina en una forma jurídica.
+                for m in re.finditer(r"([A-ZÁÉÍÓÚÑ0-9][A-ZÁÉÍÓÚÑ0-9&'’.,()\- ]{1,120}?\b" + sufijo_legal + r")", segmento, re.I):
+                    candidato = m.group(1).strip(" ,:;–—")
+                    # Recorta prefijos del título del portal (p. ej. "Consulta
+                    # MinTrabajo - ") y conserva la puntuación de S.A./S.A.S.
+                    candidato = re.split(r"[|;•]", candidato)[-1].strip(" ,:;–—")
+                    candidato = re.split(r"\s+-\s+", candidato)[-1].strip(" ,:;–—")
+                    sufijo = re.search(sufijo_legal + r"$", candidato, re.I)
+                    if sufijo:
+                        tokens = list(re.finditer(r"\S+", candidato[:sufijo.start()]))
+                        tokens = tokens[-7:]
+                        while tokens and _normalizar_nombre_empresa(tokens[0].group()) in ruido:
+                            tokens.pop(0)
+                        if tokens:
+                            candidato = candidato[tokens[0].start():].strip(" ,:;–—")
+                    if len(_normalizar_nombre_empresa(candidato).split()) >= 2:
+                        return candidato[:180]
+                # Respaldo: etiqueta explícita dentro del mismo bloque.
+                m = re.search(
+                    r"(?:raz[oó]n\s+social|empresa|nombre\s+legal)\s*[:：-]?\s*([^,;|]{3,120})",
+                    segmento, re.I
+                )
+                if m:
+                    candidato = m.group(1).strip(" .,:;-–—")
+                    candidato = re.sub(patron_nit, " ", candidato, flags=re.I).strip(" .,:;-–—")
+                    if len(_normalizar_nombre_empresa(candidato).split()) >= 2:
+                        return candidato[:180]
+    return ""
+
+
+def _nombre_candidato_desde_resultado(titulo="", snippet="", nit=""):
     """Extrae una razón social probable del título o resumen de un resultado web."""
     textos = [_texto_html_limpio(titulo), _texto_html_limpio(snippet)]
+    if nit:
+        # Los motores pueden devolver el NIT y la razón social dentro del resumen,
+        # pero no necesariamente con la etiqueta literal "Razón Social".
+        for texto_resultado in (textos[1], textos[0]):
+            candidato_nit = _nombre_candidato_cercano_al_nit(texto_resultado, nit)
+            if candidato_nit:
+                return candidato_nit
     patrones_explicitos = (
         r"(?:raz[oó]n\s+social|nombre\s+(?:legal\s+)?de\s+la\s+empresa)\s*[:：-]?\s*([^|;\n]{3,150})",
         r"(?:raz[oó]n\s+social)\s+(?:es|:)?\s*([^|;\n]{3,150})",
@@ -3416,8 +3549,41 @@ def _extraer_logo_oficial_desde_sitio(url_sitio, permitir_og_social=False):
     return None
 
 
+def _extraer_nombre_de_fila_con_nit(html_pagina, nit):
+    """Lee una fila HTML que contiene el NIT y devuelve su celda de razón social."""
+    if not html_pagina or not nit:
+        return ""
+    sufijo_legal = re.compile(
+        r"\b(?:S\.?\s*A\.?\s*S\.?|S\.?\s*A\.?|LTDA\.?|LIMITADA|E\.?\s*U\.?|S\.?\s*EN\s*C\.?|S\.?\s*C\.?\s*A\.?)(?=$|[^A-Za-z0-9])",
+        re.I
+    )
+    for fila_html in re.findall(r"<tr\b[^>]*>(.*?)</tr>", str(html_pagina), re.I | re.S):
+        texto_fila = _texto_html_limpio(fila_html)
+        if not _nit_coincide_con_texto(nit, texto_fila):
+            continue
+        celdas = re.findall(r"<t[dh]\b[^>]*>(.*?)</t[dh]>", fila_html, re.I | re.S)
+        candidatos = [_texto_html_limpio(celda) for celda in celdas]
+        candidatos = [
+            c for c in candidatos
+            if c and not _nit_coincide_con_texto(nit, c)
+            and re.search(r"[A-Za-zÁÉÍÓÚáéíóúÑñ]", c)
+            and len(_normalizar_nombre_empresa(c).split()) >= 2
+        ]
+        for candidato in candidatos:
+            candidato = re.sub(r"^(?:raz[oó]n\s+social|empresa)\s*[:：-]?\s*", "", candidato, flags=re.I)
+            if sufijo_legal.search(candidato):
+                return candidato[:180]
+        if candidatos:
+            # Si la tabla no muestra sufijo legal, la celda de nombre suele ser
+            # la segunda después del NIT; se evita escoger estados o categorías.
+            for candidato in candidatos:
+                if not re.search(r"\b(activa|activo|inactiva|inactivo|cancelada|principal|jur[ií]dica)\b", candidato, re.I):
+                    return candidato[:180]
+    return ""
+
+
 def buscar_empresa_y_logo_python(nombre_empresa="", nit_empresa=""):
-    """Busca cualquier empresa por nombre, NIT o ambos; extrae nombre de páginas y snippets."""
+    """Busca empresas por nombre/NIT usando páginas, filas HTML y resúmenes de varios motores."""
     nombre_ingresado = str(nombre_empresa or "").strip()
     nit_ingresado = str(nit_empresa or "").strip()
     nit_limpio = _normalizar_nit(nit_ingresado)
@@ -3478,7 +3644,7 @@ def buscar_empresa_y_logo_python(nombre_empresa="", nit_empresa=""):
         texto_resultado = " ".join((titulo, snippet))
         nit_confirmado_resultado = bool(nit_limpio and _nit_coincide_con_texto(nit_ingresado, texto_resultado))
         nombre_confirmado_resultado = bool(nombre_ingresado and _texto_coincide_empresa(nombre_ingresado, texto_resultado))
-        candidato_resultado = _nombre_candidato_desde_resultado(titulo, snippet)
+        candidato_resultado = _nombre_candidato_desde_resultado(titulo, snippet, nit_ingresado)
 
         html_pagina = ""
         pagina_url = url
@@ -3520,7 +3686,10 @@ def buscar_empresa_y_logo_python(nombre_empresa="", nit_empresa=""):
 
         nombre_extraido = ""
         if html_pagina:
-            nombre_extraido = _extraer_nombre_de_pagina(html_pagina, titulo, pagina_url)
+            if nit_limpio and nit_confirmado:
+                nombre_extraido = _extraer_nombre_de_fila_con_nit(html_pagina, nit_ingresado)
+            if not nombre_extraido:
+                nombre_extraido = _extraer_nombre_de_pagina(html_pagina, titulo, pagina_url)
         # Para una búsqueda por NIT únicamente, el título/resumen de un resultado
         # que también contiene el NIT es una fuente útil cuando la ficha web bloquea bots.
         if not nombre_ingresado and nit_confirmado:
@@ -3536,6 +3705,9 @@ def buscar_empresa_y_logo_python(nombre_empresa="", nit_empresa=""):
         if nombre_extraido and not resultado.get("nombre"):
             resultado["nombre"] = nombre_extraido
             nombre_candidato_validado = nombre_extraido
+            if nit_confirmado_resultado and not resultado.get("sitio"):
+                resultado["sitio"] = url
+                resultado["empresa_verificada"] = True
         nit_extraido = _extraer_nit_de_pagina(texto_pagina) if texto_pagina else ""
         if not resultado.get("nit") and nit_extraido:
             resultado["nit"] = nit_extraido
