@@ -2915,59 +2915,134 @@ def _texto_html_limpio(valor):
     return re.sub(r"\s+", " ", html.unescape(valor)).strip()
 
 
-def _buscar_resultados_empresa(query, max_resultados=5):
-    """Búsqueda web gratuita de mejor esfuerzo. No requiere n8n ni API key."""
+def _dominio_es_red_social(url):
+    dominio = urlparse(url or "").netloc.lower().split(":")[0]
+    return any(
+        dominio == red or dominio.endswith("." + red)
+        for red in (
+            "facebook.com", "instagram.com", "linkedin.com",
+            "youtube.com", "x.com", "twitter.com", "tiktok.com"
+        )
+    )
+
+
+def _buscar_resultados_empresa(query, max_resultados=12):
+    """Busca páginas oficiales y perfiles públicos en varias fuentes web."""
     url = "https://html.duckduckgo.com/html/"
     respuesta = requests.get(
         url,
         params={"q": query},
-        headers={"User-Agent": "Mozilla/5.0 (compatible; CesantiasAlInstante/1.0)"},
-        timeout=(2, 4)
+        headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                          "AppleWebKit/537.36 Chrome/120 Safari/537.36"
+        },
+        timeout=(4, 8)
     )
     respuesta.raise_for_status()
-    contenido = respuesta.text
+
     resultados = []
+    vistos = set()
     patron = re.compile(
         r'<a[^>]+class=["\'][^"\']*result__a[^"\']*["\'][^>]+href=["\']([^"\']+)["\'][^>]*>(.*?)</a>',
         re.I | re.S
     )
-    for href, titulo_html in patron.findall(contenido):
-        href = html.unescape(href)
+
+    for href, titulo_html in patron.findall(respuesta.text):
+        href = html.unescape(href).strip()
         if "uddg=" in href:
             try:
                 href = parse_qs(urlparse(href).query).get("uddg", [href])[0]
             except Exception:
                 pass
+
         dominio = urlparse(href).netloc.lower()
-        if not dominio or any(x in dominio for x in (
-            "duckduckgo.com", "facebook.com", "instagram.com", "linkedin.com",
-            "youtube.com", "wikipedia.org", "rues.org.co", "einforma.co"
-        )):
+        if (
+            not href.startswith(("http://", "https://"))
+            or not dominio
+            or any(x in dominio for x in (
+                "duckduckgo.com", "google.com", "bing.com", "yahoo.com",
+                "wikipedia.org", "rues.org.co", "einforma.co"
+            ))
+        ):
             continue
+
+        # No excluimos Facebook, Instagram, LinkedIn, YouTube, X ni TikTok:
+        # los perfiles públicos son una fuente válida para recuperar el logo.
         titulo = _texto_html_limpio(titulo_html)
-        if href.startswith("http") and titulo:
+        clave = href.split("?")[0].rstrip("/").lower()
+        if titulo and clave not in vistos:
+            vistos.add(clave)
             resultados.append({"url": href, "titulo": titulo})
         if len(resultados) >= max_resultados:
             break
+
     return resultados
 
 
-def _extraer_logo_oficial_desde_sitio(url_sitio):
-    """Busca únicamente metadatos declarados como logo; no confunde banners/favicons con logos."""
+def _descargar_candidato_logo(candidato, referer=""):
+    """Descarga y valida una imagen candidata sin aceptar HTML ni archivos enormes."""
+    if not candidato or urlparse(candidato).scheme not in ("http", "https"):
+        return None
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                          "AppleWebKit/537.36 Chrome/120 Safari/537.36"
+        }
+        if referer:
+            headers["Referer"] = referer
+        imagen = requests.get(
+            candidato, headers=headers, timeout=(4, 8),
+            allow_redirects=True, stream=True
+        )
+        tipo = imagen.headers.get("Content-Type", "").lower().split(";")[0]
+        if not imagen.ok or not tipo.startswith("image/"):
+            imagen.close()
+            return None
+
+        contenido = bytearray()
+        for bloque in imagen.iter_content(65536):
+            if not bloque:
+                continue
+            contenido.extend(bloque)
+            if len(contenido) > 5_000_000:
+                imagen.close()
+                return None
+        imagen.close()
+
+        if len(contenido) < 500:
+            return None
+        return {
+            "url": imagen.url,
+            "bytes": bytes(contenido),
+            "mime": tipo
+        }
+    except Exception:
+        return None
+
+
+def _extraer_logo_oficial_desde_sitio(url_sitio, permitir_og_social=False):
+    """Extrae Organization.logo/metadatos; en redes admite la foto pública del perfil."""
     respuesta = requests.get(
         url_sitio,
-        headers={"User-Agent": "Mozilla/5.0 (compatible; CesantiasAlInstante/1.0)"},
-        timeout=(3, 5),
+        headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                          "AppleWebKit/537.36 Chrome/120 Safari/537.36"
+        },
+        timeout=(4, 8),
         allow_redirects=True
     )
     respuesta.raise_for_status()
-    if "text/html" not in respuesta.headers.get("Content-Type", "text/html"):
+    if "text/html" not in respuesta.headers.get("Content-Type", "text/html").lower():
         return None
-    contenido = respuesta.text[:1_500_000]
+
+    contenido = respuesta.text[:2_000_000]
     candidatos = []
 
-    # JSON-LD: Organization.logo (la señal más confiable).
-    for bloque in re.findall(r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>', contenido, re.I | re.S):
+    # 1) JSON-LD: señal preferida para el logo de la organización.
+    for bloque in re.findall(
+        r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>',
+        contenido, re.I | re.S
+    ):
         try:
             datos = json.loads(bloque.strip())
         except Exception:
@@ -2979,99 +3054,179 @@ def _extraer_logo_oficial_desde_sitio(url_sitio):
                 tipo = elemento.get("@type", "")
                 tipos = tipo if isinstance(tipo, list) else [tipo]
                 logo = elemento.get("logo")
-                if logo and (not tipos or any("Organization" in str(t) or "Corporation" in str(t) for t in tipos)):
+                if logo and (
+                    not tipos or any(
+                        "Organization" in str(t) or "Corporation" in str(t)
+                        for t in tipos
+                    )
+                ):
                     if isinstance(logo, dict):
                         logo = logo.get("url") or logo.get("contentUrl")
                     if isinstance(logo, str):
                         candidatos.append(urljoin(respuesta.url, logo))
-                pendientes.extend(v for v in elemento.values() if isinstance(v, (dict, list)))
+                pendientes.extend(
+                    v for v in elemento.values() if isinstance(v, (dict, list))
+                )
             elif isinstance(elemento, list):
                 pendientes.extend(elemento)
 
-    # Metadatos explícitos de logo; no usamos og:image porque suele ser un banner.
+    # 2) Metadatos explícitos de logo y, únicamente en perfiles sociales,
+    #    og:image / twitter:image (normalmente la foto pública del perfil).
+    es_social = permitir_og_social and _dominio_es_red_social(respuesta.url)
     for etiqueta in re.findall(r'<(?:meta|link)\b[^>]*>', contenido, re.I):
         attrs = {}
-        for clave, comilla, valor in re.findall(r'([\w:-]+)\s*=\s*(["\'])(.*?)\2', etiqueta, re.I | re.S):
+        for clave, comilla, valor in re.findall(
+            r'([\w:-]+)\s*=\s*(["\'])(.*?)\2', etiqueta, re.I | re.S
+        ):
             attrs[clave.lower()] = html.unescape(valor)
-        clave = (attrs.get("itemprop") or attrs.get("property") or attrs.get("name") or "").lower()
+
+        clave = (
+            attrs.get("itemprop") or attrs.get("property")
+            or attrs.get("name") or ""
+        ).lower()
         rel = attrs.get("rel", "").lower()
+
         if clave in ("logo", "og:logo", "organization:logo"):
             valor = attrs.get("content") or attrs.get("href")
             if valor:
                 candidatos.append(urljoin(respuesta.url, valor))
         elif "logo" in rel.split() and attrs.get("href"):
             candidatos.append(urljoin(respuesta.url, attrs["href"]))
+        elif es_social and clave in ("og:image", "twitter:image", "twitter:image:src"):
+            valor = attrs.get("content")
+            if valor:
+                candidatos.append(urljoin(respuesta.url, valor))
 
     for candidato in dict.fromkeys(candidatos):
-        if urlparse(candidato).scheme not in ("http", "https"):
-            continue
-        try:
-            imagen = requests.get(
-                candidato,
-                headers={"User-Agent": "Mozilla/5.0"},
-                timeout=(2, 3),
-                allow_redirects=True
-            )
-            tipo = imagen.headers.get("Content-Type", "").lower()
-            if imagen.ok and tipo.startswith("image/") and len(imagen.content) <= 5_000_000:
-                return {"url": imagen.url, "bytes": imagen.content, "mime": tipo.split(";")[0]}
-        except Exception:
-            continue
+        imagen = _descargar_candidato_logo(candidato, referer=respuesta.url)
+        if imagen:
+            return imagen
     return None
 
 
+def _texto_coincide_empresa(nombre, texto):
+    """Comprueba coincidencia razonable del nombre antes de aceptar una imagen."""
+    nombre = str(nombre or "").lower()
+    texto = str(texto or "").lower()
+    palabras = [
+        p for p in re.findall(r"[a-záéíóúñ0-9]{3,}", nombre)
+        if p not in {"sas", "s.a.s", "empresa", "colombia", "sociedad"}
+    ]
+    if not palabras:
+        return False
+    encontradas = sum(1 for palabra in palabras if palabra in texto)
+    minimo = 1 if len(palabras) == 1 else min(2, len(palabras))
+    return encontradas >= minimo
+
+
 def buscar_empresa_y_logo_python(nombre_empresa="", nit_empresa=""):
-    """Intenta completar nombre/NIT y localizar logo oficial sin bloquear si falla."""
+    """
+    Busca la empresa y su logo en web oficial y perfiles públicos de redes.
+    La búsqueda es de mejor esfuerzo: nunca bloquea la generación de la carta.
+    """
     nombre = str(nombre_empresa or "").strip()
     nit = str(nit_empresa or "").strip()
     nit_limpio = _normalizar_nit(nit)
-    consulta = f'"{nit}" empresa Colombia' if nit_limpio and not nombre else f'"{nombre}" Colombia NIT sitio oficial'
-    resultado = {"nombre": nombre, "nit": nit, "logo": None, "sitio": "", "empresa_verificada": False}
-    try:
-        resultados = _buscar_resultados_empresa(consulta)
-        for item in resultados[:2]:
-            # Si el usuario dio un NIT, exigimos verlo literalmente en el resultado o en la página.
+    resultado = {
+        "nombre": nombre, "nit": nit, "logo": None, "sitio": "",
+        "empresa_verificada": False, "fuente_logo": ""
+    }
+
+    if not nombre and not nit:
+        return resultado
+
+    consultas = []
+    if nombre:
+        consultas.append(f'"{nombre}" Colombia NIT sitio oficial')
+        if nit_limpio:
+            consultas.append(f'"{nombre}" "{nit}" Colombia logo empresa')
+        consultas.extend([
+            f'"{nombre}" site:facebook.com',
+            f'"{nombre}" site:instagram.com',
+            f'"{nombre}" site:linkedin.com/company',
+            f'"{nombre}" site:youtube.com OR site:tiktok.com OR site:x.com'
+        ])
+    elif nit_limpio:
+        consultas.append(f'"{nit}" empresa Colombia sitio oficial')
+
+    resultados = []
+    vistos = set()
+    for consulta in consultas:
+        try:
+            for item in _buscar_resultados_empresa(consulta, max_resultados=8):
+                clave = item["url"].split("?")[0].rstrip("/").lower()
+                if clave not in vistos:
+                    vistos.add(clave)
+                    resultados.append(item)
+        except Exception:
+            # Una consulta bloqueada no impide probar las demás fuentes.
+            continue
+
+    # Prioriza la web corporativa; después perfiles sociales públicos.
+    resultados.sort(key=lambda x: 1 if _dominio_es_red_social(x["url"]) else 0)
+
+    for item in resultados[:24]:
+        url = item["url"]
+        es_social = _dominio_es_red_social(url)
+        try:
             pagina = requests.get(
-                item["url"],
-                headers={"User-Agent": "Mozilla/5.0 (compatible; CesantiasAlInstante/1.0)"},
-                timeout=(2, 3),
+                url,
+                headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                                  "AppleWebKit/537.36 Chrome/120 Safari/537.36"
+                },
+                timeout=(4, 8),
                 allow_redirects=True
             )
-            texto_pagina = _texto_html_limpio(pagina.text[:1_000_000]) if pagina.ok else ""
+            texto_pagina = (
+                _texto_html_limpio(pagina.text[:1_200_000])
+                if pagina.ok and "text/html" in pagina.headers.get("Content-Type", "text/html").lower()
+                else ""
+            )
             texto_busqueda = (item["titulo"] + " " + texto_pagina).lower()
-            nit_confirmado = bool(nit_limpio and nit_limpio in _normalizar_nit(texto_busqueda))
-            nombre_confirmado = bool(nombre and all(
-                palabra.lower() in texto_busqueda
-                for palabra in re.findall(r"[A-Za-zÁÉÍÓÚáéíóúÑñ]{4,}", nombre)[:3]
-            ))
-            if nit_limpio and not nit_confirmado:
+
+            nit_confirmado = bool(
+                nit_limpio and nit_limpio in _normalizar_nit(texto_busqueda)
+            )
+            nombre_confirmado = _texto_coincide_empresa(nombre, texto_busqueda)
+
+            # Si se indicó NIT, no aceptamos una web corporativa sin comprobarlo.
+            # En perfiles sociales públicos se acepta el nombre de marca coincidente,
+            # ya que normalmente no publican el NIT en la biografía.
+            if nit_limpio and not nit_confirmado and not (es_social and nombre_confirmado):
                 continue
             if nombre and not nombre_confirmado and not nit_confirmado:
                 continue
 
-            resultado["sitio"] = pagina.url if pagina.ok else item["url"]
+            resultado["sitio"] = pagina.url if pagina.ok else url
             resultado["empresa_verificada"] = bool(nit_confirmado or nombre_confirmado)
+
             if not nombre:
                 resultado["nombre"] = item["titulo"].split(" | ")[0].split(" - ")[0].strip()
-            if not nit:
+
+            if not nit and texto_pagina:
                 hallazgo = re.search(
-                    r"(?:NIT|N\.I\.T\.|identificaci[oó]n tributaria)[^0-9]{0,25}(\d[\d.\- ]{7,20})",
-                    texto_pagina,
-                    re.I
+                    r"(?:NIT|N\.I\.T\.|identificación tributaria)[^0-9]{0,25}(\d[\d.\- ]{7,20})",
+                    texto_pagina, re.I
                 )
                 if hallazgo:
                     resultado["nit"] = hallazgo.group(1).strip()
-            if pagina.ok:
-                try:
-                    resultado["logo"] = _extraer_logo_oficial_desde_sitio(pagina.url)
-                except Exception:
-                    resultado["logo"] = None
-            break
-    except Exception:
-        # La búsqueda nunca debe impedir que se genere la carta.
-        pass
-    return resultado
 
+            # Primero intenta logo estructurado; para perfiles sociales permite
+            # la imagen og:image de la página pública del perfil.
+            if pagina.ok and "text/html" in pagina.headers.get("Content-Type", "text/html").lower():
+                logo = _extraer_logo_oficial_desde_sitio(
+                    pagina.url, permitir_og_social=es_social
+                )
+                if logo:
+                    resultado["logo"] = logo
+                    resultado["fuente_logo"] = "red social" if es_social else "sitio web oficial"
+                    break
+
+        except Exception:
+            continue
+
+    return resultado
 
 def insertar_logo_en_plantilla(document_id, logo, solicitud_id):
     """Reemplaza {{LOGO_EMPRESA}} por el logo o elimina el marcador si no hay logo.
@@ -3158,7 +3313,12 @@ def insertar_logo_en_plantilla(document_id, logo, solicitud_id):
             ]}
         ).execute()
         return True
-    except Exception:
+    except Exception as exc:
+        # Conserva el detalle técnico para diagnóstico sin interrumpir la carta.
+        try:
+            st.session_state["error_insercion_logo_empresa"] = str(exc)[:700]
+        except Exception:
+            pass
         # Si falla la carga o inserción de la imagen, volver a consultar el
         # documento y quitar el marcador de todas formas.
         try:
@@ -3905,7 +4065,7 @@ def render_generando():
                 "whatsapp_autorizado": bool(st.session_state.get("whatsapp_autorizado", False)),
                 "whatsapp_confirmacion_estado": "Pendiente" if st.session_state.get("whatsapp_autorizado", False) else "No autorizado",
                 "whatsapp_documento_estado": "Pendiente" if st.session_state.get("whatsapp_autorizado", False) else "No autorizado",
-                "estado_logo": "Pendiente de búsqueda" if st.session_state.get("empresa_seleccionada") == "Otra" else "No aplica",
+                "estado_logo": "Pendiente de búsqueda" if st.session_state.get("empresa") else "No aplica",
                 "logo_url": "",
                 "estado_empresa": "Pendiente de verificación" if st.session_state.get("empresa_seleccionada") == "Otra" else "Registrada"
             }])
@@ -3921,7 +4081,7 @@ def render_generando():
     # ---------- BÚSQUEDA DE EMPRESA/LOGO PARA «OTRA» (PYTHON, SIN N8N) ----------
     # Se ejecuta una sola vez después de registrar la solicitud. La búsqueda tiene
     # tiempos de espera cortos y nunca bloquea la generación de la carta si falla.
-    if st.session_state.get("empresa_seleccionada") == "Otra" and not st.session_state.get("busqueda_otra_completada", False):
+    if st.session_state.get("empresa") and not st.session_state.get("busqueda_otra_completada", False):
         with st.spinner("Estamos verificando los datos de la empresa. Si no encontramos el logo, prepararemos la carta sin él..."):
             resultado_busqueda = buscar_empresa_y_logo_python(
                 st.session_state.get("empresa", ""),
@@ -3976,7 +4136,7 @@ def render_generando():
             st.session_state.estado_logo_empresa = "falta-logo-revision manual"
             # No bloqueamos la carta si la operación del logo falla.
             st.session_state.logo_marcador_procesado = True
-    if st.session_state.get("empresa_seleccionada") == "Otra":
+    if st.session_state.get("empresa"):
         # Conserva el estado final exacto solicitado para revisión administrativa.
         if st.session_state.get("estado_logo_empresa") != "logo-insertado":
             st.session_state.estado_logo_empresa = "falta-logo-revision manual"
