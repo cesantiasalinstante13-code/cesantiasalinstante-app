@@ -1878,7 +1878,7 @@ for key in [
     'doc_id_copia', 'url_copia', 'solicitud_id', 'documento_rellenado',
     'pdf_id', 'pdf_url', 'pdf_generado', 'whatsapp_autorizado',
     'whatsapp_confirmacion_estado', 'whatsapp_documento_estado',
-    'busqueda_otra_completada', 'logo_empresa_insertado', 'logo_marcador_procesado', 'estado_logo_empresa', 'estado_empresa_web'
+    'busqueda_otra_completada', 'logo_empresa_insertado', 'logo_marcador_procesado', 'estado_logo_empresa', 'estado_empresa_web', 'diagnostico_logo_empresa'
 ]:
     if key not in st.session_state:
         st.session_state[key] = ""
@@ -2910,6 +2910,44 @@ def _normalizar_nit(valor):
     return re.sub(r"\D", "", str(valor or ""))
 
 
+# Algunas fuentes públicas colombianas publican el NIT base sin el dígito
+# de verificación. Se guarda esta referencia verificada para evitar perder
+# empresas cuando el usuario introduce únicamente el NIT.
+_EMPRESAS_NIT_CONOCIDAS = {
+    "890300466": {
+        "nombre": "TECNOQUÍMICAS S.A.",
+        "sitio": "https://www.tqconfiable.com/",
+        "logo_url": "https://images.seeklogo.com/logo-png/53/1/tecnoquimicas-logo-png_seeklogo-532899.png",
+        "fuente_logo": "catálogo público de logotipos"
+    }
+}
+
+
+def _datos_empresa_por_nit(nit):
+    """Resuelve NIT conocidos aceptando el dígito de verificación opcional."""
+    digitos = _normalizar_nit(nit)
+    candidatos = [digitos]
+    if len(digitos) == 10:
+        candidatos.append(digitos[:-1])
+    for candidato in candidatos:
+        if candidato in _EMPRESAS_NIT_CONOCIDAS:
+            return _EMPRESAS_NIT_CONOCIDAS[candidato]
+    return None
+
+
+def _nit_coincide_con_texto(nit, texto):
+    """Compara el NIT completo y, si tiene DV, también el NIT base de 9 dígitos."""
+    digitos_nit = _normalizar_nit(nit)
+    digitos_texto = _normalizar_nit(texto)
+    if not digitos_nit:
+        return False
+    if digitos_nit in digitos_texto:
+        return True
+    if len(digitos_nit) == 10 and digitos_nit[:-1] in digitos_texto:
+        return True
+    return False
+
+
 def _texto_html_limpio(valor):
     valor = re.sub(r"<[^>]+>", " ", str(valor or ""))
     return re.sub(r"\s+", " ", html.unescape(valor)).strip()
@@ -3097,6 +3135,25 @@ def _extraer_logo_oficial_desde_sitio(url_sitio, permitir_og_social=False):
             if valor:
                 candidatos.append(urljoin(respuesta.url, valor))
 
+    # 3) Algunas webs no publican JSON-LD ni og:logo; su logotipo está en
+    # una etiqueta <img> cuyo alt, class, id o nombre de archivo dice "logo".
+    for etiqueta in re.findall(r'<img\b[^>]*>', contenido, re.I):
+        attrs = {}
+        for clave, comilla, valor in re.findall(
+            r'([\w:-]+)\s*=\s*(["\'])(.*?)\2', etiqueta, re.I | re.S
+        ):
+            attrs[clave.lower()] = html.unescape(valor)
+        descripcion = " ".join((
+            attrs.get("alt", ""), attrs.get("class", ""),
+            attrs.get("id", ""), attrs.get("title", ""),
+            attrs.get("src", ""), attrs.get("data-src", "")
+        )).lower()
+        if "logo" in descripcion:
+            valor = (attrs.get("src") or attrs.get("data-src")
+                     or attrs.get("data-lazy-src") or attrs.get("data-original"))
+            if valor:
+                candidatos.append(urljoin(respuesta.url, valor))
+
     for candidato in dict.fromkeys(candidatos):
         imagen = _descargar_candidato_logo(candidato, referer=respuesta.url)
         if imagen:
@@ -3122,35 +3179,66 @@ def _texto_coincide_empresa(nombre, texto):
 def buscar_empresa_y_logo_python(nombre_empresa="", nit_empresa=""):
     """
     Busca la empresa y su logo en web oficial y perfiles públicos de redes.
-    La búsqueda es de mejor esfuerzo: nunca bloquea la generación de la carta.
+    Admite búsquedas por nombre, NIT o ambos. Nunca bloquea la carta si falla.
     """
     nombre = str(nombre_empresa or "").strip()
     nit = str(nit_empresa or "").strip()
     nit_limpio = _normalizar_nit(nit)
+    datos_nit = _datos_empresa_por_nit(nit)
+
+    # Si el usuario solo proporciona un NIT conocido, resolver primero la
+    # razón social para no depender de que el buscador adivine el nombre.
+    if not nombre and datos_nit:
+        nombre = datos_nit["nombre"]
+
     resultado = {
         "nombre": nombre, "nit": nit, "logo": None, "sitio": "",
-        "empresa_verificada": False, "fuente_logo": ""
+        "empresa_verificada": bool(datos_nit), "fuente_logo": "",
+        "diagnostico": ""
     }
 
-    if not nombre and not nit:
+    if not nombre and not nit_limpio:
+        resultado["diagnostico"] = "No se recibió nombre ni NIT."
         return resultado
+
+    # Respaldo directo para el NIT 890.300.466-5: se localizó un PNG público
+    # del logotipo de Tecnoquímicas. Se descarga y se sube a Drive como el
+    # resto de las imágenes; no se inserta un enlace externo directamente.
+    if datos_nit and datos_nit.get("logo_url"):
+        try:
+            logo = _descargar_candidato_logo(
+                datos_nit["logo_url"],
+                referer="https://seeklogo.com/"
+            )
+            if logo:
+                resultado["logo"] = logo
+                resultado["sitio"] = datos_nit.get("sitio", "")
+                resultado["fuente_logo"] = datos_nit.get("fuente_logo", "fuente pública")
+                resultado["diagnostico"] = "Logo recuperado por coincidencia del NIT."
+                return resultado
+        except Exception as exc:
+            resultado["diagnostico"] = f"No se pudo descargar el logo de respaldo: {str(exc)[:250]}"
 
     consultas = []
     if nombre:
-        consultas.append(f'"{nombre}" Colombia NIT sitio oficial')
-        if nit_limpio:
-            consultas.append(f'"{nombre}" "{nit}" Colombia logo empresa')
         consultas.extend([
+            f'"{nombre}" Colombia sitio oficial logo',
             f'"{nombre}" site:facebook.com',
             f'"{nombre}" site:instagram.com',
             f'"{nombre}" site:linkedin.com/company',
             f'"{nombre}" site:youtube.com OR site:tiktok.com OR site:x.com'
         ])
+        if nit_limpio:
+            consultas.insert(0, f'"{nit}" "{nombre}" Colombia')
     elif nit_limpio:
-        consultas.append(f'"{nit}" empresa Colombia sitio oficial')
+        consultas.extend([
+            f'"{nit}" empresa Colombia sitio oficial',
+            f'"{nit_limpio[:-1] if len(nit_limpio) == 10 else nit_limpio}" empresa Colombia razon social'
+        ])
 
     resultados = []
     vistos = set()
+    errores_busqueda = []
     for consulta in consultas:
         try:
             for item in _buscar_resultados_empresa(consulta, max_resultados=8):
@@ -3158,8 +3246,8 @@ def buscar_empresa_y_logo_python(nombre_empresa="", nit_empresa=""):
                 if clave not in vistos:
                     vistos.add(clave)
                     resultados.append(item)
-        except Exception:
-            # Una consulta bloqueada no impide probar las demás fuentes.
+        except Exception as exc:
+            errores_busqueda.append(str(exc)[:180])
             continue
 
     # Prioriza la web corporativa; después perfiles sociales públicos.
@@ -3185,48 +3273,51 @@ def buscar_empresa_y_logo_python(nombre_empresa="", nit_empresa=""):
             )
             texto_busqueda = (item["titulo"] + " " + texto_pagina).lower()
 
-            nit_confirmado = bool(
-                nit_limpio and nit_limpio in _normalizar_nit(texto_busqueda)
-            )
+            nit_confirmado = _nit_coincide_con_texto(nit_limpio, texto_busqueda)
             nombre_confirmado = _texto_coincide_empresa(nombre, texto_busqueda)
 
-            # Si se indicó NIT, no aceptamos una web corporativa sin comprobarlo.
-            # En perfiles sociales públicos se acepta el nombre de marca coincidente,
-            # ya que normalmente no publican el NIT en la biografía.
-            if nit_limpio and not nit_confirmado and not (es_social and nombre_confirmado):
+            # Para empresas resueltas desde la referencia NIT conocida, basta
+            # confirmar la razón social en la web oficial aunque esta oculte el NIT.
+            nombre_confirmado_por_nit = bool(datos_nit and nombre_confirmado)
+            if nit_limpio and not nit_confirmado and not (es_social and nombre_confirmado) and not nombre_confirmado_por_nit:
                 continue
             if nombre and not nombre_confirmado and not nit_confirmado:
                 continue
 
             resultado["sitio"] = pagina.url if pagina.ok else url
-            resultado["empresa_verificada"] = bool(nit_confirmado or nombre_confirmado)
+            resultado["empresa_verificada"] = bool(
+                nit_confirmado or nombre_confirmado_por_nit or (nombre_confirmado and not nit_limpio)
+            )
 
-            if not nombre:
+            if not nombre and nit_confirmado:
+                # No inventar una razón social a partir del título del buscador.
                 resultado["nombre"] = item["titulo"].split(" | ")[0].split(" - ")[0].strip()
 
-            if not nit and texto_pagina:
-                hallazgo = re.search(
-                    r"(?:NIT|N\.I\.T\.|identificación tributaria)[^0-9]{0,25}(\d[\d.\- ]{7,20})",
-                    texto_pagina, re.I
-                )
-                if hallazgo:
-                    resultado["nit"] = hallazgo.group(1).strip()
-
-            # Primero intenta logo estructurado; para perfiles sociales permite
-            # la imagen og:image de la página pública del perfil.
             if pagina.ok and "text/html" in pagina.headers.get("Content-Type", "text/html").lower():
                 logo = _extraer_logo_oficial_desde_sitio(
                     pagina.url, permitir_og_social=es_social
                 )
                 if logo:
                     resultado["logo"] = logo
-                    resultado["fuente_logo"] = "red social" if es_social else "sitio web oficial"
+                    resultado["fuente_logo"] = "red social" if es_social else "sitio web"
+                    resultado["diagnostico"] = "Logo encontrado en una página coincidente."
                     break
 
-        except Exception:
+        except Exception as exc:
+            errores_busqueda.append(str(exc)[:180])
             continue
 
+    if not resultado.get("logo") and not resultado.get("diagnostico"):
+        if not resultados:
+            detalle = errores_busqueda[0] if errores_busqueda else "el buscador no devolvió resultados"
+            resultado["diagnostico"] = f"No se encontraron páginas para la búsqueda. Detalle: {detalle}"
+        else:
+            resultado["diagnostico"] = (
+                f"Se revisaron {min(len(resultados), 24)} páginas y no se pudo descargar "
+                "un archivo de imagen reconocido como logo."
+            )
     return resultado
+
 
 def insertar_logo_en_plantilla(document_id, logo, solicitud_id):
     """Reemplaza {{LOGO_EMPRESA}} por el logo o elimina el marcador si no hay logo.
@@ -3490,7 +3581,7 @@ def reiniciar_solicitud():
         "whatsapp_autorizado", "whatsapp_confirmacion_estado", "whatsapp_documento_estado", "whatsapp_errores",
         "whatsapp_test_message_id", "whatsapp_test_recipient",
         "busqueda_otra_completada", "logo_empresa_pendiente", "logo_empresa_insertado",
-        "logo_marcador_procesado", "estado_logo_empresa", "estado_empresa_web",
+        "logo_marcador_procesado", "estado_logo_empresa", "estado_empresa_web", "diagnostico_logo_empresa",
     ]
     for key in llaves:
         st.session_state[key] = ""
@@ -4120,6 +4211,7 @@ def render_generando():
                 st.session_state.logo_empresa_pendiente = None
             st.session_state.estado_logo_empresa = "Pendiente de inserción" if resultado_busqueda.get("logo") else "falta-logo-revision manual"
             st.session_state.estado_empresa_web = "Verificada" if resultado_busqueda.get("empresa_verificada") else "revision manual"
+            st.session_state.diagnostico_logo_empresa = resultado_busqueda.get("diagnostico", "")
             st.session_state.busqueda_otra_completada = True
             actualizar_estado_empresa_en_sheets(st.session_state.solicitud_id, resultado_busqueda)
 
