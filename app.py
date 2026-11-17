@@ -3328,28 +3328,48 @@ def insertar_logo_en_plantilla(document_id, logo, solicitud_id):
         return False
 
 
+def _forzar_columnas_texto(df, nombres):
+    """Evita que columnas vacías de Sheets queden como float64 en pandas."""
+    for nombre_columna in nombres:
+        if nombre_columna not in df.columns:
+            df[nombre_columna] = pd.Series(index=df.index, dtype="object")
+        else:
+            # object acepta tanto cadenas vacías como texto en columnas que
+            # pandas pudo inferir como float64 porque todas sus celdas estaban vacías.
+            df[nombre_columna] = df[nombre_columna].astype("object")
+    return df
+
+
 def actualizar_estado_empresa_en_sheets(solicitud_id, resultado):
     """Actualiza únicamente la fila de la solicitud con el resultado de la búsqueda."""
     try:
         df = conn.read(worksheet="Solicitudes", ttl=0).dropna(how="all")
         if "solicitud_id" not in df.columns:
             return
-        if "estado_logo" not in df.columns:
-            df["estado_logo"] = ""
-        if "logo_url" not in df.columns:
-            df["logo_url"] = ""
-        if "estado_empresa" not in df.columns:
-            df["estado_empresa"] = ""
+
+        # En Sheets, una columna sin valores puede llegar desde pandas como
+        # float64. Convertimos los campos textuales antes de escribir cadenas.
+        df = _forzar_columnas_texto(
+            df, ("empresa", "nit", "estado_logo", "logo_url", "estado_empresa")
+        )
+
         fila = df.index[df["solicitud_id"].astype(str) == str(solicitud_id)]
         if len(fila):
             i = fila[0]
             if resultado.get("nombre"):
-                df.at[i, "empresa"] = resultado["nombre"].upper()
+                df.at[i, "empresa"] = str(resultado["nombre"]).upper()
             if resultado.get("nit"):
-                df.at[i, "nit"] = resultado["nit"]
-            df.at[i, "estado_logo"] = "Pendiente de inserción" if resultado.get("logo") else "falta-logo-revision manual"
-            df.at[i, "logo_url"] = resultado.get("logo", {}).get("url", "") if resultado.get("logo") else ""
-            df.at[i, "estado_empresa"] = "Coincidencia web; validar" if resultado.get("empresa_verificada") else "revision manual"
+                df.at[i, "nit"] = str(resultado["nit"])
+            df.at[i, "estado_logo"] = (
+                "Pendiente de inserción" if resultado.get("logo")
+                else "falta-logo-revision manual"
+            )
+            logo = resultado.get("logo") or {}
+            df.at[i, "logo_url"] = str(logo.get("url") or "")
+            df.at[i, "estado_empresa"] = (
+                "Coincidencia web; validar" if resultado.get("empresa_verificada")
+                else "revision manual"
+            )
             conn.update(worksheet="Solicitudes", data=df)
     except Exception as exc:
         # Un problema de actualización de metadatos no debe detener la carta.
@@ -4144,8 +4164,7 @@ def render_generando():
         try:
             df_estado = conn.read(worksheet="Solicitudes", ttl=0).dropna(how="all")
             if "solicitud_id" in df_estado.columns:
-                if "estado_logo" not in df_estado.columns:
-                    df_estado["estado_logo"] = ""
+                df_estado = _forzar_columnas_texto(df_estado, ("estado_logo",))
                 filas_estado = df_estado.index[df_estado["solicitud_id"].astype(str) == str(st.session_state.solicitud_id)]
                 if len(filas_estado):
                     df_estado.at[filas_estado[0], "estado_logo"] = st.session_state.estado_logo_empresa
