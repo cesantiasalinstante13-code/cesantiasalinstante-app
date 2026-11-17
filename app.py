@@ -3128,59 +3128,150 @@ def _dominio_es_red_social(url):
 
 
 def _buscar_resultados_empresa(query, max_resultados=12):
-    """Busca páginas oficiales y perfiles públicos en varias fuentes web."""
-    url = "https://html.duckduckgo.com/html/"
-    respuesta = requests.get(
-        url,
-        params={"q": query},
-        headers={
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                          "AppleWebKit/537.36 Chrome/120 Safari/537.36"
-        },
-        timeout=(4, 8)
-    )
-    respuesta.raise_for_status()
-
-    # Leer atributos sin depender del orden en que el buscador escriba class y href.
+    """Busca páginas empresariales con DuckDuckGo y Bing como respaldo."""
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                      "AppleWebKit/537.36 Chrome/120 Safari/537.36"
+    }
     resultados = []
     vistos = set()
-    snippets = re.findall(
-        r"""<(?:a|div|td)\b[^>]*class=["'][^"']*result__snippet[^"']*["'][^>]*>(.*?)</(?:a|div|td)>""",
-        respuesta.text, re.I | re.S
+
+    # Primer proveedor: DuckDuckGo HTML.
+    try:
+        respuesta = requests.get(
+            "https://html.duckduckgo.com/html/",
+            params={"q": query}, headers=headers, timeout=(4, 10)
+        )
+        respuesta.raise_for_status()
+        html_busqueda = respuesta.text
+        # Procesar cada enlace result__a sin depender del orden de sus atributos.
+        for atributos, titulo_html in re.findall(r"<a\b([^>]*)>(.*?)</a>", html_busqueda, re.I | re.S):
+            attrs = {}
+            for clave, comilla, valor in re.findall(r"([\w:-]+)\s*=\s*([\"'])(.*?)\2", atributos, re.I | re.S):
+                attrs[clave.lower()] = html.unescape(valor)
+            if "result__a" not in attrs.get("class", "").lower():
+                continue
+            href = attrs.get("href", "").strip()
+            if "uddg=" in href:
+                try:
+                    href = parse_qs(urlparse(href).query).get("uddg", [href])[0]
+                except Exception:
+                    pass
+            href = urljoin("https://html.duckduckgo.com", href)
+            dominio = urlparse(href).netloc.lower()
+            if (
+                not href.startswith(("http://", "https://"))
+                or not dominio
+                or any(x in dominio for x in (
+                    "duckduckgo.com", "google.com", "bing.com", "yahoo.com",
+                    "wikipedia.org"
+                ))
+            ):
+                continue
+            titulo = _texto_html_limpio(titulo_html)
+            clave_url = href.split("?")[0].rstrip("/").lower()
+            if titulo and clave_url not in vistos:
+                vistos.add(clave_url)
+                resultados.append({"url": href, "titulo": titulo, "snippet": ""})
+            if len(resultados) >= max_resultados:
+                break
+    except Exception:
+        # El buscador de respaldo se intenta incluso si DuckDuckGo bloquea la petición.
+        pass
+
+    # Segundo proveedor: Bing. Reduce la dependencia de un solo buscador.
+    if len(resultados) < max_resultados or not any(item.get("snippet") for item in resultados):
+        try:
+            respuesta = requests.get(
+                "https://www.bing.com/search",
+                params={"q": query, "count": max(10, max_resultados)},
+                headers=headers, timeout=(4, 10)
+            )
+            respuesta.raise_for_status()
+            bloques = re.findall(
+                r"<li\b[^>]*class=[\"'][^\"']*\bb_algo\b[^\"']*[\"'][^>]*>(.*?)(?=<li\b|</ol>|$)",
+                respuesta.text, re.I | re.S
+            )
+            for bloque in bloques:
+                enlace = re.search(r"<h2\b[^>]*>\s*<a\b([^>]*)>(.*?)</a>", bloque, re.I | re.S)
+                if not enlace:
+                    continue
+                attrs = {}
+                for clave, comilla, valor in re.findall(r"([\w:-]+)\s*=\s*([\"'])(.*?)\2", enlace.group(1), re.I | re.S):
+                    attrs[clave.lower()] = html.unescape(valor)
+                href = attrs.get("href", "").strip()
+                dominio = urlparse(href).netloc.lower()
+                if not href.startswith(("http://", "https://")) or not dominio:
+                    continue
+                titulo = _texto_html_limpio(enlace.group(2))
+                match_snippet = re.search(r"<p\b[^>]*>(.*?)</p>", bloque, re.I | re.S)
+                snippet = _texto_html_limpio(match_snippet.group(1)) if match_snippet else ""
+                clave_url = href.split("?")[0].rstrip("/").lower()
+                if titulo and clave_url not in vistos:
+                    # Conserva resultados de ambos motores: los resúmenes de Bing
+                    # pueden aportar el NIT/razón social que DDG no entrega.
+                    limite_combinado = max(1, int(max_resultados)) * 2
+                    if len(resultados) < limite_combinado:
+                        vistos.add(clave_url)
+                        resultados.append({"url": href, "titulo": titulo, "snippet": snippet})
+                elif snippet:
+                    # Si DuckDuckGo ya añadió esta URL sin resumen, conserva el
+                    # resumen de Bing porque puede contener la razón social y el NIT.
+                    for previo in resultados:
+                        clave_previa = previo.get("url", "").split("?")[0].rstrip("/").lower()
+                        if clave_previa == clave_url:
+                            if not previo.get("snippet"):
+                                previo["snippet"] = snippet
+                            if titulo and len(titulo) > len(previo.get("titulo", "")):
+                                previo["titulo"] = titulo
+                            break
+        except Exception:
+            pass
+
+    return resultados[:max(1, int(max_resultados)) * 2]
+
+
+def _nombre_candidato_desde_resultado(titulo="", snippet=""):
+    """Extrae una razón social probable del título o resumen de un resultado web."""
+    textos = [_texto_html_limpio(titulo), _texto_html_limpio(snippet)]
+    patrones_explicitos = (
+        r"(?:raz[oó]n\s+social|nombre\s+(?:legal\s+)?de\s+la\s+empresa)\s*[:：-]?\s*([^|;\n]{3,150})",
+        r"(?:raz[oó]n\s+social)\s+(?:es|:)?\s*([^|;\n]{3,150})",
     )
-    indice_snippet = 0
-    for atributos, titulo_html in re.findall(r"""<a\b([^>]*)>(.*?)</a>""", respuesta.text, re.I | re.S):
-        attrs = {}
-        for clave, comilla, valor in re.findall(r"""([\w:-]+)\s*=\s*(["'])(.*?)\2""", atributos, re.I | re.S):
-            attrs[clave.lower()] = html.unescape(valor)
-        if "result__a" not in attrs.get("class", "").lower():
+    for texto in textos:
+        if not texto:
             continue
-        href = attrs.get("href", "").strip()
-        if "uddg=" in href:
-            try:
-                href = parse_qs(urlparse(href).query).get("uddg", [href])[0]
-            except Exception:
-                pass
-        dominio = urlparse(href).netloc.lower()
-        if (
-            not href.startswith(("http://", "https://"))
-            or not dominio
-            or any(x in dominio for x in (
-                "duckduckgo.com", "google.com", "bing.com", "yahoo.com",
-                "wikipedia.org", "rues.org.co", "einforma.co"
-            ))
-        ):
-            continue
-        titulo = _texto_html_limpio(titulo_html)
-        snippet = _texto_html_limpio(snippets[indice_snippet]) if indice_snippet < len(snippets) else ""
-        indice_snippet += 1
-        clave = href.split("?")[0].rstrip("/").lower()
-        if titulo and clave not in vistos:
-            vistos.add(clave)
-            resultados.append({"url": href, "titulo": titulo, "snippet": snippet})
-        if len(resultados) >= max_resultados:
-            break
-    return resultados
+        for patron in patrones_explicitos:
+            match = re.search(patron, texto, re.I)
+            if match:
+                candidato = match.group(1).strip(" .,:;-–—")
+                candidato = re.split(
+                    r"\s+(?:NIT|N\.\s*I\.\s*T\.?|identificaci[oó]n tributaria|domicilio|actividad|tel[eé]fono)\b",
+                    candidato, maxsplit=1, flags=re.I
+                )[0].strip(" .,:;-–—")
+                if len(candidato) >= 3:
+                    return candidato[:180]
+
+    if textos[0]:
+        candidato = textos[0]
+        # Quitar los sufijos habituales de los resultados de directorios y buscadores.
+        candidato = re.split(
+            r"\s+(?:[-|–—]\s*)?(?:datos?\s+de\s+contacto|datos?\s+generales|informaci[oó]n\s+comercial|directorio\s+de\s+empresas|ranking\s+de\s+empresas|consulta\s+de\s+RUT)\b",
+            candidato, maxsplit=1, flags=re.I
+        )[0]
+        candidato = re.split(r"\s+[|–—]\s+", candidato, maxsplit=1)[0]
+        candidato = re.sub(r"^\s*(?:NIT|RUT)\s*[:#-]?\s*[0-9.\-]+\s*[-:|]?\s*", "", candidato, flags=re.I)
+        candidato = re.sub(r"^\s*[0-9]{9,10}\s*[-:|]?\s*", "", candidato)
+        candidato = re.sub(r"^\s*empresa\s*[:#-]?\s*", "", candidato, flags=re.I)
+        candidato = re.sub(r"\s+NIT\s+[0-9.\-]+.*$", "", candidato, flags=re.I).strip(" .,:;-–—")
+        palabras_ruido = {
+            "inicio", "home", "contacto", "noticias", "ministerio", "gobierno",
+            "consulta", "resultado", "resultados", "registro", "documento", "pdf"
+        }
+        tokens = _normalizar_nombre_empresa(candidato).split()
+        if len(candidato) >= 3 and tokens and tokens[0] not in palabras_ruido:
+            return candidato[:180]
+    return ""
 
 
 def _descargar_candidato_logo(candidato, referer=""):
@@ -3326,7 +3417,7 @@ def _extraer_logo_oficial_desde_sitio(url_sitio, permitir_og_social=False):
 
 
 def buscar_empresa_y_logo_python(nombre_empresa="", nit_empresa=""):
-    """Busca cualquier empresa a partir de su nombre, NIT o ambos."""
+    """Busca cualquier empresa por nombre, NIT o ambos; extrae nombre de páginas y snippets."""
     nombre_ingresado = str(nombre_empresa or "").strip()
     nit_ingresado = str(nit_empresa or "").strip()
     nit_limpio = _normalizar_nit(nit_ingresado)
@@ -3354,11 +3445,12 @@ def buscar_empresa_y_logo_python(nombre_empresa="", nit_empresa=""):
         ])
     if nit_limpio:
         nit_base = _clave_nit(nit_ingresado)
-        consultas.insert(0, f'"{nit_ingresado}" empresa Colombia NIT')
+        consultas.insert(0, f'"{nit_ingresado}" empresa Colombia razón social')
         if nit_base and nit_base != nit_limpio:
-            consultas.insert(1, f'"{nit_base}" empresa Colombia razón social')
+            consultas.insert(1, f'"{nit_limpio}" empresa Colombia razón social')
+            consultas.insert(2, f'"{nit_base}" empresa Colombia razón social')
         elif nit_base:
-            consultas.insert(1, f'"{nit_base}" Colombia empresa')
+            consultas.insert(1, f'"{nit_base}" Colombia empresa razón social')
         if nombre_ingresado:
             consultas.insert(0, f'"{nombre_ingresado}" "{nit_ingresado}" Colombia')
 
@@ -3367,7 +3459,7 @@ def buscar_empresa_y_logo_python(nombre_empresa="", nit_empresa=""):
     errores = []
     for consulta in consultas:
         try:
-            for item in _buscar_resultados_empresa(consulta, max_resultados=10):
+            for item in _buscar_resultados_empresa(consulta, max_resultados=12):
                 clave = item["url"].split("?")[0].rstrip("/").lower()
                 if clave not in vistos:
                     vistos.add(clave)
@@ -3375,12 +3467,23 @@ def buscar_empresa_y_logo_python(nombre_empresa="", nit_empresa=""):
         except Exception as exc:
             errores.append(str(exc)[:200])
 
-    # Las webs corporativas se prueban antes que redes; las redes quedan como respaldo.
     resultados.sort(key=lambda item: 1 if _dominio_es_red_social(item.get("url", "")) else 0)
+    nombre_candidato_validado = ""
 
-    for item in resultados[:30]:
+    for item in resultados[:40]:
         url = item.get("url", "")
         es_social = _dominio_es_red_social(url)
+        titulo = item.get("titulo", "")
+        snippet = item.get("snippet", "")
+        texto_resultado = " ".join((titulo, snippet))
+        nit_confirmado_resultado = bool(nit_limpio and _nit_coincide_con_texto(nit_ingresado, texto_resultado))
+        nombre_confirmado_resultado = bool(nombre_ingresado and _texto_coincide_empresa(nombre_ingresado, texto_resultado))
+        candidato_resultado = _nombre_candidato_desde_resultado(titulo, snippet)
+
+        html_pagina = ""
+        pagina_url = url
+        texto_pagina = ""
+        pagina_ok = False
         try:
             pagina = requests.get(
                 url,
@@ -3391,55 +3494,85 @@ def buscar_empresa_y_logo_python(nombre_empresa="", nit_empresa=""):
                 timeout=(4, 8),
                 allow_redirects=True
             )
-            if not pagina.ok:
-                continue
-            html_pagina = pagina.text[:1_500_000] if "text/html" in pagina.headers.get("Content-Type", "text/html").lower() else ""
-            texto_pagina = _texto_html_limpio(html_pagina)
-            texto_busqueda = " ".join((item.get("titulo", ""), item.get("snippet", ""), texto_pagina))
-            nit_confirmado = _nit_coincide_con_texto(nit_ingresado, texto_busqueda) if nit_limpio else False
-            nombre_confirmado = _texto_coincide_empresa(nombre_ingresado, texto_busqueda) if nombre_ingresado else False
-
-            # Si se proporcionan ambos identificadores, deben coincidir en la MISMA
-            # página. No basta con que la página confirme solo el NIT o solo el nombre.
-            if nit_limpio and nombre_ingresado:
-                if not (nit_confirmado and nombre_confirmado):
-                    continue
-            elif nit_limpio and not nit_confirmado:
-                continue
-            elif nombre_ingresado and not nombre_confirmado:
-                continue
-
-            nombre_extraido = _extraer_nombre_de_pagina(html_pagina, item.get("titulo", ""), pagina.url)
-            nit_extraido = _extraer_nit_de_pagina(texto_pagina)
-            if not resultado["nombre"] and nombre_extraido:
-                resultado["nombre"] = nombre_extraido
-            if not resultado["nit"] and nit_extraido:
-                resultado["nit"] = nit_extraido
-            resultado["sitio"] = pagina.url
-            resultado["empresa_verificada"] = (
-                bool(nit_confirmado and nombre_confirmado)
-                if nit_limpio and nombre_ingresado
-                else bool(nit_confirmado or nombre_confirmado)
-            )
-
-            if html_pagina:
-                logo = _extraer_logo_oficial_desde_sitio(pagina.url, permitir_og_social=es_social)
-                if logo:
-                    resultado["logo"] = logo
-                    resultado["fuente_logo"] = "red social" if es_social else "sitio web"
-                    resultado["diagnostico"] = "Logo recuperado desde una página que coincide con la empresa."
-                    break
+            pagina_ok = bool(pagina.ok)
+            pagina_url = pagina.url or url
+            if pagina_ok and "text/html" in pagina.headers.get("Content-Type", "text/html").lower():
+                html_pagina = pagina.text[:1_500_000]
+                texto_pagina = _texto_html_limpio(html_pagina)
         except Exception as exc:
             errores.append(str(exc)[:200])
+
+        texto_busqueda = " ".join((titulo, snippet, texto_pagina))
+        nit_confirmado_pagina = bool(nit_limpio and _nit_coincide_con_texto(nit_ingresado, texto_pagina))
+        nit_confirmado = nit_confirmado_resultado or nit_confirmado_pagina
+        nombre_confirmado = nombre_confirmado_resultado or (
+            bool(nombre_ingresado and _texto_coincide_empresa(nombre_ingresado, texto_pagina))
+        )
+
+        # Nombre + NIT deben quedar respaldados en la misma evidencia, no mezclar entidades.
+        if nit_limpio and nombre_ingresado:
+            if not (nit_confirmado and nombre_confirmado):
+                continue
+        elif nit_limpio and not nit_confirmado:
             continue
+        elif nombre_ingresado and not nombre_confirmado:
+            continue
+
+        nombre_extraido = ""
+        if html_pagina:
+            nombre_extraido = _extraer_nombre_de_pagina(html_pagina, titulo, pagina_url)
+        # Para una búsqueda por NIT únicamente, el título/resumen de un resultado
+        # que también contiene el NIT es una fuente útil cuando la ficha web bloquea bots.
+        if not nombre_ingresado and nit_confirmado:
+            nombre_extraido = candidato_resultado or nombre_extraido
+        elif not nombre_extraido:
+            nombre_extraido = candidato_resultado
+
+        # Evita usar el dominio como razón social si no hay un nombre identificable.
+        host_corto = urlparse(pagina_url).netloc.lower().removeprefix("www.").split(".")[0]
+        if nombre_extraido and _normalizar_nombre_empresa(nombre_extraido) == _normalizar_nombre_empresa(host_corto.replace("-", " ")):
+            nombre_extraido = ""
+
+        if nombre_extraido and not resultado.get("nombre"):
+            resultado["nombre"] = nombre_extraido
+            nombre_candidato_validado = nombre_extraido
+        nit_extraido = _extraer_nit_de_pagina(texto_pagina) if texto_pagina else ""
+        if not resultado.get("nit") and nit_extraido:
+            resultado["nit"] = nit_extraido
+        if not resultado.get("nit") and nit_confirmado:
+            resultado["nit"] = nit_ingresado
+
+        if not resultado.get("sitio") and (nit_confirmado or nombre_confirmado):
+            resultado["sitio"] = pagina_url
+            resultado["empresa_verificada"] = True
+
+        if pagina_ok and html_pagina:
+            try:
+                logo = _extraer_logo_oficial_desde_sitio(pagina_url, permitir_og_social=es_social)
+            except Exception as exc:
+                errores.append(str(exc)[:200])
+                logo = None
+            if logo:
+                resultado["logo"] = logo
+                resultado["fuente_logo"] = "red social" if es_social else "sitio web"
+                resultado["diagnostico"] = "Logo recuperado desde una página que coincide con la empresa."
+                break
+
+    if not resultado.get("nombre") and nombre_candidato_validado:
+        resultado["nombre"] = nombre_candidato_validado
 
     if not resultado.get("sitio"):
         resultado["diagnostico"] = (
             "No se pudo confirmar una página pública para la empresa. "
             + (f"Detalle de búsqueda: {errores[0]}" if errores else "Comprueba el nombre o el NIT.")
         )
+    elif not resultado.get("nombre"):
+        resultado["diagnostico"] = (
+            "Se encontró evidencia del NIT, pero los resultados no publican una razón social legible. "
+            "Prueba de nuevo más tarde o escribe el nombre legal para completar el registro."
+        )
     elif not resultado.get("logo") and not resultado.get("diagnostico"):
-        resultado["diagnostico"] = "Se identificó una página coincidente, pero no se pudo descargar un logo público."
+        resultado["diagnostico"] = "Se identificó la empresa, pero no se pudo descargar un logo público."
     return resultado
 
 
@@ -3842,10 +3975,15 @@ def preparar_empresa_nueva_y_template(nombre_ingresado="", nit_ingresado=""):
     nombre_final = nombre_guardado or _celda_texto(resultado.get("nombre")) or nombre_original
     nit_final = nit_guardado or _celda_texto(resultado.get("nit")) or nit_original
     if not nombre_final:
-        raise ValueError(
+        detalle = _celda_texto(resultado.get("diagnostico", ""))
+        mensaje = (
             "No se pudo identificar la razón social a partir del NIT. "
-            "Escribe también el nombre de la empresa para crear su plantilla."
+            "La búsqueda automática no encontró una fuente pública legible con el nombre."
         )
+        if detalle:
+            mensaje += " Detalle: " + detalle
+        mensaje += " Puedes intentar de nuevo más tarde o escribir también el nombre legal."
+        raise ValueError(mensaje)
 
     # Si el registro ya existe y tiene una plantilla, se actualiza esa misma.
     # Si existe pero no tiene Doc_ID, se crea una copia desde la plantilla universal.
