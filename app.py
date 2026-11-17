@@ -7,6 +7,7 @@ import base64
 import mimetypes
 import html
 import re
+import unicodedata
 import hmac
 import hashlib
 import secrets
@@ -1878,7 +1879,7 @@ for key in [
     'doc_id_copia', 'url_copia', 'solicitud_id', 'documento_rellenado',
     'pdf_id', 'pdf_url', 'pdf_generado', 'whatsapp_autorizado',
     'whatsapp_confirmacion_estado', 'whatsapp_documento_estado',
-    'busqueda_otra_completada', 'logo_empresa_insertado', 'logo_marcador_procesado', 'estado_logo_empresa', 'estado_empresa_web', 'diagnostico_logo_empresa'
+    'busqueda_otra_completada', 'logo_empresa_insertado', 'logo_marcador_procesado', 'estado_logo_empresa', 'estado_empresa_web', 'diagnostico_logo_empresa', 'logo_empresa_en_template'
 ]:
     if key not in st.session_state:
         st.session_state[key] = ""
@@ -2742,6 +2743,81 @@ def copiar_plantilla(doc_id, solicitud_id, nombre_persona):
     ) from ultimo_error
 
 
+def obtener_id_carpeta_plantillas_empresas():
+    """Obtiene o crea la carpeta de Drive donde se guardan las plantillas por empresa."""
+    servicio = _crear_servicio_drive_nuevo()
+    nombre_carpeta = "Plantillas_Empresas_Cesantias"
+    nombre_q = nombre_carpeta.replace("\\", "\\\\").replace("'", "\\'")
+    consulta = (
+        f"name = '{nombre_q}' and mimeType = 'application/vnd.google-apps.folder' "
+        "and trashed = false"
+    )
+    existentes = servicio.files().list(
+        q=consulta,
+        pageSize=20,
+        orderBy="createdTime",
+        supportsAllDrives=True,
+        includeItemsFromAllDrives=True,
+        fields="files(id,name,mimeType,parents)"
+    ).execute(num_retries=2).get("files", [])
+    if existentes:
+        return existentes[0]["id"]
+
+    creada = servicio.files().create(
+        body={"name": nombre_carpeta, "mimeType": "application/vnd.google-apps.folder"},
+        fields="id,name,mimeType"
+    ).execute(num_retries=2)
+    return creada["id"]
+
+
+def _clave_template_empresa(nombre, nit):
+    identidad = _clave_nit(nit) or _normalizar_nombre_empresa(nombre)
+    resumen = hashlib.sha256(identidad.encode("utf-8")).hexdigest()[:10]
+    slug = re.sub(r"[^A-Za-z0-9_-]+", "_", str(nombre or "Empresa")).strip("_")[:55]
+    return f"Plantilla_Empresa_{slug}_{resumen}"
+
+
+def copiar_template_empresa(doc_id_base, nombre, nit):
+    """Crea una plantilla específica de empresa desde la plantilla universal, sin duplicarla."""
+    doc_id_base = str(doc_id_base or "").strip()
+    if not doc_id_base:
+        raise ValueError("No existe el Doc_ID de la plantilla universal en la fila 'Otra' de Empresas.")
+
+    servicio = _crear_servicio_drive_nuevo()
+    folder_id = obtener_id_carpeta_plantillas_empresas()
+    # Busca primero por la identidad actual (NIT si existe) y después por nombre.
+    # Esto permite recuperar una copia previa si Drive la creó pero Sheets falló,
+    # o si el NIT se completó en una solicitud posterior.
+    nombres_archivo = list(dict.fromkeys([
+        _clave_template_empresa(nombre, nit),
+        _clave_template_empresa(nombre, "")
+    ]))
+    nombre_archivo_nuevo = nombres_archivo[0]
+    for nombre_archivo in nombres_archivo:
+        nombre_q = nombre_archivo.replace("\\", "\\\\").replace("'", "\\'")
+        consulta = (
+            f"name = '{nombre_q}' and '{folder_id}' in parents and trashed = false"
+        )
+        encontrados = servicio.files().list(
+            q=consulta,
+            pageSize=10,
+            orderBy="createdTime desc",
+            supportsAllDrives=True,
+            includeItemsFromAllDrives=True,
+            fields="files(id,name,mimeType,webViewLink,parents)"
+        ).execute(num_retries=2).get("files", [])
+        if encontrados:
+            return encontrados[0], folder_id, True
+
+    copia = servicio.files().copy(
+        fileId=doc_id_base,
+        body={"name": nombre_archivo_nuevo, "parents": [folder_id]},
+        supportsAllDrives=True,
+        fields="id,name,mimeType,webViewLink,parents"
+    ).execute(num_retries=2)
+    return copia, folder_id, False
+
+
 def rellenar_plantilla_google_docs(document_id, valores):
     """Sustituye marcadores en la copia; reintenta fallos transitorios de conexión."""
     solicitudes = [
@@ -2910,47 +2986,134 @@ def _normalizar_nit(valor):
     return re.sub(r"\D", "", str(valor or ""))
 
 
-# Algunas fuentes públicas colombianas publican el NIT base sin el dígito
-# de verificación. Se guarda esta referencia verificada para evitar perder
-# empresas cuando el usuario introduce únicamente el NIT.
-_EMPRESAS_NIT_CONOCIDAS = {
-    "890300466": {
-        "nombre": "TECNOQUÍMICAS S.A.",
-        "sitio": "https://www.tqconfiable.com/",
-        "logo_url": "https://images.seeklogo.com/logo-png/53/1/tecnoquimicas-logo-png_seeklogo-532899.png",
-        "fuente_logo": "catálogo público de logotipos"
+def _clave_nit(valor):
+    """Devuelve el NIT base: acepta el identificador con o sin dígito de verificación."""
+    digitos = _normalizar_nit(valor)
+    return digitos[:-1] if len(digitos) == 10 else digitos
+
+
+def _normalizar_nombre_empresa(valor):
+    """Normaliza tildes, siglas jurídicas y signos para comparar nombres."""
+    texto = unicodedata.normalize("NFKD", str(valor or ""))
+    texto = "".join(caracter for caracter in texto if not unicodedata.combining(caracter))
+    return re.sub(r"[^a-z0-9]+", " ", texto.lower()).strip()
+
+
+def _clave_nombre_empresa(valor):
+    """Clave estable de razón social; omite conectores y sufijos jurídicos frecuentes."""
+    ignorar = {
+        "sas", "sa", "s", "a", "bic", "ltda", "limitada", "eu", "e.u",
+        "cia", "compania", "sociedad", "anonima", "anónima", "empresa",
+        "de", "del", "la", "el", "los", "las", "y", "e"
     }
-}
-
-
-def _datos_empresa_por_nit(nit):
-    """Resuelve NIT conocidos aceptando el dígito de verificación opcional."""
-    digitos = _normalizar_nit(nit)
-    candidatos = [digitos]
-    if len(digitos) == 10:
-        candidatos.append(digitos[:-1])
-    for candidato in candidatos:
-        if candidato in _EMPRESAS_NIT_CONOCIDAS:
-            return _EMPRESAS_NIT_CONOCIDAS[candidato]
-    return None
-
-
-def _nit_coincide_con_texto(nit, texto):
-    """Compara el NIT completo y, si tiene DV, también el NIT base de 9 dígitos."""
-    digitos_nit = _normalizar_nit(nit)
-    digitos_texto = _normalizar_nit(texto)
-    if not digitos_nit:
-        return False
-    if digitos_nit in digitos_texto:
-        return True
-    if len(digitos_nit) == 10 and digitos_nit[:-1] in digitos_texto:
-        return True
-    return False
+    palabras = [
+        palabra for palabra in _normalizar_nombre_empresa(valor).split()
+        if palabra not in ignorar and len(palabra) > 1
+    ]
+    return " ".join(palabras)
 
 
 def _texto_html_limpio(valor):
     valor = re.sub(r"<[^>]+>", " ", str(valor or ""))
     return re.sub(r"\s+", " ", html.unescape(valor)).strip()
+
+
+def _nit_coincide_con_texto(nit, texto):
+    """Compara NIT completo o base de 9 dígitos cuando la fuente omite el DV."""
+    clave = _clave_nit(nit)
+    digitos_texto = _normalizar_nit(texto)
+    return bool(clave and clave in digitos_texto)
+
+
+def _texto_coincide_empresa(nombre, texto):
+    """Comprueba coincidencia razonable del nombre, ignorando sufijos societarios."""
+    palabras_ignorar = {
+        "sas", "sa", "s", "a", "bic", "empresa", "colombia", "sociedad",
+        "compania", "cia", "limitada", "ltda", "the", "de", "del", "la", "el",
+        "y", "e", "en", "por", "para"
+    }
+    palabras = [
+        palabra for palabra in _normalizar_nombre_empresa(nombre).split()
+        if len(palabra) >= 3 and palabra not in palabras_ignorar
+    ]
+    texto_normalizado = _normalizar_nombre_empresa(texto)
+    if not palabras:
+        return False
+    encontradas = sum(1 for palabra in set(palabras) if palabra in texto_normalizado)
+    minimo = 1 if len(set(palabras)) == 1 else min(2, len(set(palabras)))
+    return encontradas >= minimo
+
+
+def _extraer_nit_de_pagina(texto):
+    """Extrae un NIT mencionado cerca de las etiquetas habituales en Colombia."""
+    texto_limpio = _texto_html_limpio(texto)
+    patrones = (
+        r"(?:NIT|N\.\s*I\.\s*T\.?|NIT\s+No\.?|identificaci[oó]n tributaria)\s*[:#-]?\s*([0-9][0-9.\-\s]{7,18}[0-9])",
+        r"(?:tax\s*id|tax\s*number)\s*[:#-]?\s*([0-9][0-9.\-\s]{7,18}[0-9])",
+    )
+    for patron in patrones:
+        coincidencia = re.search(patron, texto_limpio, re.I)
+        if coincidencia:
+            valor = re.sub(r"\s+", "", coincidencia.group(1)).strip(".-")
+            digitos = _normalizar_nit(valor)
+            if 9 <= len(digitos) <= 10:
+                return valor
+    return ""
+
+
+def _extraer_nombre_de_pagina(html_pagina, titulo_busqueda="", url=""):
+    """Intenta obtener la razón social desde metadatos y contenido de la página."""
+    contenido = str(html_pagina or "")[:2_000_000]
+    candidatos = []
+
+    for etiqueta in re.findall(r"<meta\b[^>]*>", contenido, re.I):
+        attrs = {}
+        for clave, comilla, valor in re.findall(r"([\w:-]+)\s*=\s*([\"'])(.*?)\2", etiqueta, re.I | re.S):
+            attrs[clave.lower()] = html.unescape(valor)
+        key = (attrs.get("property") or attrs.get("name") or "").lower()
+        if key in ("og:site_name", "application-name") and attrs.get("content"):
+            candidatos.append(attrs["content"])
+
+    for bloque in re.findall(
+        r"<script[^>]+type=[\"']application/ld\+json[\"'][^>]*>(.*?)</script>",
+        contenido, re.I | re.S
+    ):
+        try:
+            datos = json.loads(bloque.strip())
+        except Exception:
+            continue
+        pendientes = datos if isinstance(datos, list) else [datos]
+        while pendientes:
+            elemento = pendientes.pop(0)
+            if isinstance(elemento, dict):
+                tipo = elemento.get("@type", "")
+                tipos = tipo if isinstance(tipo, list) else [tipo]
+                if any(any(t in str(tipo_item) for t in ("Organization", "Corporation", "LocalBusiness")) for tipo_item in tipos):
+                    nombre = elemento.get("name")
+                    if isinstance(nombre, str) and nombre.strip():
+                        candidatos.append(nombre.strip())
+                pendientes.extend(v for v in elemento.values() if isinstance(v, (dict, list)))
+            elif isinstance(elemento, list):
+                pendientes.extend(elemento)
+
+    for patron in (r"<h1\b[^>]*>(.*?)</h1>", r"<title\b[^>]*>(.*?)</title>"):
+        hallazgo = re.search(patron, contenido, re.I | re.S)
+        if hallazgo:
+            candidatos.append(_texto_html_limpio(hallazgo.group(1)))
+
+    if titulo_busqueda:
+        candidatos.append(_texto_html_limpio(titulo_busqueda))
+
+    for candidato in candidatos:
+        candidato = re.split(r"\s+[|–—-]\s+", candidato, maxsplit=1)[0].strip(" -|–—")
+        candidato = re.sub(r"^(inicio|home|p[aá]gina principal)\s*[:|–—-]*\s*", "", candidato, flags=re.I)
+        if len(candidato) >= 3 and not re.fullmatch(r"(?i)(inicio|home|contacto|login|facebook|instagram|linkedin)", candidato):
+            return candidato[:180]
+
+    host = urlparse(url).netloc.lower().removeprefix("www.")
+    if host:
+        return host.split(".")[0].replace("-", " ").title()
+    return ""
 
 
 def _dominio_es_red_social(url):
@@ -2978,21 +3141,26 @@ def _buscar_resultados_empresa(query, max_resultados=12):
     )
     respuesta.raise_for_status()
 
+    # Leer atributos sin depender del orden en que el buscador escriba class y href.
     resultados = []
     vistos = set()
-    patron = re.compile(
-        r'<a[^>]+class=["\'][^"\']*result__a[^"\']*["\'][^>]+href=["\']([^"\']+)["\'][^>]*>(.*?)</a>',
-        re.I | re.S
+    snippets = re.findall(
+        r"""<(?:a|div|td)\b[^>]*class=["'][^"']*result__snippet[^"']*["'][^>]*>(.*?)</(?:a|div|td)>""",
+        respuesta.text, re.I | re.S
     )
-
-    for href, titulo_html in patron.findall(respuesta.text):
-        href = html.unescape(href).strip()
+    indice_snippet = 0
+    for atributos, titulo_html in re.findall(r"""<a\b([^>]*)>(.*?)</a>""", respuesta.text, re.I | re.S):
+        attrs = {}
+        for clave, comilla, valor in re.findall(r"""([\w:-]+)\s*=\s*(["'])(.*?)\2""", atributos, re.I | re.S):
+            attrs[clave.lower()] = html.unescape(valor)
+        if "result__a" not in attrs.get("class", "").lower():
+            continue
+        href = attrs.get("href", "").strip()
         if "uddg=" in href:
             try:
                 href = parse_qs(urlparse(href).query).get("uddg", [href])[0]
             except Exception:
                 pass
-
         dominio = urlparse(href).netloc.lower()
         if (
             not href.startswith(("http://", "https://"))
@@ -3003,17 +3171,15 @@ def _buscar_resultados_empresa(query, max_resultados=12):
             ))
         ):
             continue
-
-        # No excluimos Facebook, Instagram, LinkedIn, YouTube, X ni TikTok:
-        # los perfiles públicos son una fuente válida para recuperar el logo.
         titulo = _texto_html_limpio(titulo_html)
+        snippet = _texto_html_limpio(snippets[indice_snippet]) if indice_snippet < len(snippets) else ""
+        indice_snippet += 1
         clave = href.split("?")[0].rstrip("/").lower()
         if titulo and clave not in vistos:
             vistos.add(clave)
-            resultados.append({"url": href, "titulo": titulo})
+            resultados.append({"url": href, "titulo": titulo, "snippet": snippet})
         if len(resultados) >= max_resultados:
             break
-
     return resultados
 
 
@@ -3047,11 +3213,31 @@ def _descargar_candidato_logo(candidato, referer=""):
                 return None
         imagen.close()
 
-        if len(contenido) < 500:
+        if len(contenido) < 100:
+            return None
+
+        datos_imagen = bytes(contenido)
+        # Google Docs acepta PNG/JPEG/GIF para imágenes insertadas. Convertimos
+        # SVG y WebP a PNG cuando las bibliotecas están disponibles.
+        if tipo == "image/svg+xml" or tipo == "image/webp":
+            try:
+                if tipo == "image/svg+xml":
+                    import cairosvg
+                    datos_imagen = cairosvg.svg2png(bytestring=datos_imagen, output_width=1200)
+                else:
+                    from PIL import Image
+                    origen = Image.open(BytesIO(datos_imagen)).convert("RGBA")
+                    salida = BytesIO()
+                    origen.save(salida, format="PNG")
+                    datos_imagen = salida.getvalue()
+                tipo = "image/png"
+            except Exception:
+                return None
+        if tipo not in ("image/png", "image/jpeg", "image/gif"):
             return None
         return {
             "url": imagen.url,
-            "bytes": bytes(contenido),
+            "bytes": datos_imagen,
             "mime": tipo
         }
     except Exception:
@@ -3059,7 +3245,7 @@ def _descargar_candidato_logo(candidato, referer=""):
 
 
 def _extraer_logo_oficial_desde_sitio(url_sitio, permitir_og_social=False):
-    """Extrae Organization.logo/metadatos; en redes admite la foto pública del perfil."""
+    """Extrae logos declarados en metadatos o imágenes HTML asociadas a la marca."""
     respuesta = requests.get(
         url_sitio,
         headers={
@@ -3076,7 +3262,7 @@ def _extraer_logo_oficial_desde_sitio(url_sitio, permitir_og_social=False):
     contenido = respuesta.text[:2_000_000]
     candidatos = []
 
-    # 1) JSON-LD: señal preferida para el logo de la organización.
+    # 1) JSON-LD de Organization/Corporation.
     for bloque in re.findall(
         r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>',
         contenido, re.I | re.S
@@ -3092,67 +3278,45 @@ def _extraer_logo_oficial_desde_sitio(url_sitio, permitir_og_social=False):
                 tipo = elemento.get("@type", "")
                 tipos = tipo if isinstance(tipo, list) else [tipo]
                 logo = elemento.get("logo")
-                if logo and (
-                    not tipos or any(
-                        "Organization" in str(t) or "Corporation" in str(t)
-                        for t in tipos
-                    )
-                ):
+                if logo and (not tipos or any("Organization" in str(t) or "Corporation" in str(t) for t in tipos)):
                     if isinstance(logo, dict):
                         logo = logo.get("url") or logo.get("contentUrl")
                     if isinstance(logo, str):
                         candidatos.append(urljoin(respuesta.url, logo))
-                pendientes.extend(
-                    v for v in elemento.values() if isinstance(v, (dict, list))
-                )
+                pendientes.extend(v for v in elemento.values() if isinstance(v, (dict, list)))
             elif isinstance(elemento, list):
                 pendientes.extend(elemento)
 
-    # 2) Metadatos explícitos de logo y, únicamente en perfiles sociales,
-    #    og:image / twitter:image (normalmente la foto pública del perfil).
+    # 2) Metadatos específicos de logo y Open Graph en redes sociales.
     es_social = permitir_og_social and _dominio_es_red_social(respuesta.url)
     for etiqueta in re.findall(r'<(?:meta|link)\b[^>]*>', contenido, re.I):
         attrs = {}
-        for clave, comilla, valor in re.findall(
-            r'([\w:-]+)\s*=\s*(["\'])(.*?)\2', etiqueta, re.I | re.S
-        ):
+        for clave, comilla, valor in re.findall(r'([\w:-]+)\s*=\s*(["\'])(.*?)\2', etiqueta, re.I | re.S):
             attrs[clave.lower()] = html.unescape(valor)
-
-        clave = (
-            attrs.get("itemprop") or attrs.get("property")
-            or attrs.get("name") or ""
-        ).lower()
+        clave = (attrs.get("itemprop") or attrs.get("property") or attrs.get("name") or "").lower()
         rel = attrs.get("rel", "").lower()
-
         if clave in ("logo", "og:logo", "organization:logo"):
             valor = attrs.get("content") or attrs.get("href")
             if valor:
                 candidatos.append(urljoin(respuesta.url, valor))
         elif "logo" in rel.split() and attrs.get("href"):
             candidatos.append(urljoin(respuesta.url, attrs["href"]))
-        elif es_social and clave in ("og:image", "twitter:image", "twitter:image:src"):
-            valor = attrs.get("content")
-            if valor:
-                candidatos.append(urljoin(respuesta.url, valor))
+        elif es_social and clave in ("og:image", "twitter:image", "twitter:image:src") and attrs.get("content"):
+            candidatos.append(urljoin(respuesta.url, attrs["content"]))
 
-    # 3) Algunas webs no publican JSON-LD ni og:logo; su logotipo está en
-    # una etiqueta <img> cuyo alt, class, id o nombre de archivo dice "logo".
-    for etiqueta in re.findall(r'<img\b[^>]*>', contenido, re.I):
+    # 3) Imágenes HTML cuyo alt, clase, id o nombre de archivo sugiere que son el logo.
+    imagenes_priorizadas = []
+    for etiqueta in re.findall(r"<img\b[^>]*>", contenido, re.I):
         attrs = {}
-        for clave, comilla, valor in re.findall(
-            r'([\w:-]+)\s*=\s*(["\'])(.*?)\2', etiqueta, re.I | re.S
-        ):
+        for clave, comilla, valor in re.findall(r"([\w:-]+)\s*=\s*([\"'])(.*?)\2", etiqueta, re.I | re.S):
             attrs[clave.lower()] = html.unescape(valor)
-        descripcion = " ".join((
-            attrs.get("alt", ""), attrs.get("class", ""),
-            attrs.get("id", ""), attrs.get("title", ""),
-            attrs.get("src", ""), attrs.get("data-src", "")
-        )).lower()
-        if "logo" in descripcion:
-            valor = (attrs.get("src") or attrs.get("data-src")
-                     or attrs.get("data-lazy-src") or attrs.get("data-original"))
-            if valor:
-                candidatos.append(urljoin(respuesta.url, valor))
+        src = attrs.get("src") or attrs.get("data-src") or attrs.get("data-lazy-src")
+        if not src:
+            continue
+        señales = " ".join((attrs.get("alt", ""), attrs.get("class", ""), attrs.get("id", ""), src)).lower()
+        if "logo" in señales or "brand" in señales or "marca" in señales:
+            imagenes_priorizadas.append(urljoin(respuesta.url, src))
+    candidatos.extend(imagenes_priorizadas)
 
     for candidato in dict.fromkeys(candidatos):
         imagen = _descargar_candidato_logo(candidato, referer=respuesta.url)
@@ -3161,100 +3325,61 @@ def _extraer_logo_oficial_desde_sitio(url_sitio, permitir_og_social=False):
     return None
 
 
-def _texto_coincide_empresa(nombre, texto):
-    """Comprueba coincidencia razonable del nombre antes de aceptar una imagen."""
-    nombre = str(nombre or "").lower()
-    texto = str(texto or "").lower()
-    palabras = [
-        p for p in re.findall(r"[a-záéíóúñ0-9]{3,}", nombre)
-        if p not in {"sas", "s.a.s", "empresa", "colombia", "sociedad"}
-    ]
-    if not palabras:
-        return False
-    encontradas = sum(1 for palabra in palabras if palabra in texto)
-    minimo = 1 if len(palabras) == 1 else min(2, len(palabras))
-    return encontradas >= minimo
-
-
 def buscar_empresa_y_logo_python(nombre_empresa="", nit_empresa=""):
-    """
-    Busca la empresa y su logo en web oficial y perfiles públicos de redes.
-    Admite búsquedas por nombre, NIT o ambos. Nunca bloquea la carta si falla.
-    """
-    nombre = str(nombre_empresa or "").strip()
-    nit = str(nit_empresa or "").strip()
-    nit_limpio = _normalizar_nit(nit)
-    datos_nit = _datos_empresa_por_nit(nit)
-
-    # Si el usuario solo proporciona un NIT conocido, resolver primero la
-    # razón social para no depender de que el buscador adivine el nombre.
-    if not nombre and datos_nit:
-        nombre = datos_nit["nombre"]
-
+    """Busca cualquier empresa a partir de su nombre, NIT o ambos."""
+    nombre_ingresado = str(nombre_empresa or "").strip()
+    nit_ingresado = str(nit_empresa or "").strip()
+    nit_limpio = _normalizar_nit(nit_ingresado)
     resultado = {
-        "nombre": nombre, "nit": nit, "logo": None, "sitio": "",
-        "empresa_verificada": bool(datos_nit), "fuente_logo": "",
+        "nombre": nombre_ingresado,
+        "nit": nit_ingresado,
+        "logo": None,
+        "sitio": "",
+        "empresa_verificada": False,
+        "fuente_logo": "",
         "diagnostico": ""
     }
-
-    if not nombre and not nit_limpio:
-        resultado["diagnostico"] = "No se recibió nombre ni NIT."
+    if not nombre_ingresado and not nit_limpio:
+        resultado["diagnostico"] = "Es necesario indicar el nombre o el NIT de la empresa."
         return resultado
 
-    # Respaldo directo para el NIT 890.300.466-5: se localizó un PNG público
-    # del logotipo de Tecnoquímicas. Se descarga y se sube a Drive como el
-    # resto de las imágenes; no se inserta un enlace externo directamente.
-    if datos_nit and datos_nit.get("logo_url"):
-        try:
-            logo = _descargar_candidato_logo(
-                datos_nit["logo_url"],
-                referer="https://seeklogo.com/"
-            )
-            if logo:
-                resultado["logo"] = logo
-                resultado["sitio"] = datos_nit.get("sitio", "")
-                resultado["fuente_logo"] = datos_nit.get("fuente_logo", "fuente pública")
-                resultado["diagnostico"] = "Logo recuperado por coincidencia del NIT."
-                return resultado
-        except Exception as exc:
-            resultado["diagnostico"] = f"No se pudo descargar el logo de respaldo: {str(exc)[:250]}"
-
     consultas = []
-    if nombre:
+    if nombre_ingresado:
         consultas.extend([
-            f'"{nombre}" Colombia sitio oficial logo',
-            f'"{nombre}" site:facebook.com',
-            f'"{nombre}" site:instagram.com',
-            f'"{nombre}" site:linkedin.com/company',
-            f'"{nombre}" site:youtube.com OR site:tiktok.com OR site:x.com'
+            f'"{nombre_ingresado}" Colombia NIT razón social sitio oficial',
+            f'"{nombre_ingresado}" Colombia logo empresa',
+            f'"{nombre_ingresado}" site:facebook.com OR site:instagram.com',
+            f'"{nombre_ingresado}" site:linkedin.com/company',
+            f'"{nombre_ingresado}" site:youtube.com OR site:tiktok.com OR site:x.com'
         ])
-        if nit_limpio:
-            consultas.insert(0, f'"{nit}" "{nombre}" Colombia')
-    elif nit_limpio:
-        consultas.extend([
-            f'"{nit}" empresa Colombia sitio oficial',
-            f'"{nit_limpio[:-1] if len(nit_limpio) == 10 else nit_limpio}" empresa Colombia razon social'
-        ])
+    if nit_limpio:
+        nit_base = _clave_nit(nit_ingresado)
+        consultas.insert(0, f'"{nit_ingresado}" empresa Colombia NIT')
+        if nit_base and nit_base != nit_limpio:
+            consultas.insert(1, f'"{nit_base}" empresa Colombia razón social')
+        elif nit_base:
+            consultas.insert(1, f'"{nit_base}" Colombia empresa')
+        if nombre_ingresado:
+            consultas.insert(0, f'"{nombre_ingresado}" "{nit_ingresado}" Colombia')
 
     resultados = []
     vistos = set()
-    errores_busqueda = []
+    errores = []
     for consulta in consultas:
         try:
-            for item in _buscar_resultados_empresa(consulta, max_resultados=8):
+            for item in _buscar_resultados_empresa(consulta, max_resultados=10):
                 clave = item["url"].split("?")[0].rstrip("/").lower()
                 if clave not in vistos:
                     vistos.add(clave)
                     resultados.append(item)
         except Exception as exc:
-            errores_busqueda.append(str(exc)[:180])
-            continue
+            errores.append(str(exc)[:200])
 
-    # Prioriza la web corporativa; después perfiles sociales públicos.
-    resultados.sort(key=lambda x: 1 if _dominio_es_red_social(x["url"]) else 0)
+    # Las webs corporativas se prueban antes que redes; las redes quedan como respaldo.
+    resultados.sort(key=lambda item: 1 if _dominio_es_red_social(item.get("url", "")) else 0)
 
-    for item in resultados[:24]:
-        url = item["url"]
+    for item in resultados[:30]:
+        url = item.get("url", "")
         es_social = _dominio_es_red_social(url)
         try:
             pagina = requests.get(
@@ -3266,60 +3391,59 @@ def buscar_empresa_y_logo_python(nombre_empresa="", nit_empresa=""):
                 timeout=(4, 8),
                 allow_redirects=True
             )
-            texto_pagina = (
-                _texto_html_limpio(pagina.text[:1_200_000])
-                if pagina.ok and "text/html" in pagina.headers.get("Content-Type", "text/html").lower()
-                else ""
-            )
-            texto_busqueda = (item["titulo"] + " " + texto_pagina).lower()
-
-            nit_confirmado = _nit_coincide_con_texto(nit_limpio, texto_busqueda)
-            nombre_confirmado = _texto_coincide_empresa(nombre, texto_busqueda)
-
-            # Para empresas resueltas desde la referencia NIT conocida, basta
-            # confirmar la razón social en la web oficial aunque esta oculte el NIT.
-            nombre_confirmado_por_nit = bool(datos_nit and nombre_confirmado)
-            if nit_limpio and not nit_confirmado and not (es_social and nombre_confirmado) and not nombre_confirmado_por_nit:
+            if not pagina.ok:
                 continue
-            if nombre and not nombre_confirmado and not nit_confirmado:
+            html_pagina = pagina.text[:1_500_000] if "text/html" in pagina.headers.get("Content-Type", "text/html").lower() else ""
+            texto_pagina = _texto_html_limpio(html_pagina)
+            texto_busqueda = " ".join((item.get("titulo", ""), item.get("snippet", ""), texto_pagina))
+            nit_confirmado = _nit_coincide_con_texto(nit_ingresado, texto_busqueda) if nit_limpio else False
+            nombre_confirmado = _texto_coincide_empresa(nombre_ingresado, texto_busqueda) if nombre_ingresado else False
+
+            # Si se proporcionan ambos identificadores, deben coincidir en la MISMA
+            # página. No basta con que la página confirme solo el NIT o solo el nombre.
+            if nit_limpio and nombre_ingresado:
+                if not (nit_confirmado and nombre_confirmado):
+                    continue
+            elif nit_limpio and not nit_confirmado:
+                continue
+            elif nombre_ingresado and not nombre_confirmado:
                 continue
 
-            resultado["sitio"] = pagina.url if pagina.ok else url
-            resultado["empresa_verificada"] = bool(
-                nit_confirmado or nombre_confirmado_por_nit or (nombre_confirmado and not nit_limpio)
+            nombre_extraido = _extraer_nombre_de_pagina(html_pagina, item.get("titulo", ""), pagina.url)
+            nit_extraido = _extraer_nit_de_pagina(texto_pagina)
+            if not resultado["nombre"] and nombre_extraido:
+                resultado["nombre"] = nombre_extraido
+            if not resultado["nit"] and nit_extraido:
+                resultado["nit"] = nit_extraido
+            resultado["sitio"] = pagina.url
+            resultado["empresa_verificada"] = (
+                bool(nit_confirmado and nombre_confirmado)
+                if nit_limpio and nombre_ingresado
+                else bool(nit_confirmado or nombre_confirmado)
             )
 
-            if not nombre and nit_confirmado:
-                # No inventar una razón social a partir del título del buscador.
-                resultado["nombre"] = item["titulo"].split(" | ")[0].split(" - ")[0].strip()
-
-            if pagina.ok and "text/html" in pagina.headers.get("Content-Type", "text/html").lower():
-                logo = _extraer_logo_oficial_desde_sitio(
-                    pagina.url, permitir_og_social=es_social
-                )
+            if html_pagina:
+                logo = _extraer_logo_oficial_desde_sitio(pagina.url, permitir_og_social=es_social)
                 if logo:
                     resultado["logo"] = logo
                     resultado["fuente_logo"] = "red social" if es_social else "sitio web"
-                    resultado["diagnostico"] = "Logo encontrado en una página coincidente."
+                    resultado["diagnostico"] = "Logo recuperado desde una página que coincide con la empresa."
                     break
-
         except Exception as exc:
-            errores_busqueda.append(str(exc)[:180])
+            errores.append(str(exc)[:200])
             continue
 
-    if not resultado.get("logo") and not resultado.get("diagnostico"):
-        if not resultados:
-            detalle = errores_busqueda[0] if errores_busqueda else "el buscador no devolvió resultados"
-            resultado["diagnostico"] = f"No se encontraron páginas para la búsqueda. Detalle: {detalle}"
-        else:
-            resultado["diagnostico"] = (
-                f"Se revisaron {min(len(resultados), 24)} páginas y no se pudo descargar "
-                "un archivo de imagen reconocido como logo."
-            )
+    if not resultado.get("sitio"):
+        resultado["diagnostico"] = (
+            "No se pudo confirmar una página pública para la empresa. "
+            + (f"Detalle de búsqueda: {errores[0]}" if errores else "Comprueba el nombre o el NIT.")
+        )
+    elif not resultado.get("logo") and not resultado.get("diagnostico"):
+        resultado["diagnostico"] = "Se identificó una página coincidente, pero no se pudo descargar un logo público."
     return resultado
 
 
-def insertar_logo_en_plantilla(document_id, logo, solicitud_id):
+def insertar_logo_en_plantilla(document_id, logo, solicitud_id, carpeta_destino_id=None):
     """Reemplaza {{LOGO_EMPRESA}} por el logo o elimina el marcador si no hay logo.
 
     La ausencia de logo nunca debe dejar texto técnico en la carta ni impedir
@@ -3372,7 +3496,7 @@ def insertar_logo_en_plantilla(document_id, logo, solicitud_id):
 
     try:
         servicio_drive = _crear_servicio_drive_nuevo()
-        folder_id = obtener_id_carpeta_solicitudes()
+        folder_id = str(carpeta_destino_id or obtener_id_carpeta_solicitudes()).strip()
         nombre = f"Logo_empresa_{solicitud_id}"
         media = MediaIoBaseUpload(BytesIO(logo["bytes"]), mimetype=logo["mime"], resumable=False)
         archivo = servicio_drive.files().create(
@@ -3486,7 +3610,7 @@ def resolver_empresa_y_plantilla(empresa_seleccionada, empresa_manual="", nit_ma
             ]
             if not filas_otra.empty:
                 valor_doc = filas_otra["Doc_ID"].iloc[0]
-                doc_id_auto = "" if pd.isna(valor_doc) else str(valor_doc).strip()
+                doc_id_auto = _celda_texto(valor_doc)
     elif empresa_seleccionada:
         filtro_empresa = (
             df_empresas["Nombre_Empresa"].astype(str).str.strip()
@@ -3496,25 +3620,285 @@ def resolver_empresa_y_plantilla(empresa_seleccionada, empresa_manual="", nit_ma
             fila_empresa = df_empresas.loc[filtro_empresa].iloc[0]
             if "Doc_ID" in df_empresas.columns:
                 valor_doc = fila_empresa.get("Doc_ID", "")
-                doc_id_auto = "" if pd.isna(valor_doc) else str(valor_doc).strip()
+                doc_id_auto = _celda_texto(valor_doc)
             if "NIT" in df_empresas.columns:
                 valor_nit = fila_empresa.get("NIT", "")
-                nit_auto = "" if pd.isna(valor_nit) else str(valor_nit).strip()
+                nit_auto = _celda_texto(valor_nit)
 
     st.session_state.empresa = empresa_valor
     st.session_state.nit = nit_auto
     st.session_state.empresa_seleccionada = empresa_seleccionada
+    st.session_state.logo_empresa_en_template = False
+    st.session_state.estado_logo_empresa = "falta-logo-revision manual"
+    st.session_state.logo_empresa_pendiente = None
+    st.session_state.busqueda_otra_completada = False
 
     if doc_id_auto:
         info_plantilla = obtener_info_plantilla(doc_id_auto)
         st.session_state.doc_id_plantilla = info_plantilla["id"]
         st.session_state.nombre_plantilla = info_plantilla.get("name", "Documento sin nombre")
         st.session_state.plantilla_url = info_plantilla.get("webViewLink", "")
+        if empresa_seleccionada != "Otra":
+            fila_empresa = df_empresas.loc[filtro_empresa].iloc[0] if "filtro_empresa" in locals() and filtro_empresa.any() else None
+            if fila_empresa is not None:
+                estado_logo = _celda_texto(fila_empresa.get("Estado_Logo", ""))
+                st.session_state.estado_logo_empresa = estado_logo or "falta-logo-revision manual"
+                st.session_state.logo_empresa_en_template = estado_logo.lower() == "logo-insertado"
+                st.session_state.busqueda_otra_completada = bool(st.session_state.logo_empresa_en_template)
     else:
         st.session_state.doc_id_plantilla = ""
         st.session_state.nombre_plantilla = ""
         st.session_state.plantilla_url = ""
     return df_empresas, empresa_valor, nit_auto, doc_id_auto
+
+
+def _celda_texto(valor):
+    """Convierte celdas de Sheets a texto sin propagar NaN ni valores nulos."""
+    try:
+        if pd.isna(valor):
+            return ""
+    except Exception:
+        pass
+    texto = str(valor).strip()
+    return "" if texto.casefold() in ("nan", "none", "<na>") else texto
+
+
+def _leer_hoja_empresas():
+    """Lee Empresas y garantiza columnas textuales usadas por el flujo."""
+    df = conn.read(worksheet="Empresas", ttl=0).dropna(how="all")
+    columnas = ("Nombre_Empresa", "NIT", "Doc_ID", "Logo_URL", "Estado_Logo")
+    for columna in columnas:
+        if columna not in df.columns:
+            df[columna] = ""
+    df = _forzar_columnas_texto(df, columnas)
+    for columna in columnas:
+        df[columna] = df[columna].where(pd.notna(df[columna]), "")
+    return df
+
+
+def _coincidencias_empresa_en_df(df, nombre="", nit=""):
+    """Devuelve coincidencias separadas por nombre y NIT, sin escoger a ciegas."""
+    clave_nit = _clave_nit(nit)
+    clave_nombre = _clave_nombre_empresa(nombre)
+    indices_nombre = []
+    indices_nit = []
+
+    for indice, fila in df.iterrows():
+        nombre_fila = _celda_texto(fila.get("Nombre_Empresa", ""))
+        if not nombre_fila or nombre_fila.casefold() == "otra":
+            continue
+        nit_fila = _celda_texto(fila.get("NIT", ""))
+        if clave_nombre and _clave_nombre_empresa(nombre_fila) == clave_nombre:
+            indices_nombre.append(indice)
+        if clave_nit and _clave_nit(nit_fila) == clave_nit:
+            indices_nit.append(indice)
+
+    if len(indices_nombre) > 1:
+        raise ValueError(
+            "Hay más de un registro con ese nombre normalizado en la hoja Empresas. "
+            "Debes revisar y unificar esos duplicados antes de continuar."
+        )
+    if len(indices_nit) > 1:
+        raise ValueError(
+            "Hay más de un registro con ese NIT en la hoja Empresas. "
+            "Debes revisar y unificar esos duplicados antes de continuar."
+        )
+
+    indice_nombre = indices_nombre[0] if indices_nombre else None
+    indice_nit = indices_nit[0] if indices_nit else None
+
+    if indice_nombre is not None and indice_nit is not None and indice_nombre != indice_nit:
+        raise ValueError(
+            "El nombre y el NIT que escribiste pertenecen a dos registros diferentes "
+            "de la base de Empresas. No se modificó ningún registro. Revisa ambos datos."
+        )
+
+    indice = indice_nit if indice_nit is not None else indice_nombre
+    if indice is None:
+        return None
+
+    fila = df.loc[indice]
+    nombre_guardado = _celda_texto(fila.get("Nombre_Empresa", ""))
+    nit_guardado = _celda_texto(fila.get("NIT", ""))
+
+    # Si solo una de las dos claves encuentra registro, la otra entrada no puede
+    # contradecir los datos ya guardados en ese registro.
+    if nombre and nombre_guardado and _clave_nombre_empresa(nombre) != _clave_nombre_empresa(nombre_guardado):
+        raise ValueError(
+            f"El NIT coincide con «{nombre_guardado}», pero el nombre escrito no coincide. "
+            "No se asociaron los datos para evitar mezclar empresas."
+        )
+    if nit and nit_guardado and _clave_nit(nit) != _clave_nit(nit_guardado):
+        raise ValueError(
+            f"El nombre coincide con «{nombre_guardado}», pero el NIT escrito es diferente "
+            "del que ya está registrado. No se modificó la base de empresas."
+        )
+    return indice
+
+
+def _buscar_fila_empresa_en_df(df, nombre="", nit=""):
+    """Busca una empresa validando conjuntamente el nombre y el NIT cuando se entregan."""
+    return _coincidencias_empresa_en_df(df, nombre, nit)
+
+
+def guardar_empresa_en_sheets(nombre, nit, doc_id, logo_url="", estado_logo="falta-logo-revision manual"):
+    """Inserta o actualiza la empresa y su Doc_ID de plantilla en Google Sheets."""
+    nombre = str(nombre or "").strip()
+    nit = str(nit or "").strip()
+    doc_id = str(doc_id or "").strip()
+    if not nombre or not doc_id:
+        raise ValueError("Para guardar una empresa se requiere nombre y Doc_ID de plantilla.")
+
+    df = _leer_hoja_empresas()
+    indice = _buscar_fila_empresa_en_df(df, nombre, nit)
+    if indice is None:
+        fila_nueva = {columna: "" for columna in df.columns}
+        fila_nueva.update({
+            "Nombre_Empresa": nombre,
+            "NIT": nit,
+            "Doc_ID": doc_id,
+            "Logo_URL": str(logo_url or ""),
+            "Estado_Logo": str(estado_logo or "falta-logo-revision manual")
+        })
+        df = pd.concat([df, pd.DataFrame([fila_nueva], columns=df.columns)], ignore_index=True)
+        df = _forzar_columnas_texto(df, ("Nombre_Empresa", "NIT", "Doc_ID", "Logo_URL", "Estado_Logo"))
+    else:
+        df = _forzar_columnas_texto(df, ("Nombre_Empresa", "NIT", "Doc_ID", "Logo_URL", "Estado_Logo"))
+        df.at[indice, "Nombre_Empresa"] = nombre
+        if nit:
+            df.at[indice, "NIT"] = nit
+        df.at[indice, "Doc_ID"] = doc_id
+        df.at[indice, "Logo_URL"] = str(logo_url or "")
+        df.at[indice, "Estado_Logo"] = str(estado_logo or "falta-logo-revision manual")
+
+    conn.update(worksheet="Empresas", data=df)
+    return doc_id
+
+
+def preparar_empresa_nueva_y_template(nombre_ingresado="", nit_ingresado=""):
+    """Valida nombre/NIT, reutiliza registros existentes o crea una sola plantilla propia."""
+    nombre_original = _celda_texto(nombre_ingresado)
+    nit_original = _celda_texto(nit_ingresado)
+    if not nombre_original and not nit_original:
+        raise ValueError("Escribe el nombre de la empresa, el NIT o ambos.")
+
+    df = _leer_hoja_empresas()
+    fila_existente = _buscar_fila_empresa_en_df(df, nombre_original, nit_original)
+
+    nombre_guardado = ""
+    nit_guardado = ""
+    doc_guardado = ""
+    estado_guardado = ""
+    if fila_existente is not None:
+        fila = df.loc[fila_existente]
+        nombre_guardado = _celda_texto(fila.get("Nombre_Empresa", ""))
+        nit_guardado = _celda_texto(fila.get("NIT", ""))
+        doc_guardado = _celda_texto(fila.get("Doc_ID", ""))
+        estado_guardado = _celda_texto(fila.get("Estado_Logo", ""))
+
+    # La fila «Otra» siempre conserva el ID de la plantilla universal.
+    filas_base = df[df["Nombre_Empresa"].astype(str).str.strip().str.casefold() == "otra"]
+    doc_id_base = _celda_texto(filas_base.iloc[0].get("Doc_ID", "")) if not filas_base.empty else ""
+
+    # Si el registro existente ya tiene nombre y NIT, esa pareja de la base es
+    # la fuente de verdad. La búsqueda web posterior se usa solo para recuperar logo.
+    pareja_confirmada_en_base = bool(nombre_guardado and nit_guardado)
+    nombre_busqueda = nombre_guardado or nombre_original
+    nit_busqueda = nit_guardado or nit_original
+
+    # Reutilizar sin crear otra plantilla cuando ya existe una plantilla personalizada
+    # y el logo está insertado. La validación conjunta de identidad ocurrió arriba.
+    if doc_guardado and doc_guardado != doc_id_base and estado_guardado.lower() == "logo-insertado":
+        info = obtener_info_plantilla(doc_guardado)
+        st.session_state.empresa = nombre_guardado or nombre_original
+        st.session_state.nit = nit_guardado or nit_original
+        st.session_state.doc_id_plantilla = info["id"]
+        st.session_state.nombre_plantilla = info.get("name", "Plantilla de empresa")
+        st.session_state.plantilla_url = info.get("webViewLink", "")
+        st.session_state.logo_empresa_en_template = True
+        st.session_state.logo_empresa_pendiente = None
+        st.session_state.estado_logo_empresa = "logo-insertado"
+        st.session_state.busqueda_otra_completada = True
+        st.session_state.empresa_seleccionada = "Otra"
+        return st.session_state.empresa, st.session_state.nit, doc_guardado
+
+    # Si ya hay una pareja completa en Sheets, buscar el logo por nombre usando
+    # la razón social guardada. Si falta uno de los datos, validar ambos en una
+    # misma fuente antes de asociarlos.
+    if pareja_confirmada_en_base:
+        resultado = buscar_empresa_y_logo_python(nombre_busqueda, "")
+        resultado["nombre"] = nombre_guardado
+        resultado["nit"] = nit_guardado
+        resultado["empresa_verificada"] = True
+    else:
+        resultado = buscar_empresa_y_logo_python(nombre_busqueda, nit_busqueda)
+        if nombre_busqueda and nit_busqueda and not resultado.get("empresa_verificada"):
+            raise ValueError(
+                "No pudimos confirmar que el nombre y el NIT correspondan a la misma empresa. "
+                "No se creó una plantilla ni se actualizó la base. Verifica los datos o intenta "
+                "con el nombre legal exacto y el NIT correcto."
+            )
+
+    nombre_final = nombre_guardado or _celda_texto(resultado.get("nombre")) or nombre_original
+    nit_final = nit_guardado or _celda_texto(resultado.get("nit")) or nit_original
+    if not nombre_final:
+        raise ValueError(
+            "No se pudo identificar la razón social a partir del NIT. "
+            "Escribe también el nombre de la empresa para crear su plantilla."
+        )
+
+    # Si el registro ya existe y tiene una plantilla, se actualiza esa misma.
+    # Si existe pero no tiene Doc_ID, se crea una copia desde la plantilla universal.
+    if doc_guardado and doc_guardado != doc_id_base:
+        doc_id_empresa = doc_guardado
+        carpeta_templates_id = obtener_id_carpeta_plantillas_empresas()
+    else:
+        if not doc_id_base:
+            raise ValueError("No se encontró la fila 'Otra' con el Doc_ID de la plantilla universal en la hoja Empresas.")
+        docs = obtener_servicio_docs()
+        documento_base = docs.documents().get(documentId=doc_id_base).execute()
+        texto_base = json.dumps(documento_base.get("body", {}).get("content", []), ensure_ascii=False)
+        if "{{LOGO_EMPRESA}}" not in texto_base:
+            raise ValueError("La plantilla universal no contiene el marcador {{LOGO_EMPRESA}}. Agrégalo en el lugar del logo y vuelve a probar.")
+        copia, carpeta_templates_id, _ = copiar_template_empresa(doc_id_base, nombre_final, nit_final)
+        doc_id_empresa = copia["id"]
+
+    docs = obtener_servicio_docs()
+    documento_copia = docs.documents().get(documentId=doc_id_empresa).execute()
+    texto_copia = json.dumps(documento_copia.get("body", {}).get("content", []), ensure_ascii=False)
+    tiene_marcador = "{{LOGO_EMPRESA}}" in texto_copia
+    tiene_imagen = "inlineObjectElement" in texto_copia
+    logo_insertado = bool(tiene_imagen and not tiene_marcador)
+
+    if resultado.get("logo") and tiene_marcador:
+        logo_insertado = insertar_logo_en_plantilla(
+            doc_id_empresa,
+            resultado["logo"],
+            _clave_template_empresa(nombre_final, nit_final),
+            carpeta_destino_id=carpeta_templates_id
+        )
+
+    estado_logo = "logo-insertado" if logo_insertado else "falta-logo-revision manual"
+    logo_url = _celda_texto((resultado.get("logo") or {}).get("url", ""))
+    # Este guardado actualiza el registro encontrado; solo agrega una fila si
+    # nombre y NIT no existen. La función vuelve a validar ambas claves.
+    guardar_empresa_en_sheets(nombre_final, nit_final, doc_id_empresa, logo_url, estado_logo)
+
+    info = obtener_info_plantilla(doc_id_empresa)
+    st.session_state.empresa = nombre_final
+    st.session_state.nit = nit_final
+    st.session_state.doc_id_plantilla = info["id"]
+    st.session_state.nombre_plantilla = info.get("name", "Plantilla de empresa")
+    st.session_state.plantilla_url = info.get("webViewLink", "")
+    st.session_state.logo_empresa_en_template = bool(logo_insertado)
+    st.session_state.logo_empresa_pendiente = None if logo_insertado else resultado.get("logo")
+    st.session_state.estado_logo_empresa = estado_logo
+    st.session_state.estado_empresa_web = "Verificada" if resultado.get("empresa_verificada") else "revision manual"
+    st.session_state.diagnostico_logo_empresa = resultado.get("diagnostico", "")
+    st.session_state.busqueda_otra_completada = True
+    st.session_state.logo_marcador_procesado = False
+    st.session_state.empresa_seleccionada = "Otra"
+    return nombre_final, nit_final, doc_id_empresa
 
 
 def icon_svg(nombre):
@@ -3581,7 +3965,7 @@ def reiniciar_solicitud():
         "whatsapp_autorizado", "whatsapp_confirmacion_estado", "whatsapp_documento_estado", "whatsapp_errores",
         "whatsapp_test_message_id", "whatsapp_test_recipient",
         "busqueda_otra_completada", "logo_empresa_pendiente", "logo_empresa_insertado",
-        "logo_marcador_procesado", "estado_logo_empresa", "estado_empresa_web", "diagnostico_logo_empresa",
+        "logo_marcador_procesado", "estado_logo_empresa", "estado_empresa_web", "logo_empresa_en_template", "diagnostico_logo_empresa",
     ]
     for key in llaves:
         st.session_state[key] = ""
@@ -4127,15 +4511,13 @@ def render_empresa():
                             if not empresa_manual.strip() and not nit_manual.strip():
                                 st.error("Escribe al menos uno de estos datos: nombre de la empresa o NIT.")
                                 st.stop()
-                            resolver_empresa_y_plantilla(empresa_seleccionada, empresa_manual, nit_manual)
-                            st.session_state.empresa = empresa_manual.strip()
-                            st.session_state.nit = nit_manual.strip()
+                            with st.spinner("Verificando la empresa, creando su plantilla y guardando el Doc_ID en la base de empresas..."):
+                                preparar_empresa_nueva_y_template(empresa_manual, nit_manual)
                         else:
                             resolver_empresa_y_plantilla(empresa_seleccionada)
                             st.session_state.empresa = empresa_seleccionada
-                        if not st.session_state.get("nit") and empresa_seleccionada != "Otra":
-                            st.error("No encontramos un NIT asociado a esta empresa. Revisa la columna NIT de la hoja Empresas.")
-                            st.stop()
+                        if not st.session_state.get("nit"):
+                            st.warning("No encontramos el NIT en las fuentes disponibles. La empresa y su plantilla quedarán registradas para revisión manual.")
                         if not st.session_state.get("doc_id_plantilla"):
                             if empresa_seleccionada == "Otra":
                                 st.error("No encontramos la plantilla universal. En la fila «Otra» de la hoja Empresas, coloca el ID del Google Docs universal en la columna Doc_ID.")
@@ -4204,14 +4586,43 @@ def render_generando():
             if resultado_busqueda.get("nit"):
                 st.session_state.nit = resultado_busqueda["nit"]
             logo_insertado = False
-            if resultado_busqueda.get("logo"):
-                # La inserción se intenta después de copiar la plantilla (más abajo).
-                st.session_state.logo_empresa_pendiente = resultado_busqueda["logo"]
-            else:
-                st.session_state.logo_empresa_pendiente = None
+            st.session_state.logo_empresa_pendiente = resultado_busqueda.get("logo")
             st.session_state.estado_logo_empresa = "Pendiente de inserción" if resultado_busqueda.get("logo") else "falta-logo-revision manual"
             st.session_state.estado_empresa_web = "Verificada" if resultado_busqueda.get("empresa_verificada") else "revision manual"
             st.session_state.diagnostico_logo_empresa = resultado_busqueda.get("diagnostico", "")
+
+            # Si esta es una plantilla propia de empresa (no la plantilla maestra),
+            # guardar el logo dentro de ella para que las siguientes solicitudes lo hereden.
+            if resultado_busqueda.get("logo") and st.session_state.get("doc_id_plantilla"):
+                try:
+                    df_empresas_actual = _leer_hoja_empresas()
+                    filas_maestra = df_empresas_actual[
+                        df_empresas_actual["Nombre_Empresa"].astype(str).str.strip().str.casefold() == "otra"
+                    ]
+                    doc_id_maestro = _celda_texto(filas_maestra.iloc[0].get("Doc_ID", "")) if not filas_maestra.empty else ""
+                    if st.session_state.doc_id_plantilla != doc_id_maestro:
+                        carpeta_templates = obtener_id_carpeta_plantillas_empresas()
+                        logo_insertado = insertar_logo_en_plantilla(
+                            st.session_state.doc_id_plantilla,
+                            resultado_busqueda["logo"],
+                            _clave_template_empresa(st.session_state.get("empresa", ""), st.session_state.get("nit", "")),
+                            carpeta_destino_id=carpeta_templates
+                        )
+                        if logo_insertado:
+                            st.session_state.logo_empresa_en_template = True
+                            st.session_state.logo_empresa_pendiente = None
+                            st.session_state.estado_logo_empresa = "logo-insertado"
+                            guardar_empresa_en_sheets(
+                                st.session_state.get("empresa", ""),
+                                st.session_state.get("nit", ""),
+                                st.session_state.doc_id_plantilla,
+                                resultado_busqueda["logo"].get("url", ""),
+                                "logo-insertado"
+                            )
+                except Exception:
+                    # Conserva la imagen descargada para intentar insertarla en la copia de esta solicitud.
+                    st.session_state.logo_empresa_en_template = False
+
             st.session_state.busqueda_otra_completada = True
             actualizar_estado_empresa_en_sheets(st.session_state.solicitud_id, resultado_busqueda)
 
@@ -4233,11 +4644,15 @@ def render_generando():
     # de la copia para que nunca aparezca como texto en la carta final.
     if not st.session_state.get("logo_marcador_procesado", False):
         try:
-            logo_insertado = insertar_logo_en_plantilla(
-                st.session_state.doc_id_copia,
-                st.session_state.get("logo_empresa_pendiente"),
-                st.session_state.solicitud_id
-            )
+            if st.session_state.get("logo_empresa_en_template", False):
+                # La copia de la solicitud ya hereda el logo insertado en la plantilla de empresa.
+                logo_insertado = True
+            else:
+                logo_insertado = insertar_logo_en_plantilla(
+                    st.session_state.doc_id_copia,
+                    st.session_state.get("logo_empresa_pendiente"),
+                    st.session_state.solicitud_id
+                )
             st.session_state.logo_empresa_insertado = bool(logo_insertado)
             st.session_state.logo_marcador_procesado = True
             if logo_insertado:
