@@ -2992,6 +2992,225 @@ def _clave_nit(valor):
     return digitos[:-1] if len(digitos) == 10 else digitos
 
 
+# ---------- IDENTIDAD EMPRESARIAL: FUENTE OFICIAL RUES / CONFECÁMARAS ----------
+# Conjunto nacional de datos básicos del Registro Mercantil, sincronizado con
+# RUES y publicado por Confecámaras en el Portal Nacional de Datos Abiertos.
+# No contiene excepciones ni NIT de empresas escritos manualmente en el código.
+RUES_DATOS_ABIERTOS_API = "https://www.datos.gov.co/resource/c82u-588k.json"
+RUES_DATOS_ABIERTOS_URL = (
+    "https://www.datos.gov.co/Comercio-Industria-y-Turismo/"
+    "Personas-Naturales-Personas-Jur-dicas-y-Entidades-/c82u-588k"
+)
+RUES_PORTAL_URL = "https://ruesfront.rues.org.co/"
+
+
+def _clave_nit(valor):
+    """Devuelve el NIT base sin separadores ni dígito de verificación."""
+    digitos = _normalizar_nit(valor)
+    return digitos[:-1] if len(digitos) == 10 else digitos
+
+
+def _soql_escape(valor):
+    """Escapa comillas simples en valores de consultas SoQL."""
+    return str(valor or "").replace("'", "''")
+
+
+def _consultar_dataset_rues(where, limite=30):
+    """Consulta el conjunto oficial RUES/Confecámaras en datos.gov.co."""
+    headers = {
+        "Accept": "application/json",
+        "User-Agent": "CesantiasAlInstante/4.0 (consulta empresarial RUES)",
+    }
+    # El token de Socrata es opcional. Sin él, la consulta pública puede
+    # realizarse sujeta a los límites de uso del portal.
+    try:
+        app_token = st.secrets.get("datos_gov_app_token", "")
+    except Exception:
+        app_token = ""
+    if app_token:
+        headers["X-App-Token"] = str(app_token).strip()
+
+    respuesta = requests.get(
+        RUES_DATOS_ABIERTOS_API,
+        params={"$where": where, "$limit": str(limite)},
+        headers=headers,
+        timeout=(5, 20),
+    )
+    respuesta.raise_for_status()
+    datos = respuesta.json()
+    if isinstance(datos, dict):
+        mensaje = datos.get("message") or datos.get("error") or "Respuesta no válida del conjunto RUES."
+        raise RuntimeError(str(mensaje)[:300])
+    if not isinstance(datos, list):
+        raise RuntimeError("El conjunto RUES devolvió un formato de respuesta no reconocido.")
+    return datos
+
+
+def _registro_rues_normalizado(fila):
+    """Normaliza una fila oficial RUES conservando razón social, NIT y DV."""
+    nombre = _celda_texto(fila.get("razon_social", ""))
+    if not nombre:
+        partes = [
+            _celda_texto(fila.get("primer_nombre", "")),
+            _celda_texto(fila.get("segundo_nombre", "")),
+            _celda_texto(fila.get("primer_apellido", "")),
+            _celda_texto(fila.get("segundo_apellido", "")),
+        ]
+        nombre = " ".join(p for p in partes if p)
+    nit_base = _clave_nit(fila.get("nit", "") or fila.get("numero_identificacion", ""))
+    dv = re.sub(r"\D", "", _celda_texto(fila.get("digito_verificacion", "")))[:1]
+    nit_completo = f"{nit_base}-{dv}" if nit_base and dv else nit_base
+    return {
+        "nombre": nombre,
+        "nit_base": nit_base,
+        "digito_verificacion": dv,
+        "nit": nit_completo,
+        "estado_matricula": _celda_texto(fila.get("estado_matricula", "")),
+        "camara_comercio": _celda_texto(fila.get("camara_comercio", "")),
+        "codigo_camara": _celda_texto(fila.get("codigo_camara", "")),
+        "matricula": _celda_texto(fila.get("matricula", "")),
+        "ultimo_ano_renovado": _celda_texto(fila.get("ultimo_ano_renovado", "")),
+        "fuente_identidad": "RUES / Confecámaras - Datos Abiertos Colombia",
+        "url_fuente_identidad": RUES_DATOS_ABIERTOS_URL,
+    }
+
+
+def _deduplicar_registros_rues(filas):
+    """Deduplica registros de una misma razón social/NIT en varias matrículas."""
+    unicos = {}
+    for fila in filas:
+        registro = _registro_rues_normalizado(fila)
+        if not registro["nombre"] or not registro["nit_base"]:
+            continue
+        clave = (registro["nit_base"], _clave_nombre_empresa(registro["nombre"]))
+        anterior = unicos.get(clave)
+        if anterior is None:
+            unicos[clave] = registro
+            continue
+        try:
+            anio_nuevo = int(registro.get("ultimo_ano_renovado") or 0)
+        except Exception:
+            anio_nuevo = 0
+        try:
+            anio_anterior = int(anterior.get("ultimo_ano_renovado") or 0)
+        except Exception:
+            anio_anterior = 0
+        if anio_nuevo > anio_anterior:
+            unicos[clave] = registro
+    return list(unicos.values())
+
+
+def _consultar_rues_por_nit(nit):
+    """Busca cualquier NIT en el conjunto oficial, con o sin DV."""
+    nit_base = _clave_nit(nit)
+    if not nit_base:
+        return []
+    valor = _soql_escape(nit_base)
+    filas = _consultar_dataset_rues(f"nit = '{valor}'", limite=50)
+    if not filas:
+        # Algunos registros históricos mantienen el identificador en este campo.
+        filas = _consultar_dataset_rues(f"numero_identificacion = '{valor}'", limite=50)
+    return _deduplicar_registros_rues(filas)
+
+
+def _consultar_rues_por_nombre(nombre):
+    """Busca por razón social en RUES sin escoger coincidencias ambiguas."""
+    clave = _clave_nombre_empresa(nombre)
+    tokens = [t for t in clave.split() if len(t) >= 3]
+    if not tokens:
+        return []
+    # Conserva la grafía original (con tildes) y también una variante sin
+    # diacríticos: en el conjunto RUES conviven nombres con y sin acentos.
+    tokens_originales = [
+        t for t in re.findall(r"[^\W_]+", str(nombre or ""), flags=re.UNICODE)
+        if len(_clave_nombre_empresa(t)) >= 3
+    ]
+    tokens_consulta = tokens[:2]
+    originales = tokens_originales[:2]
+    condiciones = []
+    for indice, token in enumerate(tokens_consulta):
+        variantes = {token.upper()}
+        if indice < len(originales):
+            variantes.add(originales[indice].upper())
+        condiciones_token = [
+            f"upper(razon_social) like '%{_soql_escape(v)}%'"
+            for v in sorted(variantes)
+        ]
+        condiciones.append("(" + " OR ".join(condiciones_token) + ")")
+    filas = _consultar_dataset_rues(" AND ".join(condiciones), limite=100)
+    return _deduplicar_registros_rues(filas)
+
+
+def _nombres_legales_coinciden(nombre_entrada, nombre_oficial):
+    """Compara nombres ignorando tildes, conectores y sufijos jurídicos."""
+    a = set(_clave_nombre_empresa(nombre_entrada).split())
+    b = set(_clave_nombre_empresa(nombre_oficial).split())
+    if not a or not b:
+        return False
+    if a == b:
+        return True
+    interseccion = len(a & b)
+    return interseccion >= min(len(a), len(b)) and interseccion >= 1
+
+
+def _resolver_identidad_rues(nombre_empresa="", nit_empresa=""):
+    """Resuelve nombre/NIT desde el conjunto oficial; nunca usa listas fijas."""
+    nombre_entrada = _celda_texto(nombre_empresa)
+    nit_entrada = _celda_texto(nit_empresa)
+    if not nombre_entrada and not nit_entrada:
+        raise ValueError("Escribe el nombre de la empresa, el NIT o ambos.")
+
+    if nit_entrada:
+        registros = _consultar_rues_por_nit(nit_entrada)
+        if not registros:
+            raise ValueError(
+                "RUES/Confecámaras no devolvió un registro para ese NIT. "
+                "Comprueba el número sin puntos ni guion, o consulta la empresa por su razón social."
+            )
+        if len(registros) > 1:
+            nombres = {r["nombre"] for r in registros}
+            if len(nombres) > 1:
+                raise ValueError(
+                    "RUES devolvió más de una razón social para ese NIT. "
+                    "No se creó plantilla ni se modificó la base; se requiere revisión manual."
+                )
+        registro = registros[0]
+        digitos_entrada = _normalizar_nit(nit_entrada)
+        if len(digitos_entrada) == 10 and registro.get("digito_verificacion"):
+            if digitos_entrada[-1] != registro["digito_verificacion"]:
+                raise ValueError(
+                    "El dígito de verificación no coincide con el registro de RUES. "
+                    "Revisa el NIT antes de continuar."
+                )
+        if nombre_entrada and not _nombres_legales_coinciden(nombre_entrada, registro["nombre"]):
+            raise ValueError(
+                f"El NIT pertenece a «{registro['nombre']}», pero el nombre ingresado no coincide. "
+                "No se asociaron los datos para evitar mezclar empresas."
+            )
+        return registro
+
+    registros = _consultar_rues_por_nombre(nombre_entrada)
+    if not registros:
+        raise ValueError(
+            "RUES/Confecámaras no encontró esa razón social. Comprueba el nombre legal o agrega el NIT."
+        )
+    clave_entrada = _clave_nombre_empresa(nombre_entrada)
+    exactos = [r for r in registros if _clave_nombre_empresa(r["nombre"]) == clave_entrada]
+    candidatos = exactos or [r for r in registros if _nombres_legales_coinciden(nombre_entrada, r["nombre"])]
+    # Una búsqueda por nombre puede devolver muchas sociedades parecidas.
+    # Solo se acepta una única identidad; nunca elegimos la primera al azar.
+    por_identidad = {}
+    for registro in candidatos:
+        por_identidad[(registro["nit_base"], _clave_nombre_empresa(registro["nombre"]))] = registro
+    candidatos = list(por_identidad.values())
+    if len(candidatos) != 1:
+        raise ValueError(
+            "La consulta oficial encontró varias empresas posibles con ese nombre. "
+            "Escribe también el NIT para identificar la sociedad correcta."
+        )
+    return candidatos[0]
+
+
 def _normalizar_nombre_empresa(valor):
     """Normaliza tildes, siglas jurídicas y signos para comparar nombres."""
     texto = unicodedata.normalize("NFKD", str(valor or ""))
@@ -3583,73 +3802,61 @@ def _extraer_nombre_de_fila_con_nit(html_pagina, nit):
 
 
 def buscar_empresa_y_logo_python(nombre_empresa="", nit_empresa=""):
-    """Busca empresas por nombre/NIT usando páginas, filas HTML y resúmenes de varios motores."""
-    nombre_ingresado = str(nombre_empresa or "").strip()
-    nit_ingresado = str(nit_empresa or "").strip()
-    nit_limpio = _normalizar_nit(nit_ingresado)
+    """Verifica identidad en RUES oficial y busca logo en páginas de la empresa."""
+    registro = _resolver_identidad_rues(nombre_empresa, nit_empresa)
+    nombre_oficial = registro["nombre"]
+    nit_oficial = registro["nit"]
     resultado = {
-        "nombre": nombre_ingresado,
-        "nit": nit_ingresado,
+        "nombre": nombre_oficial,
+        "nit": nit_oficial,
         "logo": None,
-        "sitio": "",
-        "empresa_verificada": False,
+        "sitio": RUES_PORTAL_URL,
+        "empresa_verificada": True,
+        "fuente_identidad": registro["fuente_identidad"],
+        "url_fuente_identidad": registro["url_fuente_identidad"],
+        "estado_matricula": registro.get("estado_matricula", ""),
         "fuente_logo": "",
-        "diagnostico": ""
+        "diagnostico": "Identidad confirmada en el conjunto público RUES/Confecámaras.",
     }
-    if not nombre_ingresado and not nit_limpio:
-        resultado["diagnostico"] = "Es necesario indicar el nombre o el NIT de la empresa."
-        return resultado
 
-    consultas = []
-    if nombre_ingresado:
-        consultas.extend([
-            f'"{nombre_ingresado}" Colombia NIT razón social sitio oficial',
-            f'"{nombre_ingresado}" Colombia logo empresa',
-            f'"{nombre_ingresado}" site:facebook.com OR site:instagram.com',
-            f'"{nombre_ingresado}" site:linkedin.com/company',
-            f'"{nombre_ingresado}" site:youtube.com OR site:tiktok.com OR site:x.com'
-        ])
-    if nit_limpio:
-        nit_base = _clave_nit(nit_ingresado)
-        consultas.insert(0, f'"{nit_ingresado}" empresa Colombia razón social')
-        if nit_base and nit_base != nit_limpio:
-            consultas.insert(1, f'"{nit_limpio}" empresa Colombia razón social')
-            consultas.insert(2, f'"{nit_base}" empresa Colombia razón social')
-        elif nit_base:
-            consultas.insert(1, f'"{nit_base}" Colombia empresa razón social')
-        if nombre_ingresado:
-            consultas.insert(0, f'"{nombre_ingresado}" "{nit_ingresado}" Colombia')
-
+    # La identidad legal ya está confirmada por RUES. Los buscadores se usan
+    # exclusivamente para localizar el sitio corporativo y recuperar el logo;
+    # jamás determinan ni sustituyen el nombre/NIT oficial.
+    consultas = [
+        f'"{nombre_oficial}" Colombia sitio oficial empresa',
+        f'"{nombre_oficial}" logo sitio oficial Colombia',
+    ]
     resultados = []
     vistos = set()
     errores = []
     for consulta in consultas:
         try:
             for item in _buscar_resultados_empresa(consulta, max_resultados=12):
-                clave = item["url"].split("?")[0].rstrip("/").lower()
-                if clave not in vistos:
+                url = item.get("url", "")
+                clave = url.split("?")[0].rstrip("/").lower()
+                if url and clave not in vistos:
                     vistos.add(clave)
                     resultados.append(item)
         except Exception as exc:
-            errores.append(str(exc)[:200])
+            errores.append(str(exc)[:180])
 
-    resultados.sort(key=lambda item: 1 if _dominio_es_red_social(item.get("url", "")) else 0)
-    nombre_candidato_validado = ""
-
+    dominios_no_corporativos = (
+        "datos.gov.co", "rues.org.co", "dian.gov.co", "funcionpublica.gov.co",
+        "supersociedades.gov.co", "mincit.gov.co", "gov.co", "wikipedia.org",
+        "registronit.com", "einforma.com.co", "empresite.com", "dateas.com",
+        "directorio-empresas", "lasempresas.com.co", "informa.co",
+    )
     for item in resultados[:40]:
         url = item.get("url", "")
+        dominio = urlparse(url).netloc.lower().removeprefix("www.")
+        if not dominio or any(d in dominio for d in dominios_no_corporativos):
+            continue
         es_social = _dominio_es_red_social(url)
         titulo = item.get("titulo", "")
         snippet = item.get("snippet", "")
-        texto_resultado = " ".join((titulo, snippet))
-        nit_confirmado_resultado = bool(nit_limpio and _nit_coincide_con_texto(nit_ingresado, texto_resultado))
-        nombre_confirmado_resultado = bool(nombre_ingresado and _texto_coincide_empresa(nombre_ingresado, texto_resultado))
-        candidato_resultado = _nombre_candidato_desde_resultado(titulo, snippet, nit_ingresado)
+        if not _texto_coincide_empresa(nombre_oficial, f"{titulo} {snippet}"):
+            continue
 
-        html_pagina = ""
-        pagina_url = url
-        texto_pagina = ""
-        pagina_ok = False
         try:
             pagina = requests.get(
                 url,
@@ -3657,94 +3864,41 @@ def buscar_empresa_y_logo_python(nombre_empresa="", nit_empresa=""):
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                                   "AppleWebKit/537.36 Chrome/120 Safari/537.36"
                 },
-                timeout=(4, 8),
-                allow_redirects=True
+                timeout=(4, 10),
+                allow_redirects=True,
             )
-            pagina_ok = bool(pagina.ok)
-            pagina_url = pagina.url or url
-            if pagina_ok and "text/html" in pagina.headers.get("Content-Type", "text/html").lower():
-                html_pagina = pagina.text[:1_500_000]
-                texto_pagina = _texto_html_limpio(html_pagina)
-        except Exception as exc:
-            errores.append(str(exc)[:200])
-
-        texto_busqueda = " ".join((titulo, snippet, texto_pagina))
-        nit_confirmado_pagina = bool(nit_limpio and _nit_coincide_con_texto(nit_ingresado, texto_pagina))
-        nit_confirmado = nit_confirmado_resultado or nit_confirmado_pagina
-        nombre_confirmado = nombre_confirmado_resultado or (
-            bool(nombre_ingresado and _texto_coincide_empresa(nombre_ingresado, texto_pagina))
-        )
-
-        # Nombre + NIT deben quedar respaldados en la misma evidencia, no mezclar entidades.
-        if nit_limpio and nombre_ingresado:
-            if not (nit_confirmado and nombre_confirmado):
+            if not pagina.ok or "text/html" not in pagina.headers.get("Content-Type", "text/html").lower():
                 continue
-        elif nit_limpio and not nit_confirmado:
-            continue
-        elif nombre_ingresado and not nombre_confirmado:
-            continue
-
-        nombre_extraido = ""
-        if html_pagina:
-            if nit_limpio and nit_confirmado:
-                nombre_extraido = _extraer_nombre_de_fila_con_nit(html_pagina, nit_ingresado)
-            if not nombre_extraido:
-                nombre_extraido = _extraer_nombre_de_pagina(html_pagina, titulo, pagina_url)
-        # Para una búsqueda por NIT únicamente, el título/resumen de un resultado
-        # que también contiene el NIT es una fuente útil cuando la ficha web bloquea bots.
-        if not nombre_ingresado and nit_confirmado:
-            nombre_extraido = candidato_resultado or nombre_extraido
-        elif not nombre_extraido:
-            nombre_extraido = candidato_resultado
-
-        # Evita usar el dominio como razón social si no hay un nombre identificable.
-        host_corto = urlparse(pagina_url).netloc.lower().removeprefix("www.").split(".")[0]
-        if nombre_extraido and _normalizar_nombre_empresa(nombre_extraido) == _normalizar_nombre_empresa(host_corto.replace("-", " ")):
-            nombre_extraido = ""
-
-        if nombre_extraido and not resultado.get("nombre"):
-            resultado["nombre"] = nombre_extraido
-            nombre_candidato_validado = nombre_extraido
-            if nit_confirmado_resultado and not resultado.get("sitio"):
-                resultado["sitio"] = url
-                resultado["empresa_verificada"] = True
-        nit_extraido = _extraer_nit_de_pagina(texto_pagina) if texto_pagina else ""
-        if not resultado.get("nit") and nit_extraido:
-            resultado["nit"] = nit_extraido
-        if not resultado.get("nit") and nit_confirmado:
-            resultado["nit"] = nit_ingresado
-
-        if not resultado.get("sitio") and (nit_confirmado or nombre_confirmado):
-            resultado["sitio"] = pagina_url
-            resultado["empresa_verificada"] = True
-
-        if pagina_ok and html_pagina:
-            try:
-                logo = _extraer_logo_oficial_desde_sitio(pagina_url, permitir_og_social=es_social)
-            except Exception as exc:
-                errores.append(str(exc)[:200])
-                logo = None
+            html_pagina = pagina.text[:1_500_000]
+            texto_pagina = _texto_html_limpio(html_pagina)
+            # El sitio/perfil debe mostrar la razón social o suficientes palabras
+            # distintivas de ella; no aceptamos un logo de un directorio genérico.
+            if not _texto_coincide_empresa(nombre_oficial, f"{titulo} {snippet} {texto_pagina}"):
+                continue
+            logo = _extraer_logo_oficial_desde_sitio(
+                pagina.url or url,
+                permitir_og_social=es_social,
+            )
             if logo:
                 resultado["logo"] = logo
-                resultado["fuente_logo"] = "red social" if es_social else "sitio web"
-                resultado["diagnostico"] = "Logo recuperado desde una página que coincide con la empresa."
+                resultado["sitio"] = pagina.url or url
+                resultado["fuente_logo"] = "perfil público de la empresa" if es_social else "página corporativa"
+                resultado["diagnostico"] = (
+                    "Identidad confirmada en RUES; logo descargado desde una página corporativa relacionada."
+                )
                 break
+        except Exception as exc:
+            errores.append(str(exc)[:180])
+            continue
 
-    if not resultado.get("nombre") and nombre_candidato_validado:
-        resultado["nombre"] = nombre_candidato_validado
-
-    if not resultado.get("sitio"):
+    if not resultado.get("logo"):
         resultado["diagnostico"] = (
-            "No se pudo confirmar una página pública para la empresa. "
-            + (f"Detalle de búsqueda: {errores[0]}" if errores else "Comprueba el nombre o el NIT.")
+            "La razón social y el NIT sí fueron identificados en RUES/Confecámaras, "
+            "pero no se pudo descargar un logo desde una página corporativa pública. "
+            "La plantilla puede crearse y el logo quedará pendiente de revisión manual."
         )
-    elif not resultado.get("nombre"):
-        resultado["diagnostico"] = (
-            "Se encontró evidencia del NIT, pero los resultados no publican una razón social legible. "
-            "Prueba de nuevo más tarde o escribe el nombre legal para completar el registro."
-        )
-    elif not resultado.get("logo") and not resultado.get("diagnostico"):
-        resultado["diagnostico"] = "Se identificó la empresa, pero no se pudo descargar un logo público."
+        if errores:
+            resultado["diagnostico"] += " Detalle de búsqueda del logo: " + errores[0]
     return resultado
 
 
@@ -3887,7 +4041,7 @@ def actualizar_estado_empresa_en_sheets(solicitud_id, resultado):
             logo = resultado.get("logo") or {}
             df.at[i, "logo_url"] = str(logo.get("url") or "")
             df.at[i, "estado_empresa"] = (
-                "Coincidencia web; validar" if resultado.get("empresa_verificada")
+                "Verificada en RUES/Confecámaras" if resultado.get("empresa_verificada")
                 else "revision manual"
             )
             conn.update(worksheet="Solicitudes", data=df)
@@ -3971,7 +4125,7 @@ def _celda_texto(valor):
 def _leer_hoja_empresas():
     """Lee Empresas y garantiza columnas textuales usadas por el flujo."""
     df = conn.read(worksheet="Empresas", ttl=0).dropna(how="all")
-    columnas = ("Nombre_Empresa", "NIT", "Doc_ID", "Logo_URL", "Estado_Logo")
+    columnas = ("Nombre_Empresa", "NIT", "Doc_ID", "Logo_URL", "Estado_Logo", "Fuente_Verificacion")
     for columna in columnas:
         if columna not in df.columns:
             df[columna] = ""
@@ -4046,7 +4200,7 @@ def _buscar_fila_empresa_en_df(df, nombre="", nit=""):
     return _coincidencias_empresa_en_df(df, nombre, nit)
 
 
-def guardar_empresa_en_sheets(nombre, nit, doc_id, logo_url="", estado_logo="falta-logo-revision manual"):
+def guardar_empresa_en_sheets(nombre, nit, doc_id, logo_url="", estado_logo="falta-logo-revision manual", fuente_verificacion=""):
     """Inserta o actualiza la empresa y su Doc_ID de plantilla en Google Sheets."""
     nombre = str(nombre or "").strip()
     nit = str(nit or "").strip()
@@ -4063,25 +4217,28 @@ def guardar_empresa_en_sheets(nombre, nit, doc_id, logo_url="", estado_logo="fal
             "NIT": nit,
             "Doc_ID": doc_id,
             "Logo_URL": str(logo_url or ""),
-            "Estado_Logo": str(estado_logo or "falta-logo-revision manual")
+            "Estado_Logo": str(estado_logo or "falta-logo-revision manual"),
+            "Fuente_Verificacion": str(fuente_verificacion or "")
         })
         df = pd.concat([df, pd.DataFrame([fila_nueva], columns=df.columns)], ignore_index=True)
-        df = _forzar_columnas_texto(df, ("Nombre_Empresa", "NIT", "Doc_ID", "Logo_URL", "Estado_Logo"))
+        df = _forzar_columnas_texto(df, ("Nombre_Empresa", "NIT", "Doc_ID", "Logo_URL", "Estado_Logo", "Fuente_Verificacion"))
     else:
-        df = _forzar_columnas_texto(df, ("Nombre_Empresa", "NIT", "Doc_ID", "Logo_URL", "Estado_Logo"))
+        df = _forzar_columnas_texto(df, ("Nombre_Empresa", "NIT", "Doc_ID", "Logo_URL", "Estado_Logo", "Fuente_Verificacion"))
         df.at[indice, "Nombre_Empresa"] = nombre
         if nit:
             df.at[indice, "NIT"] = nit
         df.at[indice, "Doc_ID"] = doc_id
         df.at[indice, "Logo_URL"] = str(logo_url or "")
         df.at[indice, "Estado_Logo"] = str(estado_logo or "falta-logo-revision manual")
+        if fuente_verificacion:
+            df.at[indice, "Fuente_Verificacion"] = str(fuente_verificacion)
 
     conn.update(worksheet="Empresas", data=df)
     return doc_id
 
 
 def preparar_empresa_nueva_y_template(nombre_ingresado="", nit_ingresado=""):
-    """Valida nombre/NIT, reutiliza registros existentes o crea una sola plantilla propia."""
+    """Verifica nombre/NIT en RUES oficial, reutiliza registros existentes o crea una sola plantilla propia."""
     nombre_original = _celda_texto(nombre_ingresado)
     nit_original = _celda_texto(nit_ingresado)
     if not nombre_original and not nit_original:
@@ -4131,10 +4288,9 @@ def preparar_empresa_nueva_y_template(nombre_ingresado="", nit_ingresado=""):
     # la razón social guardada. Si falta uno de los datos, validar ambos en una
     # misma fuente antes de asociarlos.
     if pareja_confirmada_en_base:
-        resultado = buscar_empresa_y_logo_python(nombre_busqueda, "")
-        resultado["nombre"] = nombre_guardado
-        resultado["nit"] = nit_guardado
-        resultado["empresa_verificada"] = True
+        # Revalidamos nombre y NIT juntos contra la fuente oficial RUES incluso
+        # cuando ya estaban guardados: la hoja no sustituye la verificación oficial.
+        resultado = buscar_empresa_y_logo_python(nombre_busqueda, nit_busqueda)
     else:
         resultado = buscar_empresa_y_logo_python(nombre_busqueda, nit_busqueda)
         if nombre_busqueda and nit_busqueda and not resultado.get("empresa_verificada"):
@@ -4192,7 +4348,10 @@ def preparar_empresa_nueva_y_template(nombre_ingresado="", nit_ingresado=""):
     logo_url = _celda_texto((resultado.get("logo") or {}).get("url", ""))
     # Este guardado actualiza el registro encontrado; solo agrega una fila si
     # nombre y NIT no existen. La función vuelve a validar ambas claves.
-    guardar_empresa_en_sheets(nombre_final, nit_final, doc_id_empresa, logo_url, estado_logo)
+    guardar_empresa_en_sheets(
+        nombre_final, nit_final, doc_id_empresa, logo_url, estado_logo,
+        _celda_texto(resultado.get("fuente_identidad", ""))
+    )
 
     info = obtener_info_plantilla(doc_id_empresa)
     st.session_state.empresa = nombre_final
