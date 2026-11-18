@@ -3042,6 +3042,14 @@ RUES_DATOS_ABIERTOS_URL = (
 )
 RUES_PORTAL_URL = "https://ruesfront.rues.org.co/"
 
+# Conjunto oficial de entidades vigiladas, publicado por la propia
+# Superintendencia Financiera en Datos Abiertos Colombia.
+SFC_ENTIDADES_VIGILADAS_API = "https://www.datos.gov.co/resource/sr9n-792w.json"
+SFC_ENTIDADES_VIGILADAS_URL = (
+    "https://www.datos.gov.co/en/en/Public-Finance/"
+    "Entidades-vigiladas-por-la-Superfinanciera/sr9n-792w"
+)
+
 
 def _clave_nit(valor):
     """Devuelve el NIT base sin separadores ni dígito de verificación."""
@@ -3173,9 +3181,19 @@ def _consultar_rues_por_nit(nit):
         "(" + " OR ".join(condiciones_exactas) + ")",
         "(" + " OR ".join(condiciones_parciales) + ")",
     ]
-    for where in consultas:
+    for indice_consulta, where in enumerate(consultas, 1):
         try:
             filas.extend(_consultar_dataset_rues(where, limite=100))
+            # Si la consulta exacta ya encontró filas cuyo NIT normalizado es
+            # exactamente el solicitado, no hace falta ejecutar el LIKE amplio.
+            # Evita una segunda petición lenta que puede agotar el timeout.
+            registros_temporales = _deduplicar_registros_rues(filas)
+            if indice_consulta == 1 and any(r.get("nit_base") == nit_base for r in registros_temporales):
+                _log_busqueda_empresa(
+                    "RUES: la consulta exacta ya encontró coincidencias verificables; "
+                    "se omite la consulta parcial LIKE."
+                )
+                break
         except Exception as exc:
             errores.append(str(exc)[:180])
             _log_busqueda_empresa(f"RUES: error en consulta: {type(exc).__name__}: {str(exc)[:250]}")
@@ -3241,12 +3259,120 @@ def _nombres_legales_coinciden(nombre_entrada, nombre_oficial):
     return interseccion >= min(len(a), len(b)) and interseccion >= 1
 
 
+def _consultar_entidad_vigilada_superfinanciera_por_nit(nit):
+    """Consulta directamente el conjunto oficial de entidades vigiladas por la SFC."""
+    nit_digitos = _normalizar_nit(nit)
+    nit_base = _clave_nit(nit)
+    if len(nit_base) < 7:
+        return None
+
+    # El conjunto almacena NUMEROIDENTIFICACION como campo numérico y suele
+    # incluir el dígito de verificación. Si el usuario solo escribió el NIT
+    # base, también se consulta el DV calculado.
+    valores = []
+    for valor in (nit_digitos, nit_base):
+        if valor and valor.isdigit() and valor not in valores:
+            valores.append(valor)
+    if len(nit_digitos) == 9:
+        dv = _calcular_dv_nit_colombiano(nit_base)
+        if dv and (nit_base + dv) not in valores:
+            valores.append(nit_base + dv)
+    condiciones = [f"numeroidentificacion = {int(v)}" for v in valores]
+    where = "(" + " OR ".join(condiciones) + ")"
+    _log_busqueda_empresa(
+        "Superfinanciera: consultando directamente el conjunto oficial "
+        f"sr9n-792w; filtro={where}"
+    )
+    try:
+        respuesta = requests.get(
+            SFC_ENTIDADES_VIGILADAS_API,
+            params={"$where": where, "$limit": "10"},
+            headers={
+                "Accept": "application/json",
+                "User-Agent": "CesantiasAlInstante/4.5 (validacion de entidad vigilada)",
+            },
+            timeout=(5, 15),
+        )
+        _log_busqueda_empresa(
+            f"Superfinanciera: HTTP {respuesta.status_code}; "
+            f"content-type={respuesta.headers.get('Content-Type', '')}"
+        )
+        respuesta.raise_for_status()
+        datos = respuesta.json()
+        if not isinstance(datos, list):
+            _log_busqueda_empresa("Superfinanciera: respuesta JSON no contiene una lista de registros.")
+            return None
+    except Exception as exc:
+        _log_busqueda_empresa(
+            f"Superfinanciera: consulta directa falló: {type(exc).__name__}: {str(exc)[:220]}"
+        )
+        return None
+
+    coincidencias = []
+    for fila in datos:
+        nit_fila = _normalizar_nit(fila.get("numeroidentificacion", ""))
+        if _clave_nit(nit_fila) != nit_base:
+            continue
+        nombre = _celda_texto(fila.get("razon_social", ""))
+        if not nombre:
+            continue
+        coincidencias.append({"nombre": nombre, "nit": nit_fila, "fila": fila})
+
+    unicos = {}
+    for item in coincidencias:
+        unicos.setdefault(_clave_nombre_empresa(item["nombre"]), item)
+    _log_busqueda_empresa(
+        f"Superfinanciera: {len(datos)} filas recibidas; "
+        f"{len(coincidencias)} coincidencias exactas; "
+        f"{len(unicos)} denominaciones únicas para el NIT."
+    )
+    for item in coincidencias[:10]:
+        _log_busqueda_empresa(
+            f"Superfinanciera candidato: {item['nombre']} | NIT={item['nit']}"
+        )
+
+    if len(unicos) != 1:
+        if not unicos:
+            _log_busqueda_empresa("Superfinanciera: el NIT no aparece en el conjunto de entidades vigiladas.")
+        else:
+            _log_busqueda_empresa("Superfinanciera: hay más de una denominación para el NIT; no se selecciona ninguna.")
+        return None
+
+    candidato = next(iter(unicos.values()))
+    nit_completo = candidato["nit"]
+    dv = nit_completo[-1] if len(nit_completo) == 10 else ""
+    _log_busqueda_empresa(
+        f"Superfinanciera: identidad confirmada por fuente oficial: {candidato['nombre']} | "
+        f"URL={SFC_ENTIDADES_VIGILADAS_URL}"
+    )
+    return {
+        "nombre": candidato["nombre"],
+        "nit_base": nit_base,
+        "digito_verificacion": dv,
+        "nit": f"{nit_base}-{dv}" if dv else nit_base,
+        "estado_matricula": "",
+        "camara_comercio": "",
+        "codigo_camara": "",
+        "matricula": "",
+        "ultimo_ano_renovado": "",
+        "fuente_identidad": "Superintendencia Financiera de Colombia - Datos Abiertos",
+        "url_fuente_identidad": SFC_ENTIDADES_VIGILADAS_URL,
+    }
+
+
 def _consultar_identidad_nit_en_fuentes_oficiales(nit):
     """Respalda RUES con documentos públicos oficiales que identifican el mismo NIT."""
     nit_digitos = _normalizar_nit(nit)
     nit_base = _clave_nit(nit)
     if not nit_base:
         return None
+
+    # Antes de consultar buscadores externos, intenta la fuente de datos
+    # estructurada de la Superintendencia Financiera. Para bancos y otras
+    # entidades vigiladas, esta consulta devuelve el registro oficial por NIT.
+    registro_sfc = _consultar_entidad_vigilada_superfinanciera_por_nit(nit)
+    if registro_sfc:
+        return registro_sfc
 
     variantes = [nit_digitos] if nit_digitos else []
     if nit_base not in variantes:
@@ -3598,6 +3724,34 @@ def _dominio_es_red_social(url):
     )
 
 
+def _desenvolver_url_bing(href):
+    """Convierte enlaces de seguimiento Bing (/ck/a) en su URL de destino real."""
+    href = html.unescape(str(href or "")).strip()
+    if not href:
+        return ""
+    parsed = urlparse(href)
+    host = parsed.netloc.lower().split(":")[0].removeprefix("www.")
+    if host not in ("bing.com", "cn.bing.com", "global.bing.com"):
+        return href
+
+    parametros = parse_qs(parsed.query)
+    destino = (parametros.get("u") or parametros.get("url") or [""])[0].strip()
+    if destino.startswith("a1"):
+        codificado = destino[2:]
+        try:
+            relleno = "=" * ((4 - len(codificado) % 4) % 4)
+            destino = base64.urlsafe_b64decode(codificado + relleno).decode("utf-8", errors="replace")
+        except Exception:
+            return ""
+    destino = html.unescape(destino).strip()
+    if not destino.startswith(("http://", "https://")):
+        return ""
+    host_destino = urlparse(destino).netloc.lower().split(":")[0].removeprefix("www.")
+    if not host_destino or host_destino.endswith("bing.com"):
+        return ""
+    return destino
+
+
 def _buscar_resultados_empresa(query, max_resultados=12):
     """Busca páginas empresariales con DuckDuckGo y Bing como respaldo."""
     headers = {
@@ -3615,6 +3769,8 @@ def _buscar_resultados_empresa(query, max_resultados=12):
         )
         _log_busqueda_empresa(f"DuckDuckGo: HTTP {respuesta.status_code}; respuesta={len(respuesta.text)} caracteres.")
         respuesta.raise_for_status()
+        if respuesta.status_code == 202:
+            _log_busqueda_empresa("DuckDuckGo: respondió HTTP 202; probablemente entregó una página de desafío y no resultados de búsqueda.")
         html_busqueda = respuesta.text
         # Procesar cada enlace result__a sin depender del orden de sus atributos.
         for atributos, titulo_html in re.findall(r"<a\b([^>]*)>(.*?)</a>", html_busqueda, re.I | re.S):
@@ -3674,7 +3830,11 @@ def _buscar_resultados_empresa(query, max_resultados=12):
                 attrs = {}
                 for clave, comilla, valor in re.findall(r"([\w:-]+)\s*=\s*([\"'])(.*?)\2", enlace.group(1), re.I | re.S):
                     attrs[clave.lower()] = html.unescape(valor)
-                href = attrs.get("href", "").strip()
+                href_original = attrs.get("href", "").strip()
+                href = _desenvolver_url_bing(href_original)
+                if not href:
+                    _log_busqueda_empresa("Bing: se descartó un enlace de seguimiento sin destino verificable.")
+                    continue
                 dominio = urlparse(href).netloc.lower()
                 if not href.startswith(("http://", "https://")) or not dominio:
                     continue
@@ -3724,14 +3884,17 @@ def _buscar_resultados_empresa(query, max_resultados=12):
     # devolvieron el número dentro de título o resumen, aunque sí den otros links.
     if not resultados or not any(item.get("snippet") for item in resultados) or (nit_clave_consulta and not resultado_contiene_nit):
         try:
+            _log_busqueda_empresa("Google: se inicia consulta de respaldo porque DDG/Bing no aportaron un resultado con el NIT en título o resumen.")
             respuesta = requests.get(
                 "https://www.google.com/search",
                 params={"q": query, "num": max(10, max_resultados)},
                 headers=headers,
                 timeout=(4, 10)
             )
+            _log_busqueda_empresa(f"Google: HTTP {respuesta.status_code}; respuesta={len(respuesta.text)} caracteres.")
             respuesta.raise_for_status()
             html_google = respuesta.text
+            cantidad_google_antes = len(resultados)
             for coincidencia in re.finditer(r"<a\b([^>]*)>(.*?)</a>", html_google, re.I | re.S):
                 atributos, interior = coincidencia.group(1), coincidencia.group(2)
                 if not re.search(r"<h3\b", interior, re.I):
@@ -3774,8 +3937,9 @@ def _buscar_resultados_empresa(query, max_resultados=12):
                 resultados.insert(0, {"url": href, "titulo": titulo, "snippet": snippet})
                 if len(resultados) >= max(1, int(max_resultados)) * 2:
                     break
-        except Exception:
-            pass
+            _log_busqueda_empresa(f"Google: resultados nuevos extraídos={len(resultados) - cantidad_google_antes}.")
+        except Exception as exc:
+            _log_busqueda_empresa(f"Google: consulta de respaldo falló: {type(exc).__name__}: {str(exc)[:220]}")
 
     _log_busqueda_empresa(f"Buscadores: total final de resultados únicos={len(resultados)}.")
     return resultados[:max(1, int(max_resultados)) * 2]
