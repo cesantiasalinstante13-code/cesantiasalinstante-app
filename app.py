@@ -3003,6 +3003,34 @@ def _calcular_dv_nit_colombiano(nit_base):
     return str(residuo if residuo in (0, 1) else 11 - residuo)
 
 
+# ---------- DIAGNÓSTICO DE BÚSQUEDA EMPRESARIAL ----------
+def _log_busqueda_empresa(mensaje):
+    """Guarda trazas técnicas por sesión; nunca registra secretos de Google."""
+    try:
+        if "log_busqueda_empresa" not in st.session_state:
+            st.session_state.log_busqueda_empresa = []
+        marca = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        st.session_state.log_busqueda_empresa.append(f"[{marca}] {mensaje}")
+    except Exception:
+        pass
+
+
+def _iniciar_log_busqueda_empresa(nombre, nit):
+    try:
+        st.session_state.log_busqueda_empresa = []
+    except Exception:
+        pass
+    _log_busqueda_empresa("INICIO DE VALIDACIÓN")
+    _log_busqueda_empresa(f"Datos recibidos: nombre={_celda_texto(nombre) or '(vacío)'} | NIT={_celda_texto(nit) or '(vacío)'}")
+
+
+def _texto_log_busqueda_empresa():
+    try:
+        return "\n".join(st.session_state.get("log_busqueda_empresa", [])) or "No hay eventos registrados."
+    except Exception:
+        return "No hay eventos registrados."
+
+
 # ---------- IDENTIDAD EMPRESARIAL: FUENTE OFICIAL RUES / CONFECÁMARAS ----------
 # Conjunto nacional de datos básicos del Registro Mercantil, sincronizado con
 # RUES y publicado por Confecámaras en el Portal Nacional de Datos Abiertos.
@@ -3041,12 +3069,14 @@ def _consultar_dataset_rues(where, limite=30):
     if app_token:
         headers["X-App-Token"] = str(app_token).strip()
 
+    _log_busqueda_empresa(f"RUES: enviando consulta al conjunto oficial; límite={limite}; filtro={where}")
     respuesta = requests.get(
         RUES_DATOS_ABIERTOS_API,
         params={"$where": where, "$limit": str(limite)},
         headers=headers,
         timeout=(5, 20),
     )
+    _log_busqueda_empresa(f"RUES: HTTP {respuesta.status_code}; content-type={respuesta.headers.get('Content-Type', '')}")
     respuesta.raise_for_status()
     datos = respuesta.json()
     if isinstance(datos, dict):
@@ -3054,6 +3084,7 @@ def _consultar_dataset_rues(where, limite=30):
         raise RuntimeError(str(mensaje)[:300])
     if not isinstance(datos, list):
         raise RuntimeError("El conjunto RUES devolvió un formato de respuesta no reconocido.")
+    _log_busqueda_empresa(f"RUES: respuesta válida con {len(datos)} filas sin normalizar.")
     return datos
 
 
@@ -3147,6 +3178,7 @@ def _consultar_rues_por_nit(nit):
             filas.extend(_consultar_dataset_rues(where, limite=100))
         except Exception as exc:
             errores.append(str(exc)[:180])
+            _log_busqueda_empresa(f"RUES: error en consulta: {type(exc).__name__}: {str(exc)[:250]}")
 
     # Respaldo por consultas individuales: evita que una cláusula OR/LIKE
     # incompatible con cambios del portal invalide todas las búsquedas.
@@ -3159,6 +3191,9 @@ def _consultar_rues_por_nit(nit):
 
     registros = _deduplicar_registros_rues(filas)
     exactos = [r for r in registros if r.get("nit_base") == nit_base]
+    _log_busqueda_empresa(f"RUES: {len(filas)} filas recibidas; {len(registros)} registros únicos; {len(exactos)} coincidencias exactas para el NIT base.")
+    for reg in exactos[:20]:
+        _log_busqueda_empresa(f"RUES candidato: {reg.get('nombre')} | NIT={reg.get('nit')} | cámara={reg.get('camara_comercio')} | matrícula={reg.get('matricula')} | estado={reg.get('estado_matricula')}")
     if exactos:
         return exactos
 
@@ -3231,13 +3266,18 @@ def _consultar_identidad_nit_en_fuentes_oficiales(nit):
         "superfinanciera.gov.co", "sic.gov.co", "mincit.gov.co", "invima.gov.co", "dian.gov.co",
     )
     candidatos = {}
-    for consulta in consultas:
+    _log_busqueda_empresa(f"Respaldo oficial: iniciando búsqueda externa para NIT base {nit_base}; {len(consultas)} consultas previstas.")
+    for indice_consulta, consulta in enumerate(consultas, 1):
+        _log_busqueda_empresa(f"Buscador: consulta {indice_consulta}/{len(consultas)}: {consulta}")
         try:
             resultados = _buscar_resultados_empresa(consulta, max_resultados=12)
-        except Exception:
+            _log_busqueda_empresa(f"Buscador: consulta {indice_consulta} devolvió {len(resultados)} resultados combinados.")
+        except Exception as exc:
+            _log_busqueda_empresa(f"Buscador: error en consulta {indice_consulta}: {type(exc).__name__}: {str(exc)[:250]}")
             continue
 
         for item in resultados:
+            _log_busqueda_empresa(f"Resultado web: título={_celda_texto(item.get('titulo', ''))[:180]} | URL={_celda_texto(item.get('url', ''))[:300]} | resumen={_celda_texto(item.get('snippet', ''))[:350]}")
             url = item.get("url", "")
             titulo = _celda_texto(item.get("titulo", ""))
             snippet = _celda_texto(item.get("snippet", ""))
@@ -3299,10 +3339,13 @@ def _consultar_identidad_nit_en_fuentes_oficiales(nit):
             clave = _clave_nombre_empresa(candidato)
             candidatos.setdefault(clave, {"nombre": candidato, "url": url, "titulo": titulo})
 
+    _log_busqueda_empresa(f"Respaldo oficial: {len(candidatos)} razones sociales candidatas únicas: " + "; ".join(v.get("nombre", "") for v in candidatos.values()))
     if len(candidatos) != 1:
+        _log_busqueda_empresa("Respaldo oficial: no se pudo confirmar una única razón social; se rechaza por seguridad.")
         return None
 
     candidato = next(iter(candidatos.values()))
+    _log_busqueda_empresa(f"Respaldo oficial: identidad candidata confirmada: {candidato.get('nombre')} | URL={candidato.get('url')}")
     digitos = _normalizar_nit(nit)
     dv = digitos[-1] if len(digitos) == 10 else ""
     return {
@@ -3326,6 +3369,7 @@ def _resolver_identidad_rues(nombre_empresa="", nit_empresa=""):
     nit_entrada = _celda_texto(nit_empresa)
     if not nombre_entrada and not nit_entrada:
         raise ValueError("Escribe el nombre de la empresa, el NIT o ambos.")
+    _iniciar_log_busqueda_empresa(nombre_entrada, nit_entrada)
 
     if nit_entrada:
         digitos_usuario = _normalizar_nit(nit_entrada)
@@ -3343,6 +3387,7 @@ def _resolver_identidad_rues(nombre_empresa="", nit_empresa=""):
             registros = []
             errores_rues.append(str(exc)[:180])
 
+        _log_busqueda_empresa(f"RUES: resultado final de búsqueda por NIT: {len(registros)} registros.")
         if not registros:
             # El conjunto público se sincroniza periódicamente y algunas
             # matrículas pueden no aparecer en la consulta por campo exacto.
@@ -3366,10 +3411,13 @@ def _resolver_identidad_rues(nombre_empresa="", nit_empresa=""):
             nombres = {_clave_nombre_empresa(r.get("nombre", "")) for r in registros if r.get("nombre")}
             nombres.discard("")
             if len(nombres) > 1:
+                _log_busqueda_empresa("VALIDACIÓN: RUES devolvió varias denominaciones: " + "; ".join(sorted(_celda_texto(r.get("nombre", "")) for r in registros if r.get("nombre"))))
+                _log_busqueda_empresa("VALIDACIÓN: se inicia contraste con buscadores y fuentes oficiales.")
                 registro_oficial = _consultar_identidad_nit_en_fuentes_oficiales(nit_entrada)
                 if registro_oficial:
                     registros = [registro_oficial]
                 else:
+                    _log_busqueda_empresa("VALIDACIÓN: la fuente alternativa no confirmó una razón social única. Se detiene el proceso sin modificar Drive ni Sheets.")
                     nombres_detectados = sorted({
                         _celda_texto(r.get("nombre", "")) for r in registros if r.get("nombre")
                     })
@@ -3392,8 +3440,10 @@ def _resolver_identidad_rues(nombre_empresa="", nit_empresa=""):
                 f"El NIT pertenece a «{registro['nombre']}», pero el nombre ingresado no coincide. "
                 "No se asociaron los datos para evitar mezclar empresas."
             )
+        _log_busqueda_empresa(f"VALIDACIÓN: identidad aceptada: {registro.get('nombre')} | fuente={registro.get('fuente_identidad')} | URL={registro.get('url_fuente_identidad')}")
         return registro
 
+    _log_busqueda_empresa("Búsqueda RUES por nombre (no se proporcionó NIT).")
     registros = _consultar_rues_por_nombre(nombre_entrada)
     if not registros:
         raise ValueError(
@@ -3563,6 +3613,7 @@ def _buscar_resultados_empresa(query, max_resultados=12):
             "https://html.duckduckgo.com/html/",
             params={"q": query}, headers=headers, timeout=(4, 10)
         )
+        _log_busqueda_empresa(f"DuckDuckGo: HTTP {respuesta.status_code}; respuesta={len(respuesta.text)} caracteres.")
         respuesta.raise_for_status()
         html_busqueda = respuesta.text
         # Procesar cada enlace result__a sin depender del orden de sus atributos.
@@ -3596,9 +3647,11 @@ def _buscar_resultados_empresa(query, max_resultados=12):
                 resultados.append({"url": href, "titulo": titulo, "snippet": ""})
             if len(resultados) >= max_resultados:
                 break
-    except Exception:
+    except Exception as exc:
+        _log_busqueda_empresa(f"DuckDuckGo: falló la consulta: {type(exc).__name__}: {str(exc)[:220]}")
         # El buscador de respaldo se intenta incluso si DuckDuckGo bloquea la petición.
         pass
+    _log_busqueda_empresa(f"DuckDuckGo: {len(resultados)} resultados extraídos hasta este punto.")
 
     # Segundo proveedor: Bing. Reduce la dependencia de un solo buscador.
     if len(resultados) < max_resultados or not any(item.get("snippet") for item in resultados):
@@ -3608,6 +3661,7 @@ def _buscar_resultados_empresa(query, max_resultados=12):
                 params={"q": query, "count": max(10, max_resultados)},
                 headers=headers, timeout=(4, 10)
             )
+            _log_busqueda_empresa(f"Bing: HTTP {respuesta.status_code}; respuesta={len(respuesta.text)} caracteres.")
             respuesta.raise_for_status()
             bloques = re.findall(
                 r"<li\b[^>]*class=[\"'][^\"']*\bb_algo\b[^\"']*[\"'][^>]*>(.*?)(?=<li\b|</ol>|$)",
@@ -3646,8 +3700,10 @@ def _buscar_resultados_empresa(query, max_resultados=12):
                             if titulo and len(titulo) > len(previo.get("titulo", "")):
                                 previo["titulo"] = titulo
                             break
-        except Exception:
+        except Exception as exc:
+            _log_busqueda_empresa(f"Bing: falló la consulta: {type(exc).__name__}: {str(exc)[:220]}")
             pass
+    _log_busqueda_empresa(f"Bing: resultados acumulados={len(resultados)}.")
 
     # Tercer proveedor: Google Search HTML. Se usa como respaldo cuando los
     # otros motores no devuelven resúmenes legibles. No se considera válida una
@@ -3721,6 +3777,7 @@ def _buscar_resultados_empresa(query, max_resultados=12):
         except Exception:
             pass
 
+    _log_busqueda_empresa(f"Buscadores: total final de resultados únicos={len(resultados)}.")
     return resultados[:max(1, int(max_resultados)) * 2]
 
 
@@ -5592,6 +5649,7 @@ def render_empresa():
                             if not empresa_manual.strip() and not nit_manual.strip():
                                 st.error("Escribe al menos uno de estos datos: nombre de la empresa o NIT.")
                                 st.stop()
+                            _iniciar_log_busqueda_empresa(empresa_manual, nit_manual)
                             with st.spinner("Verificando la empresa, creando su plantilla y guardando el Doc_ID en la base de empresas..."):
                                 preparar_empresa_nueva_y_template(empresa_manual, nit_manual)
                         else:
@@ -5610,7 +5668,17 @@ def render_empresa():
                         st.session_state.step = "resumen"
                         st.rerun()
                     except Exception as exc:
+                        _log_busqueda_empresa(f"ERROR FINAL: {type(exc).__name__}: {str(exc)}")
+                        _log_busqueda_empresa("FIN: proceso detenido. No continuar con creación/actualización si la identidad no quedó validada.")
                         st.error(f"No se pudo validar la empresa o localizar su plantilla: {exc}")
+                        st.download_button(
+                            "Descargar registro técnico de esta búsqueda (.txt)",
+                            data=_texto_log_busqueda_empresa(),
+                            file_name=f"diagnostico_busqueda_empresa_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
+                            mime="text/plain",
+                            use_container_width=True,
+                            key="descargar_log_busqueda_empresa"
+                        )
                         st.stop()
 
 def render_generando():
