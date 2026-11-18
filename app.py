@@ -2992,6 +2992,17 @@ def _clave_nit(valor):
     return digitos[:-1] if len(digitos) == 10 else digitos
 
 
+def _calcular_dv_nit_colombiano(nit_base):
+    """Calcula el dígito de verificación colombiano para un NIT numérico."""
+    digitos = _normalizar_nit(nit_base)
+    if not digitos or len(digitos) > 15:
+        return ""
+    pesos = (71, 67, 59, 53, 47, 43, 41, 37, 29, 23, 19, 17, 13, 7, 3)
+    suma = sum(int(digito) * peso for digito, peso in zip(digitos, pesos[-len(digitos):]))
+    residuo = suma % 11
+    return str(residuo if residuo in (0, 1) else 11 - residuo)
+
+
 # ---------- IDENTIDAD EMPRESARIAL: FUENTE OFICIAL RUES / CONFECÁMARAS ----------
 # Conjunto nacional de datos básicos del Registro Mercantil, sincronizado con
 # RUES y publicado por Confecámaras en el Portal Nacional de Datos Abiertos.
@@ -3019,7 +3030,7 @@ def _consultar_dataset_rues(where, limite=30):
     """Consulta el conjunto oficial RUES/Confecámaras en datos.gov.co."""
     headers = {
         "Accept": "application/json",
-        "User-Agent": "CesantiasAlInstante/4.0 (consulta empresarial RUES)",
+        "User-Agent": "CesantiasAlInstante/4.1 (consulta empresarial RUES)",
     }
     # El token de Socrata es opcional. Sin él, la consulta pública puede
     # realizarse sujeta a los límites de uso del portal.
@@ -3101,17 +3112,59 @@ def _deduplicar_registros_rues(filas):
 
 
 def _consultar_rues_por_nit(nit):
-    """Busca cualquier NIT en el conjunto oficial, con o sin DV."""
+    """Busca cualquier NIT en el conjunto RUES, probando los campos y formatos publicados."""
+    nit_digitos = _normalizar_nit(nit)
     nit_base = _clave_nit(nit)
-    if not nit_base:
+    if len(nit_base) < 7:
         return []
-    valor = _soql_escape(nit_base)
-    filas = _consultar_dataset_rues(f"nit = '{valor}'", limite=50)
-    if not filas:
-        # Algunos registros históricos mantienen el identificador en este campo.
-        filas = _consultar_dataset_rues(f"numero_identificacion = '{valor}'", limite=50)
-    return _deduplicar_registros_rues(filas)
 
+    # En el conjunto público, nit y numero_identificacion son campos de texto.
+    # Algunas filas conservan el NIT base, otras pueden presentar el DV aparte
+    # o dentro del mismo identificador. Se consultan todas las variantes y se
+    # filtran localmente para no aceptar coincidencias parciales o falsas.
+    variantes = []
+    for valor in (nit_base, nit_digitos):
+        if valor and valor not in variantes:
+            variantes.append(valor)
+
+    condiciones_exactas = []
+    condiciones_parciales = []
+    for campo in ("nit", "numero_identificacion"):
+        for valor in variantes:
+            seguro = _soql_escape(valor)
+            condiciones_exactas.append(f"{campo} = '{seguro}'")
+        seguro_base = _soql_escape(nit_base)
+        condiciones_parciales.append(f"{campo} like '%{seguro_base}%'")
+
+    filas = []
+    errores = []
+    consultas = [
+        "(" + " OR ".join(condiciones_exactas) + ")",
+        "(" + " OR ".join(condiciones_parciales) + ")",
+    ]
+    for where in consultas:
+        try:
+            filas.extend(_consultar_dataset_rues(where, limite=100))
+        except Exception as exc:
+            errores.append(str(exc)[:180])
+
+    # Respaldo por consultas individuales: evita que una cláusula OR/LIKE
+    # incompatible con cambios del portal invalide todas las búsquedas.
+    if not filas:
+        for condicion in condiciones_exactas + condiciones_parciales:
+            try:
+                filas.extend(_consultar_dataset_rues(condicion, limite=50))
+            except Exception as exc:
+                errores.append(str(exc)[:180])
+
+    registros = _deduplicar_registros_rues(filas)
+    exactos = [r for r in registros if r.get("nit_base") == nit_base]
+    if exactos:
+        return exactos
+
+    # Solo se aceptan registros cuyo NIT normalizado coincide exactamente.
+    # Un resultado que meramente contenga los dígitos buscados se descarta.
+    return []
 
 def _consultar_rues_por_nombre(nombre):
     """Busca por razón social en RUES sin escoger coincidencias ambiguas."""
@@ -3153,25 +3206,163 @@ def _nombres_legales_coinciden(nombre_entrada, nombre_oficial):
     return interseccion >= min(len(a), len(b)) and interseccion >= 1
 
 
+def _consultar_identidad_nit_en_fuentes_oficiales(nit):
+    """Respalda RUES con documentos públicos oficiales que identifican el mismo NIT."""
+    nit_digitos = _normalizar_nit(nit)
+    nit_base = _clave_nit(nit)
+    if not nit_base:
+        return None
+
+    variantes = [nit_digitos] if nit_digitos else []
+    if nit_base not in variantes:
+        variantes.append(nit_base)
+    consultas = []
+    for valor in variantes:
+        consultas.extend([
+            f'"{valor}" Colombia "razón social"',
+            f'"{valor}" Colombia "certificado de existencia"',
+            f'"{valor}" Colombia NIT empresa Cámara de Comercio',
+        ])
+
+    dominios_oficiales = (
+        "datos.gov.co", "gov.co", "rues.org.co", "ccc.org.co", "ccb.org.co",
+        "camaramedellin.com.co", "camaracali.com.co", "camarapereira.org.co",
+        "camarabogota.org.co", "confecamaras.org.co", "supersociedades.gov.co",
+        "sic.gov.co", "mincit.gov.co", "invima.gov.co", "dian.gov.co",
+    )
+    candidatos = {}
+    for consulta in consultas:
+        try:
+            resultados = _buscar_resultados_empresa(consulta, max_resultados=12)
+        except Exception:
+            continue
+
+        for item in resultados:
+            url = item.get("url", "")
+            titulo = _celda_texto(item.get("titulo", ""))
+            snippet = _celda_texto(item.get("snippet", ""))
+            host = urlparse(url).netloc.lower().split(":")[0].removeprefix("www.")
+            texto_resumen = f"{titulo} {snippet}"
+            if not url.startswith(("http://", "https://")):
+                continue
+            if not _nit_coincide_con_texto(nit, texto_resumen):
+                continue
+
+            # Las fuentes admitidas son portales oficiales, cámaras, RUES o
+            # certificados mercantiles alojados en el propio dominio empresarial.
+            dominio_oficial = any(host == d or host.endswith("." + d) for d in dominios_oficiales)
+            menciona_certificado = bool(re.search(
+                r"certificado\s+de\s+(?:existencia|representaci[oó]n)|c[aá]mara\s+de\s+comercio|registro\s+mercantil",
+                texto_resumen, re.I
+            ))
+            if not dominio_oficial and not menciona_certificado:
+                continue
+
+            candidato = _nombre_candidato_desde_resultado(titulo, snippet, nit)
+            texto_verificacion = texto_resumen
+            # Cuando el resumen no contiene una razón social (con forma jurídica),
+            # intentar leer la página pública; en certificados oficiales el nombre
+            # suele estar en el cuerpo y no en el título del resultado.
+            tiene_forma_legal = bool(candidato and re.search(
+                r"(?:S\.?\s*A\.?\s*S\.?|S\.?\s*A\.?|LTDA\.?|LIMITADA|E\.?\s*U\.?|S\.?\s*EN\s*C\.?)$",
+                candidato, re.I
+            ))
+            if not candidato or len(_normalizar_nombre_empresa(candidato).split()) < 2 or not tiene_forma_legal:
+                try:
+                    pagina = requests.get(
+                        url,
+                        headers={"User-Agent": "Mozilla/5.0 (compatible; CesantiasAlInstante/4.1)"},
+                        timeout=(5, 12),
+                        allow_redirects=True,
+                    )
+                    if pagina.ok and "text/html" in pagina.headers.get("Content-Type", "text/html").lower():
+                        texto_pagina = _texto_html_limpio(pagina.text[:2_500_000])
+                        texto_verificacion += " " + texto_pagina
+                        candidato = (
+                            _nombre_candidato_cercano_al_nit(texto_pagina, nit)
+                            or _nombre_candidato_desde_resultado(titulo, texto_pagina, nit)
+                        )
+                except Exception:
+                    pass
+
+            if not candidato or len(_normalizar_nombre_empresa(candidato).split()) < 2:
+                continue
+            # Se requiere que el resultado oficial muestre el NIT consultado y
+            # que el nombre encontrado tenga forma de razón social.
+            if not _nit_coincide_con_texto(nit, texto_verificacion):
+                continue
+            if not re.search(
+                r"\b(?:S\.?\s*A\.?\s*S\.?|S\.?\s*A\.?|LTDA\.?|LIMITADA|E\.?\s*U\.?|S\.?\s*EN\s*C\.?)\b",
+                candidato, re.I
+            ):
+                continue
+            clave = _clave_nombre_empresa(candidato)
+            candidatos.setdefault(clave, {"nombre": candidato, "url": url, "titulo": titulo})
+
+    if len(candidatos) != 1:
+        return None
+
+    candidato = next(iter(candidatos.values()))
+    digitos = _normalizar_nit(nit)
+    dv = digitos[-1] if len(digitos) == 10 else ""
+    return {
+        "nombre": candidato["nombre"],
+        "nit_base": nit_base,
+        "digito_verificacion": dv,
+        "nit": f"{nit_base}-{dv}" if dv else nit_base,
+        "estado_matricula": "",
+        "camara_comercio": "",
+        "codigo_camara": "",
+        "matricula": "",
+        "ultimo_ano_renovado": "",
+        "fuente_identidad": "Documento público oficial localizado por NIT",
+        "url_fuente_identidad": candidato["url"],
+    }
+
+
 def _resolver_identidad_rues(nombre_empresa="", nit_empresa=""):
-    """Resuelve nombre/NIT desde el conjunto oficial; nunca usa listas fijas."""
+    """Resuelve nombre/NIT desde RUES; usa documentos oficiales como respaldo público."""
     nombre_entrada = _celda_texto(nombre_empresa)
     nit_entrada = _celda_texto(nit_empresa)
     if not nombre_entrada and not nit_entrada:
         raise ValueError("Escribe el nombre de la empresa, el NIT o ambos.")
 
     if nit_entrada:
-        registros = _consultar_rues_por_nit(nit_entrada)
+        digitos_usuario = _normalizar_nit(nit_entrada)
+        if len(digitos_usuario) == 10:
+            dv_calculado = _calcular_dv_nit_colombiano(digitos_usuario[:-1])
+            if dv_calculado and digitos_usuario[-1] != dv_calculado:
+                raise ValueError(
+                    f"El dígito de verificación del NIT no es correcto. Para el número {digitos_usuario[:-1]}, "
+                    f"el dígito calculado es {dv_calculado}. Revisa el dato antes de continuar."
+                )
+        errores_rues = []
+        try:
+            registros = _consultar_rues_por_nit(nit_entrada)
+        except Exception as exc:
+            registros = []
+            errores_rues.append(str(exc)[:180])
+
         if not registros:
+            # El conjunto público se sincroniza periódicamente y algunas
+            # matrículas pueden no aparecer en la consulta por campo exacto.
+            # Se intenta localizar un documento público oficial con el mismo NIT.
+            registro_oficial = _consultar_identidad_nit_en_fuentes_oficiales(nit_entrada)
+            if registro_oficial:
+                registros = [registro_oficial]
+
+        if not registros:
+            detalle = (" Detalle técnico RUES: " + errores_rues[0]) if errores_rues else ""
             raise ValueError(
-                "RUES/Confecámaras no devolvió un registro para ese NIT. "
-                "Comprueba el número sin puntos ni guion, o consulta la empresa por su razón social."
+                "No encontramos ese NIT en el conjunto público RUES/Confecámaras ni en los "
+                "documentos oficiales consultados. Comprueba el número o intenta con el nombre legal."
+                + detalle
             )
         if len(registros) > 1:
             nombres = {r["nombre"] for r in registros}
             if len(nombres) > 1:
                 raise ValueError(
-                    "RUES devolvió más de una razón social para ese NIT. "
+                    "Las fuentes oficiales devolvieron más de una razón social para ese NIT. "
                     "No se creó plantilla ni se modificó la base; se requiere revisión manual."
                 )
         registro = registros[0]
@@ -3179,8 +3370,7 @@ def _resolver_identidad_rues(nombre_empresa="", nit_empresa=""):
         if len(digitos_entrada) == 10 and registro.get("digito_verificacion"):
             if digitos_entrada[-1] != registro["digito_verificacion"]:
                 raise ValueError(
-                    "El dígito de verificación no coincide con el registro de RUES. "
-                    "Revisa el NIT antes de continuar."
+                    "El dígito de verificación no coincide con el registro oficial. Revisa el NIT antes de continuar."
                 )
         if nombre_entrada and not _nombres_legales_coinciden(nombre_entrada, registro["nombre"]):
             raise ValueError(
@@ -3197,8 +3387,6 @@ def _resolver_identidad_rues(nombre_empresa="", nit_empresa=""):
     clave_entrada = _clave_nombre_empresa(nombre_entrada)
     exactos = [r for r in registros if _clave_nombre_empresa(r["nombre"]) == clave_entrada]
     candidatos = exactos or [r for r in registros if _nombres_legales_coinciden(nombre_entrada, r["nombre"])]
-    # Una búsqueda por nombre puede devolver muchas sociedades parecidas.
-    # Solo se acepta una única identidad; nunca elegimos la primera al azar.
     por_identidad = {}
     for registro in candidatos:
         por_identidad[(registro["nit_base"], _clave_nombre_empresa(registro["nombre"]))] = registro
@@ -3209,7 +3397,6 @@ def _resolver_identidad_rues(nombre_empresa="", nit_empresa=""):
             "Escribe también el NIT para identificar la sociedad correcta."
         )
     return candidatos[0]
-
 
 def _normalizar_nombre_empresa(valor):
     """Normaliza tildes, siglas jurídicas y signos para comparar nombres."""
@@ -3627,25 +3814,28 @@ def _nombre_candidato_desde_resultado(titulo="", snippet="", nit=""):
 
 
 def _descargar_candidato_logo(candidato, referer=""):
-    """Descarga y valida una imagen candidata sin aceptar HTML ni archivos enormes."""
+    """Descarga logo web y normaliza formatos admitidos por Google Docs."""
     if not candidato or urlparse(candidato).scheme not in ("http", "https"):
+        return None
+    url_limpia = candidato.lower().split("?")[0]
+    if any(palabra in url_limpia for palabra in ("loader", "loading", "spinner", "placeholder", "tracking-pixel")):
         return None
     try:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                          "AppleWebKit/537.36 Chrome/120 Safari/537.36"
+                          "AppleWebKit/537.36 Chrome/120 Safari/537.36",
+            "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
         }
         if referer:
             headers["Referer"] = referer
         imagen = requests.get(
-            candidato, headers=headers, timeout=(4, 8),
+            candidato, headers=headers, timeout=(5, 12),
             allow_redirects=True, stream=True
         )
-        tipo = imagen.headers.get("Content-Type", "").lower().split(";")[0]
-        if not imagen.ok or not tipo.startswith("image/"):
+        if not imagen.ok:
             imagen.close()
             return None
-
+        tipo = imagen.headers.get("Content-Type", "").lower().split(";")[0].strip()
         contenido = bytearray()
         for bloque in imagen.iter_content(65536):
             if not bloque:
@@ -3654,58 +3844,96 @@ def _descargar_candidato_logo(candidato, referer=""):
             if len(contenido) > 5_000_000:
                 imagen.close()
                 return None
+        url_final = imagen.url
         imagen.close()
-
         if len(contenido) < 100:
             return None
 
         datos_imagen = bytes(contenido)
-        # Google Docs acepta PNG/JPEG/GIF para imágenes insertadas. Convertimos
-        # SVG y WebP a PNG cuando las bibliotecas están disponibles.
-        if tipo == "image/svg+xml" or tipo == "image/webp":
+        # Algunos CDNs responden como octet-stream o text/xml aunque entreguen imagen.
+        if datos_imagen.startswith(b"\x89PNG\r\n\x1a\n"):
+            tipo = "image/png"
+        elif datos_imagen.startswith(b"\xff\xd8\xff"):
+            tipo = "image/jpeg"
+        elif datos_imagen.startswith((b"GIF87a", b"GIF89a")):
+            tipo = "image/gif"
+        elif b"<svg" in datos_imagen[:1000].lower() or tipo in ("image/svg+xml", "text/xml", "application/xml"):
+            tipo = "image/svg+xml"
+        elif tipo == "image/webp" or datos_imagen[8:12] == b"WEBP":
+            tipo = "image/webp"
+
+        if tipo == "image/svg+xml":
             try:
-                if tipo == "image/svg+xml":
-                    import cairosvg
-                    datos_imagen = cairosvg.svg2png(bytestring=datos_imagen, output_width=1200)
-                else:
-                    from PIL import Image
-                    origen = Image.open(BytesIO(datos_imagen)).convert("RGBA")
-                    salida = BytesIO()
-                    origen.save(salida, format="PNG")
-                    datos_imagen = salida.getvalue()
+                import cairosvg
+                datos_imagen = cairosvg.svg2png(bytestring=datos_imagen, output_width=1200)
                 tipo = "image/png"
             except Exception:
                 return None
+        elif tipo == "image/webp":
+            try:
+                from PIL import Image
+                origen = Image.open(BytesIO(datos_imagen)).convert("RGBA")
+                salida = BytesIO()
+                origen.save(salida, format="PNG")
+                datos_imagen = salida.getvalue()
+                tipo = "image/png"
+            except Exception:
+                return None
+
         if tipo not in ("image/png", "image/jpeg", "image/gif"):
             return None
-        return {
-            "url": imagen.url,
-            "bytes": datos_imagen,
-            "mime": tipo
-        }
+        return {"url": url_final, "bytes": datos_imagen, "mime": tipo}
     except Exception:
         return None
 
-
 def _extraer_logo_oficial_desde_sitio(url_sitio, permitir_og_social=False):
-    """Extrae logos declarados en metadatos o imágenes HTML asociadas a la marca."""
+    """Busca el logo en schema, metadatos, cabecera, lazy images y CSS del sitio."""
     respuesta = requests.get(
         url_sitio,
         headers={
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                           "AppleWebKit/537.36 Chrome/120 Safari/537.36"
         },
-        timeout=(4, 8),
-        allow_redirects=True
+        timeout=(5, 12), allow_redirects=True
     )
     respuesta.raise_for_status()
     if "text/html" not in respuesta.headers.get("Content-Type", "text/html").lower():
         return None
 
-    contenido = respuesta.text[:2_000_000]
+    contenido = respuesta.text[:3_000_000]
     candidatos = []
+    vistos = set()
+    cabecera_patron = re.compile(r"<(?:header|nav)\b.*?</(?:header|nav)>", re.I | re.S)
+    cabeceras = cabecera_patron.findall(contenido)
+    if not cabeceras:
+        cabeceras = [contenido[:min(len(contenido), 500_000)]]
 
-    # 1) JSON-LD de Organization/Corporation.
+    def agregar(valor, prioridad=0):
+        if not valor:
+            return
+        valor = html.unescape(str(valor)).strip().strip("\"'()")
+        if not valor or valor.startswith(("data:", "javascript:")):
+            return
+        url = urljoin(respuesta.url, valor)
+        partes = urlparse(url)
+        if partes.scheme not in ("http", "https"):
+            return
+        ruta = (partes.path + " " + partes.query).lower()
+        if any(p in ruta for p in ("loader", "loading", "spinner", "placeholder", "tracking-pixel", "banner", "hero", "campaign")):
+            return
+        clave = url.split("#", 1)[0]
+        if clave not in vistos:
+            vistos.add(clave)
+            candidatos.append((prioridad, url))
+
+    def atributos(etiqueta):
+        salida = {}
+        patron = r"([\w:-]+)\s*=\s*(?:\"([^\"]*)\"|'([^']*)'|([^\s>]+))"
+        for clave, doble, simple, sin_comillas in re.findall(patron, etiqueta, re.I | re.S):
+            salida[clave.lower()] = html.unescape(doble or simple or sin_comillas or "")
+        return salida
+
+    # 1) JSON-LD: Organization / Corporation.
     for bloque in re.findall(
         r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>',
         contenido, re.I | re.S
@@ -3718,55 +3946,73 @@ def _extraer_logo_oficial_desde_sitio(url_sitio, permitir_og_social=False):
         while pendientes:
             elemento = pendientes.pop(0)
             if isinstance(elemento, dict):
+                logo = elemento.get("logo")
                 tipo = elemento.get("@type", "")
                 tipos = tipo if isinstance(tipo, list) else [tipo]
-                logo = elemento.get("logo")
                 if logo and (not tipos or any("Organization" in str(t) or "Corporation" in str(t) for t in tipos)):
                     if isinstance(logo, dict):
                         logo = logo.get("url") or logo.get("contentUrl")
                     if isinstance(logo, str):
-                        candidatos.append(urljoin(respuesta.url, logo))
+                        agregar(logo, 100)
                 pendientes.extend(v for v in elemento.values() if isinstance(v, (dict, list)))
             elif isinstance(elemento, list):
                 pendientes.extend(elemento)
 
-    # 2) Metadatos específicos de logo y Open Graph en redes sociales.
     es_social = permitir_og_social and _dominio_es_red_social(respuesta.url)
     for etiqueta in re.findall(r'<(?:meta|link)\b[^>]*>', contenido, re.I):
-        attrs = {}
-        for clave, comilla, valor in re.findall(r'([\w:-]+)\s*=\s*(["\'])(.*?)\2', etiqueta, re.I | re.S):
-            attrs[clave.lower()] = html.unescape(valor)
+        attrs = atributos(etiqueta)
         clave = (attrs.get("itemprop") or attrs.get("property") or attrs.get("name") or "").lower()
         rel = attrs.get("rel", "").lower()
         if clave in ("logo", "og:logo", "organization:logo"):
-            valor = attrs.get("content") or attrs.get("href")
-            if valor:
-                candidatos.append(urljoin(respuesta.url, valor))
-        elif "logo" in rel.split() and attrs.get("href"):
-            candidatos.append(urljoin(respuesta.url, attrs["href"]))
-        elif es_social and clave in ("og:image", "twitter:image", "twitter:image:src") and attrs.get("content"):
-            candidatos.append(urljoin(respuesta.url, attrs["content"]))
+            agregar(attrs.get("content") or attrs.get("href"), 95)
+        elif "logo" in rel.split() or "apple-touch-icon" in rel:
+            agregar(attrs.get("href"), 80)
+        elif es_social and clave in ("og:image", "twitter:image", "twitter:image:src"):
+            agregar(attrs.get("content"), 75)
 
-    # 3) Imágenes HTML cuyo alt, clase, id o nombre de archivo sugiere que son el logo.
-    imagenes_priorizadas = []
+    # 2) Imágenes normales, lazy-loading y srcset; primero se recorre el header.
+    for bloque in cabeceras:
+        for etiqueta in re.findall(r"<(?:img|source)\b[^>]*>", bloque, re.I):
+            attrs = atributos(etiqueta)
+            src = (attrs.get("data-src") or attrs.get("data-lazy-src") or attrs.get("data-original")
+                   or attrs.get("data-lazyload") or attrs.get("src"))
+            srcset = attrs.get("srcset") or attrs.get("data-srcset")
+            if not src and srcset:
+                src = srcset.split(",")[0].strip().split(" ")[0]
+            señales = " ".join((attrs.get("alt", ""), attrs.get("title", ""), attrs.get("class", ""), attrs.get("id", ""), src or "")).lower()
+            if src and any(p in señales for p in ("logo", "brand", "marca", "identity", "corporate")):
+                agregar(src, 90)
+            elif src and ("<header" in bloque.lower() or "<nav" in bloque.lower()):
+                # El primer logo del encabezado a veces no incluye la palabra logo.
+                agregar(src, 55)
+            if srcset and any(p in señales for p in ("logo", "brand", "marca", "identity", "corporate")):
+                for opcion in srcset.split(","):
+                    agregar(opcion.strip().split(" ")[0], 88)
+
+        # 3) CSS background-image solo dentro de cabeceras.
+        for css in re.findall(r"background(?:-image)?\s*:[^;}]*url\((.*?)\)", bloque, re.I | re.S):
+            agregar(css.strip(" \"'"), 50)
+
+    # 4) Imágenes señaladas por metadatos de logo en el resto de la página.
     for etiqueta in re.findall(r"<img\b[^>]*>", contenido, re.I):
-        attrs = {}
-        for clave, comilla, valor in re.findall(r"([\w:-]+)\s*=\s*([\"'])(.*?)\2", etiqueta, re.I | re.S):
-            attrs[clave.lower()] = html.unescape(valor)
-        src = attrs.get("src") or attrs.get("data-src") or attrs.get("data-lazy-src")
-        if not src:
-            continue
-        señales = " ".join((attrs.get("alt", ""), attrs.get("class", ""), attrs.get("id", ""), src)).lower()
-        if "logo" in señales or "brand" in señales or "marca" in señales:
-            imagenes_priorizadas.append(urljoin(respuesta.url, src))
-    candidatos.extend(imagenes_priorizadas)
+        attrs = atributos(etiqueta)
+        src = (attrs.get("data-src") or attrs.get("data-lazy-src") or attrs.get("data-original")
+               or attrs.get("data-lazyload") or attrs.get("src"))
+        srcset = attrs.get("srcset") or attrs.get("data-srcset")
+        if not src and srcset:
+            src = srcset.split(",")[0].strip().split(" ")[0]
+        señales = " ".join((attrs.get("alt", ""), attrs.get("title", ""), attrs.get("class", ""), attrs.get("id", ""), src or "")).lower()
+        if src and any(p in señales for p in ("logo", "brand", "marca", "identity", "corporate")):
+            agregar(src, 85)
+        if srcset and any(p in señales for p in ("logo", "brand", "marca", "identity", "corporate")):
+            for opcion in srcset.split(","):
+                agregar(opcion.strip().split(" ")[0], 83)
 
-    for candidato in dict.fromkeys(candidatos):
+    for _, candidato in sorted(candidatos, key=lambda x: -x[0]):
         imagen = _descargar_candidato_logo(candidato, referer=respuesta.url)
         if imagen:
             return imagen
     return None
-
 
 def _extraer_nombre_de_fila_con_nit(html_pagina, nit):
     """Lee una fila HTML que contiene el NIT y devuelve su celda de razón social."""
@@ -3801,8 +4047,54 @@ def _extraer_nombre_de_fila_con_nit(html_pagina, nit):
     return ""
 
 
+def _buscar_logo_en_bing_images(nombre_empresa, dominios_corporativos):
+    """Busca imágenes en Bing, pero solo acepta imágenes enlazadas desde dominios ya verificados."""
+    dominios = {str(d).lower().removeprefix("www.") for d in (dominios_corporativos or []) if d}
+    if not dominios:
+        return None
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36"
+    }
+    consultas = [f'"{nombre_empresa}" logo', f'"{nombre_empresa}" logo Colombia']
+    for consulta in consultas:
+        try:
+            respuesta = requests.get(
+                "https://www.bing.com/images/search",
+                params={"q": consulta, "form": "HDRSC3"},
+                headers=headers, timeout=(5, 12)
+            )
+            respuesta.raise_for_status()
+        except Exception:
+            continue
+
+        for etiqueta in re.findall(r"<a\b[^>]*class=[\"'][^\"']*\biusc\b[^\"']*[\"'][^>]*>", respuesta.text, re.I | re.S):
+            attrs = {}
+            for clave, doble, simple in re.findall(r"([\w:-]+)\s*=\s*([\"'])(.*?)\2", etiqueta, re.I | re.S):
+                attrs[clave.lower()] = html.unescape(simple)
+            meta = attrs.get("m", "")
+            if not meta:
+                continue
+            try:
+                datos = json.loads(html.unescape(meta))
+            except Exception:
+                continue
+            pagina_origen = datos.get("purl", "")
+            imagen_url = datos.get("murl", "")
+            host_origen = urlparse(pagina_origen).netloc.lower().removeprefix("www.")
+            dominio_verificado = any(host_origen == d or host_origen.endswith("." + d) for d in dominios)
+            if not dominio_verificado or not imagen_url:
+                continue
+            titulo = _celda_texto(datos.get("t", ""))
+            if titulo and not _texto_coincide_empresa(nombre_empresa, titulo):
+                continue
+            imagen = _descargar_candidato_logo(imagen_url, referer=pagina_origen)
+            if imagen:
+                return imagen, pagina_origen
+    return None
+
+
 def buscar_empresa_y_logo_python(nombre_empresa="", nit_empresa=""):
-    """Verifica identidad en RUES oficial y busca logo en páginas de la empresa."""
+    """Verifica identidad en fuentes públicas oficiales y busca logo en la web corporativa."""
     registro = _resolver_identidad_rues(nombre_empresa, nit_empresa)
     nombre_oficial = registro["nombre"]
     nit_oficial = registro["nit"]
@@ -3810,28 +4102,26 @@ def buscar_empresa_y_logo_python(nombre_empresa="", nit_empresa=""):
         "nombre": nombre_oficial,
         "nit": nit_oficial,
         "logo": None,
-        "sitio": RUES_PORTAL_URL,
+        "sitio": registro.get("url_fuente_identidad", RUES_PORTAL_URL),
         "empresa_verificada": True,
         "fuente_identidad": registro["fuente_identidad"],
         "url_fuente_identidad": registro["url_fuente_identidad"],
         "estado_matricula": registro.get("estado_matricula", ""),
         "fuente_logo": "",
-        "diagnostico": "Identidad confirmada en el conjunto público RUES/Confecámaras.",
+        "diagnostico": "Identidad confirmada en RUES o en un documento público oficial.",
     }
 
-    # La identidad legal ya está confirmada por RUES. Los buscadores se usan
-    # exclusivamente para localizar el sitio corporativo y recuperar el logo;
-    # jamás determinan ni sustituyen el nombre/NIT oficial.
     consultas = [
         f'"{nombre_oficial}" Colombia sitio oficial empresa',
         f'"{nombre_oficial}" logo sitio oficial Colombia',
+        f'"{nombre_oficial}" logo empresa',
     ]
     resultados = []
     vistos = set()
     errores = []
     for consulta in consultas:
         try:
-            for item in _buscar_resultados_empresa(consulta, max_resultados=12):
+            for item in _buscar_resultados_empresa(consulta, max_resultados=16):
                 url = item.get("url", "")
                 clave = url.split("?")[0].rstrip("/").lower()
                 if url and clave not in vistos:
@@ -3846,7 +4136,8 @@ def buscar_empresa_y_logo_python(nombre_empresa="", nit_empresa=""):
         "registronit.com", "einforma.com.co", "empresite.com", "dateas.com",
         "directorio-empresas", "lasempresas.com.co", "informa.co",
     )
-    for item in resultados[:40]:
+    dominios_verificados = []
+    for item in resultados[:60]:
         url = item.get("url", "")
         dominio = urlparse(url).netloc.lower().removeprefix("www.")
         if not dominio or any(d in dominio for d in dominios_no_corporativos):
@@ -3864,43 +4155,53 @@ def buscar_empresa_y_logo_python(nombre_empresa="", nit_empresa=""):
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                                   "AppleWebKit/537.36 Chrome/120 Safari/537.36"
                 },
-                timeout=(4, 10),
-                allow_redirects=True,
+                timeout=(5, 12), allow_redirects=True,
             )
             if not pagina.ok or "text/html" not in pagina.headers.get("Content-Type", "text/html").lower():
                 continue
-            html_pagina = pagina.text[:1_500_000]
-            texto_pagina = _texto_html_limpio(html_pagina)
-            # El sitio/perfil debe mostrar la razón social o suficientes palabras
-            # distintivas de ella; no aceptamos un logo de un directorio genérico.
+            texto_pagina = _texto_html_limpio(pagina.text[:2_000_000])
             if not _texto_coincide_empresa(nombre_oficial, f"{titulo} {snippet} {texto_pagina}"):
                 continue
+
+            host_final = urlparse(pagina.url or url).netloc.lower().removeprefix("www.")
+            if not es_social and host_final and host_final not in dominios_verificados:
+                dominios_verificados.append(host_final)
+
             logo = _extraer_logo_oficial_desde_sitio(
-                pagina.url or url,
-                permitir_og_social=es_social,
+                pagina.url or url, permitir_og_social=es_social
             )
             if logo:
                 resultado["logo"] = logo
                 resultado["sitio"] = pagina.url or url
                 resultado["fuente_logo"] = "perfil público de la empresa" if es_social else "página corporativa"
-                resultado["diagnostico"] = (
-                    "Identidad confirmada en RUES; logo descargado desde una página corporativa relacionada."
-                )
+                resultado["diagnostico"] = "Identidad confirmada en fuente oficial; logo descargado desde una página relacionada."
                 break
         except Exception as exc:
             errores.append(str(exc)[:180])
             continue
 
+    # Respaldo de imágenes: Bing Images, filtrado por dominios corporativos
+    # que ya fueron comprobados contra la razón social oficial.
+    if not resultado.get("logo") and dominios_verificados:
+        try:
+            hallazgo_imagen = _buscar_logo_en_bing_images(nombre_oficial, dominios_verificados)
+            if hallazgo_imagen:
+                resultado["logo"], pagina_logo = hallazgo_imagen
+                resultado["sitio"] = pagina_logo
+                resultado["fuente_logo"] = "imagen pública enlazada desde el sitio corporativo verificado"
+                resultado["diagnostico"] = "Identidad confirmada en RUES; logo recuperado desde una imagen asociada al dominio corporativo verificado."
+        except Exception as exc:
+            errores.append(str(exc)[:180])
+
     if not resultado.get("logo"):
         resultado["diagnostico"] = (
-            "La razón social y el NIT sí fueron identificados en RUES/Confecámaras, "
-            "pero no se pudo descargar un logo desde una página corporativa pública. "
+            "La razón social y el NIT sí fueron identificados en la fuente oficial, "
+            "pero los sitios corporativos consultados no entregaron una imagen de logo descargable. "
             "La plantilla puede crearse y el logo quedará pendiente de revisión manual."
         )
         if errores:
-            resultado["diagnostico"] += " Detalle de búsqueda del logo: " + errores[0]
+            resultado["diagnostico"] += " Detalle: " + errores[0]
     return resultado
-
 
 def insertar_logo_en_plantilla(document_id, logo, solicitud_id, carpeta_destino_id=None):
     """Reemplaza {{LOGO_EMPRESA}} por el logo o elimina el marcador si no hay logo.
