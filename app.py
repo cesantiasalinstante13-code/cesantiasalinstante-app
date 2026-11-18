@@ -3228,7 +3228,7 @@ def _consultar_identidad_nit_en_fuentes_oficiales(nit):
         "datos.gov.co", "gov.co", "rues.org.co", "ccc.org.co", "ccb.org.co",
         "camaramedellin.com.co", "camaracali.com.co", "camarapereira.org.co",
         "camarabogota.org.co", "confecamaras.org.co", "supersociedades.gov.co",
-        "sic.gov.co", "mincit.gov.co", "invima.gov.co", "dian.gov.co",
+        "superfinanciera.gov.co", "sic.gov.co", "mincit.gov.co", "invima.gov.co", "dian.gov.co",
     )
     candidatos = {}
     for consulta in consultas:
@@ -3359,12 +3359,27 @@ def _resolver_identidad_rues(nombre_empresa="", nit_empresa=""):
                 + detalle
             )
         if len(registros) > 1:
-            nombres = {r["nombre"] for r in registros}
+            # RUES puede devolver varias matrículas/históricos o variantes de
+            # denominación para un mismo NIT. No se elige la primera fila a ciegas:
+            # se contrasta contra una fuente pública oficial de mayor autoridad
+            # (superintendencia, entidad de vigilancia, DIAN o cámara de comercio).
+            nombres = {_clave_nombre_empresa(r.get("nombre", "")) for r in registros if r.get("nombre")}
+            nombres.discard("")
             if len(nombres) > 1:
-                raise ValueError(
-                    "Las fuentes oficiales devolvieron más de una razón social para ese NIT. "
-                    "No se creó plantilla ni se modificó la base; se requiere revisión manual."
-                )
+                registro_oficial = _consultar_identidad_nit_en_fuentes_oficiales(nit_entrada)
+                if registro_oficial:
+                    registros = [registro_oficial]
+                else:
+                    nombres_detectados = sorted({
+                        _celda_texto(r.get("nombre", "")) for r in registros if r.get("nombre")
+                    })
+                    detalle_nombres = "; ".join(nombres_detectados[:5])
+                    raise ValueError(
+                        "RUES devolvió varias denominaciones para el mismo NIT y no fue posible "
+                        "confirmar una única razón social en otra fuente oficial. "
+                        "No se creó plantilla ni se modificó la base para evitar asociar datos "
+                        "incorrectos. Denominaciones encontradas: " + detalle_nombres
+                    )
         registro = registros[0]
         digitos_entrada = _normalizar_nit(nit_entrada)
         if len(digitos_entrada) == 10 and registro.get("digito_verificacion"):
