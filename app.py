@@ -3887,39 +3887,39 @@ def _descargar_candidato_logo(candidato, referer=""):
         return None
 
 def _extraer_logo_oficial_desde_sitio(url_sitio, permitir_og_social=False):
-    """Busca el logo en schema, metadatos, cabecera, lazy images y CSS del sitio."""
+    """Extrae logos declarados por la propia web: schema, metadatos, HTML, SVG y CSS."""
     respuesta = requests.get(
         url_sitio,
         headers={
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                          "AppleWebKit/537.36 Chrome/120 Safari/537.36"
+                          "AppleWebKit/537.36 Chrome/120 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         },
-        timeout=(5, 12), allow_redirects=True
+        timeout=(5, 15), allow_redirects=True
     )
     respuesta.raise_for_status()
     if "text/html" not in respuesta.headers.get("Content-Type", "text/html").lower():
         return None
 
-    contenido = respuesta.text[:3_000_000]
+    contenido = respuesta.text[:4_000_000]
     candidatos = []
     vistos = set()
-    cabecera_patron = re.compile(r"<(?:header|nav)\b.*?</(?:header|nav)>", re.I | re.S)
-    cabeceras = cabecera_patron.findall(contenido)
-    if not cabeceras:
-        cabeceras = [contenido[:min(len(contenido), 500_000)]]
 
     def agregar(valor, prioridad=0):
         if not valor:
             return
         valor = html.unescape(str(valor)).strip().strip("\"'()")
-        if not valor or valor.startswith(("data:", "javascript:")):
+        if not valor or valor.startswith(("data:", "javascript:", "blob:")):
             return
+        # srcset puede contener descriptor de tamaño; se conserva solo la URL.
+        if "," in valor and not valor.lower().startswith(("http://", "https://")):
+            valor = valor.split(",", 1)[0].strip().split(" ", 1)[0]
         url = urljoin(respuesta.url, valor)
         partes = urlparse(url)
         if partes.scheme not in ("http", "https"):
             return
         ruta = (partes.path + " " + partes.query).lower()
-        if any(p in ruta for p in ("loader", "loading", "spinner", "placeholder", "tracking-pixel", "banner", "hero", "campaign")):
+        if any(p in ruta for p in ("loader", "loading", "spinner", "placeholder", "tracking-pixel", "banner", "hero", "campaign", "avatar-placeholder")):
             return
         clave = url.split("#", 1)[0]
         if clave not in vistos:
@@ -3933,7 +3933,7 @@ def _extraer_logo_oficial_desde_sitio(url_sitio, permitir_og_social=False):
             salida[clave.lower()] = html.unescape(doble or simple or sin_comillas or "")
         return salida
 
-    # 1) JSON-LD: Organization / Corporation.
+    # 1) JSON-LD: el atributo logo de Organization/Corporation es la señal más fuerte.
     for bloque in re.findall(
         r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>',
         contenido, re.I | re.S
@@ -3949,64 +3949,171 @@ def _extraer_logo_oficial_desde_sitio(url_sitio, permitir_og_social=False):
                 logo = elemento.get("logo")
                 tipo = elemento.get("@type", "")
                 tipos = tipo if isinstance(tipo, list) else [tipo]
-                if logo and (not tipos or any("Organization" in str(t) or "Corporation" in str(t) for t in tipos)):
+                if logo and (not tipos or any(any(x in str(t) for x in ("Organization", "Corporation", "BankOrCreditUnion")) for t in tipos)):
                     if isinstance(logo, dict):
                         logo = logo.get("url") or logo.get("contentUrl")
+                    if isinstance(logo, list):
+                        logo = next((x.get("url") if isinstance(x, dict) else x for x in logo if x), None)
                     if isinstance(logo, str):
-                        agregar(logo, 100)
+                        agregar(logo, 120)
                 pendientes.extend(v for v in elemento.values() if isinstance(v, (dict, list)))
             elif isinstance(elemento, list):
                 pendientes.extend(elemento)
 
+    # 2) Rel/iconos y metadatos de logo. OG:image solo se permite en perfiles sociales.
     es_social = permitir_og_social and _dominio_es_red_social(respuesta.url)
     for etiqueta in re.findall(r'<(?:meta|link)\b[^>]*>', contenido, re.I):
         attrs = atributos(etiqueta)
         clave = (attrs.get("itemprop") or attrs.get("property") or attrs.get("name") or "").lower()
         rel = attrs.get("rel", "").lower()
-        if clave in ("logo", "og:logo", "organization:logo"):
-            agregar(attrs.get("content") or attrs.get("href"), 95)
-        elif "logo" in rel.split() or "apple-touch-icon" in rel:
-            agregar(attrs.get("href"), 80)
-        elif es_social and clave in ("og:image", "twitter:image", "twitter:image:src"):
-            agregar(attrs.get("content"), 75)
+        if clave in ("logo", "og:logo", "organization:logo", "twitter:image:src"):
+            agregar(attrs.get("content") or attrs.get("href"), 110)
+        elif "logo" in rel.split():
+            agregar(attrs.get("href"), 108)
+        elif "apple-touch-icon" in rel or "mask-icon" in rel:
+            agregar(attrs.get("href"), 90)
+        elif es_social and clave in ("og:image", "twitter:image"):
+            agregar(attrs.get("content"), 85)
 
-    # 2) Imágenes normales, lazy-loading y srcset; primero se recorre el header.
-    for bloque in cabeceras:
-        for etiqueta in re.findall(r"<(?:img|source)\b[^>]*>", bloque, re.I):
-            attrs = atributos(etiqueta)
-            src = (attrs.get("data-src") or attrs.get("data-lazy-src") or attrs.get("data-original")
-                   or attrs.get("data-lazyload") or attrs.get("src"))
-            srcset = attrs.get("srcset") or attrs.get("data-srcset")
-            if not src and srcset:
-                src = srcset.split(",")[0].strip().split(" ")[0]
-            señales = " ".join((attrs.get("alt", ""), attrs.get("title", ""), attrs.get("class", ""), attrs.get("id", ""), src or "")).lower()
-            if src and any(p in señales for p in ("logo", "brand", "marca", "identity", "corporate")):
-                agregar(src, 90)
-            elif src and ("<header" in bloque.lower() or "<nav" in bloque.lower()):
-                # El primer logo del encabezado a veces no incluye la palabra logo.
-                agregar(src, 55)
-            if srcset and any(p in señales for p in ("logo", "brand", "marca", "identity", "corporate")):
-                for opcion in srcset.split(","):
-                    agregar(opcion.strip().split(" ")[0], 88)
-
-        # 3) CSS background-image solo dentro de cabeceras.
-        for css in re.findall(r"background(?:-image)?\s*:[^;}]*url\((.*?)\)", bloque, re.I | re.S):
-            agregar(css.strip(" \"'"), 50)
-
-    # 4) Imágenes señaladas por metadatos de logo en el resto de la página.
-    for etiqueta in re.findall(r"<img\b[^>]*>", contenido, re.I):
+    # 3) Recorre todo el HTML, no solo <header>/<nav>: muchos sitios modernos
+    # ponen el logotipo en un div, picture, source o componente fuera de esas etiquetas.
+    etiquetas_imagen = list(re.finditer(r"<(?:img|source|input|image|object)\b[^>]*>", contenido, re.I))
+    for match_tag in etiquetas_imagen:
+        etiqueta = match_tag.group(0)
         attrs = atributos(etiqueta)
         src = (attrs.get("data-src") or attrs.get("data-lazy-src") or attrs.get("data-original")
-               or attrs.get("data-lazyload") or attrs.get("src"))
+               or attrs.get("data-lazyload") or attrs.get("data-image") or attrs.get("src")
+               or attrs.get("href") or attrs.get("data"))
         srcset = attrs.get("srcset") or attrs.get("data-srcset")
-        if not src and srcset:
-            src = srcset.split(",")[0].strip().split(" ")[0]
-        señales = " ".join((attrs.get("alt", ""), attrs.get("title", ""), attrs.get("class", ""), attrs.get("id", ""), src or "")).lower()
-        if src and any(p in señales for p in ("logo", "brand", "marca", "identity", "corporate")):
-            agregar(src, 85)
-        if srcset and any(p in señales for p in ("logo", "brand", "marca", "identity", "corporate")):
+        señales = " ".join((attrs.get("alt", ""), attrs.get("title", ""), attrs.get("class", ""),
+                            attrs.get("id", ""), attrs.get("aria-label", ""), src or "")).lower()
+        if src and any(p in señales for p in ("logo", "brand", "marca", "identity", "corporate", "wordmark", "isotipo", "logotipo")):
+            agregar(src, 100)
+        elif src and any(p in señales for p in ("site-header", "header-brand", "navbar-brand", "masthead-brand")):
+            agregar(src, 82)
+        elif src:
+            contexto = contenido[max(0, match_tag.start() - 1600):match_tag.end() + 700].lower()
+            if re.search(r"<header\b|<nav\b|site-header|navbar|masthead|branding|brand-logo", contexto):
+                agregar(src, 72)
+        if srcset and any(p in señales for p in ("logo", "brand", "marca", "identity", "corporate", "wordmark", "logotipo")):
             for opcion in srcset.split(","):
-                agregar(opcion.strip().split(" ")[0], 83)
+                agregar(opcion.strip().split(" ", 1)[0], 98)
+
+    # 4) SVG inline: busca image href o use href asociados al logotipo.
+    for bloque_svg in re.findall(r"<svg\b.*?</svg>", contenido, re.I | re.S):
+        if re.search(r"logo|brand|marca|identity|corporate", bloque_svg, re.I):
+            for href in re.findall(r"(?:href|xlink:href)\s*=\s*[\"']([^\"']+)[\"']", bloque_svg, re.I):
+                if re.search(r"\.(?:svg|png|jpe?g|webp)(?:[?#]|$)", href, re.I):
+                    agregar(href, 96)
+
+    # 5) CSS inline de todo el documento, priorizando selectores que mencionen logo/brand.
+    for bloque_css in re.findall(r"<style\b[^>]*>(.*?)</style>", contenido, re.I | re.S):
+        for selector, urls in re.findall(r"([^{}]+)\{([^{}]*background(?:-image)?\s*:[^{}]+)\}", bloque_css, re.I | re.S):
+            prioridad = 92 if re.search(r"logo|brand|marca|identity", selector, re.I) else 35
+            for imagen_css in re.findall(r"url\((.*?)\)", urls, re.I | re.S):
+                agregar(imagen_css.strip(" \t\r\n\"'"), prioridad)
+
+    # 6) Enlaces directos a archivos de logo y kits de prensa descargables.
+    # Muchas empresas publican los logos como enlaces de descarga, no como <img>.
+    kit_urls = []
+    for match_anchor in re.finditer(r"<a\b[^>]*>.*?</a>", contenido, re.I | re.S):
+        anchor = match_anchor.group(0)
+        inicio = re.search(r"<a\b[^>]*>", anchor, re.I | re.S)
+        if not inicio:
+            continue
+        attrs = atributos(inicio.group(0))
+        href = attrs.get("href", "")
+        texto_anchor = _texto_html_limpio(anchor)
+        contexto_anchor = contenido[max(0, match_anchor.start() - 900):match_anchor.end() + 300]
+        señales = f"{texto_anchor} {href} {attrs.get('title', '')} {contexto_anchor}".lower()
+        texto_directo = f"{texto_anchor} {href} {attrs.get('title', '')}".lower()
+        hay_logo = any(p in texto_directo for p in ("logo", "logotipo", "brand", "marca", "recursos de marca"))
+        hay_kit = (any(p in señales for p in ("kit de prensa", "press kit"))
+                   and any(p in texto_directo for p in ("descargar", "download", "kit")))
+        if not href or not (hay_logo or hay_kit):
+            continue
+        href = urljoin(respuesta.url, href)
+        ruta = urlparse(href).path.lower()
+        if re.search(r"\.(?:png|jpe?g|gif|webp|svg)$", ruta):
+            agregar(href, 118)
+        elif (re.search(r"\.(?:zip|pptx|pdf)$", ruta) or hay_kit or "recursos de marca" in señales):
+            kit_urls.append(href)
+
+    # 7) Kits ZIP: extrae únicamente imágenes cuyo nombre/ruta identifica claramente
+    # un logo. Nunca usa fotos genéricas del kit como sustituto del logotipo.
+    for kit_url in dict.fromkeys(kit_urls[:5]):
+        try:
+            kit_r = requests.get(
+                kit_url,
+                headers={"User-Agent": "Mozilla/5.0", "Referer": respuesta.url},
+                timeout=(5, 15), allow_redirects=True
+            )
+            if not kit_r.ok or len(kit_r.content) > 20_000_000:
+                continue
+            import zipfile
+            buffer_zip = BytesIO(kit_r.content)
+            if not zipfile.is_zipfile(buffer_zip):
+                # Algunos kits enlazan directamente un archivo de imagen.
+                imagen_directa = _descargar_candidato_logo(kit_url, referer=respuesta.url)
+                if imagen_directa:
+                    return imagen_directa
+                continue
+            buffer_zip.seek(0)
+            with zipfile.ZipFile(buffer_zip) as archivo_zip:
+                miembros = [
+                    m for m in archivo_zip.namelist()
+                    if not m.endswith("/")
+                    and re.search(r"\.(?:png|jpe?g|gif|webp|svg)$", m, re.I)
+                    and re.search(r"logo|logotipo|brand|marca", m, re.I)
+                ]
+                for miembro in miembros[:12]:
+                    datos_img = archivo_zip.read(miembro)
+                    mime_img = ""
+                    if datos_img.startswith(b"\x89PNG\r\n\x1a\n"):
+                        mime_img = "image/png"
+                    elif datos_img.startswith(b"\xff\xd8\xff"):
+                        mime_img = "image/jpeg"
+                    elif datos_img.startswith((b"GIF87a", b"GIF89a")):
+                        mime_img = "image/gif"
+                    elif b"<svg" in datos_img[:1500].lower():
+                        try:
+                            import cairosvg
+                            datos_img = cairosvg.svg2png(bytestring=datos_img, output_width=1200)
+                            mime_img = "image/png"
+                        except Exception:
+                            continue
+                    elif datos_img[8:12] == b"WEBP":
+                        try:
+                            from PIL import Image
+                            origen = Image.open(BytesIO(datos_img)).convert("RGBA")
+                            salida = BytesIO()
+                            origen.save(salida, format="PNG")
+                            datos_img = salida.getvalue()
+                            mime_img = "image/png"
+                        except Exception:
+                            continue
+                    if mime_img and len(datos_img) >= 100:
+                        return {"url": kit_url + "#" + miembro, "bytes": datos_img, "mime": mime_img}
+        except Exception:
+            continue
+
+    # 8) CSS externo enlazado: solo las hojas enlazadas por la propia web.
+    css_urls = []
+    for etiqueta in re.findall(r"<link\b[^>]*>", contenido, re.I):
+        attrs = atributos(etiqueta)
+        if "stylesheet" in attrs.get("rel", "").lower() and attrs.get("href"):
+            css_urls.append(urljoin(respuesta.url, attrs["href"]))
+    for css_url in css_urls[:8]:
+        try:
+            css_r = requests.get(css_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=(3, 6))
+            if not css_r.ok:
+                continue
+            for selector, urls in re.findall(r"([^{}]+)\{([^{}]*background(?:-image)?\s*:[^{}]+)\}", css_r.text[:1_000_000], re.I | re.S):
+                prioridad = 94 if re.search(r"logo|brand|marca|identity", selector, re.I) else 25
+                for imagen_css in re.findall(r"url\((.*?)\)", urls, re.I | re.S):
+                    agregar(imagen_css.strip(" \t\r\n\"'"), prioridad)
+        except Exception:
+            continue
 
     for _, candidato in sorted(candidatos, key=lambda x: -x[0]):
         imagen = _descargar_candidato_logo(candidato, referer=respuesta.url)
@@ -4047,30 +4154,78 @@ def _extraer_nombre_de_fila_con_nit(html_pagina, nit):
     return ""
 
 
+def _host_dominio_base(host):
+    """Obtiene el dominio registrable aproximado, incluyendo sufijos .com.co y similares."""
+    host = str(host or "").lower().split(":", 1)[0].removeprefix("www.").strip(".")
+    partes = [p for p in host.split(".") if p]
+    if len(partes) >= 3 and ".".join(partes[-2:]) in {"com.co", "org.co", "net.co", "gov.co", "edu.co", "com.mx", "com.ar", "com.br"}:
+        return ".".join(partes[-3:])
+    return ".".join(partes[-2:]) if len(partes) >= 2 else host
+
+
+def _dominio_coincide_empresa(url_o_host, nombre_empresa):
+    """Comprueba si el dominio registrable contiene una palabra distintiva de la empresa."""
+    host = urlparse(url_o_host).netloc if "://" in str(url_o_host) else str(url_o_host)
+    base = _host_dominio_base(host)
+    etiqueta = base.split(".", 1)[0]
+    etiqueta = re.sub(r"[^a-z0-9]", "", etiqueta)
+    tokens = [t for t in _clave_nombre_empresa(nombre_empresa).split() if len(t) >= 5]
+    # Solo admite dominio exactamente asociado a la marca o prefijos corporativos
+    # habituales (p. ej. grupo+marca); no acepta sufijos engañosos como -secure/login.
+    for token in tokens:
+        if etiqueta in {token, "grupo" + token, token + "grupo"}:
+            return True
+        if etiqueta.startswith(token) and len(etiqueta) - len(token) <= 3:
+            return True
+    return False
+
+
+def _pertenece_a_dominio_verificado(url_o_host, dominios):
+    host = urlparse(url_o_host).netloc if "://" in str(url_o_host) else str(url_o_host)
+    host = host.lower().removeprefix("www.")
+    for dominio in dominios or []:
+        d = _host_dominio_base(dominio)
+        if host == d or host.endswith("." + d) or _host_dominio_base(host) == d:
+            return True
+    return False
+
+
+def _obtener_atributos_html(tag):
+    attrs = {}
+    for clave, doble, simple, sin_comillas in re.findall(
+        r"([\w:-]+)\s*=\s*(?:\"([^\"]*)\"|'([^']*)'|([^\s>]+))", tag, re.I | re.S
+    ):
+        attrs[clave.lower()] = html.unescape(doble or simple or sin_comillas or "")
+    return attrs
+
+
 def _buscar_logo_en_bing_images(nombre_empresa, dominios_corporativos):
-    """Busca imágenes en Bing, pero solo acepta imágenes enlazadas desde dominios ya verificados."""
-    dominios = {str(d).lower().removeprefix("www.") for d in (dominios_corporativos or []) if d}
+    """Busca logos en Bing Images y solo descarga resultados originados en dominios corporativos identificados."""
+    dominios = {_host_dominio_base(d) for d in (dominios_corporativos or []) if d}
     if not dominios:
         return None
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     }
-    consultas = [f'"{nombre_empresa}" logo', f'"{nombre_empresa}" logo Colombia']
+    consultas = [f'"{nombre_empresa}" logo Colombia', f'"{nombre_empresa}" logotipo oficial']
+    for dominio in sorted(dominios):
+        consultas.append(f'"{nombre_empresa}" logo site:{dominio}')
+    vistos = set()
     for consulta in consultas:
         try:
             respuesta = requests.get(
                 "https://www.bing.com/images/search",
-                params={"q": consulta, "form": "HDRSC3"},
-                headers=headers, timeout=(5, 12)
+                params={"q": consulta, "form": "HDRSC3", "first": "1"},
+                headers=headers, timeout=(5, 14)
             )
             respuesta.raise_for_status()
         except Exception:
             continue
 
-        for etiqueta in re.findall(r"<a\b[^>]*class=[\"'][^\"']*\biusc\b[^\"']*[\"'][^>]*>", respuesta.text, re.I | re.S):
-            attrs = {}
-            for clave, doble, simple in re.findall(r"([\w:-]+)\s*=\s*([\"'])(.*?)\2", etiqueta, re.I | re.S):
-                attrs[clave.lower()] = html.unescape(simple)
+        etiquetas = re.findall(r"<a\b[^>]*class=[\"'][^\"']*\biusc\b[^\"']*[\"'][^>]*>", respuesta.text, re.I | re.S)
+        for etiqueta in etiquetas:
+            attrs = _obtener_atributos_html(etiqueta)
             meta = attrs.get("m", "")
             if not meta:
                 continue
@@ -4078,13 +4233,53 @@ def _buscar_logo_en_bing_images(nombre_empresa, dominios_corporativos):
                 datos = json.loads(html.unescape(meta))
             except Exception:
                 continue
-            pagina_origen = datos.get("purl", "")
+            pagina_origen = datos.get("purl", "") or datos.get("purl2", "")
             imagen_url = datos.get("murl", "")
-            host_origen = urlparse(pagina_origen).netloc.lower().removeprefix("www.")
-            dominio_verificado = any(host_origen == d or host_origen.endswith("." + d) for d in dominios)
-            if not dominio_verificado or not imagen_url:
-                continue
             titulo = _celda_texto(datos.get("t", ""))
+            if not pagina_origen or not imagen_url or not _pertenece_a_dominio_verificado(pagina_origen, dominios):
+                continue
+            if titulo and not _texto_coincide_empresa(nombre_empresa, titulo):
+                # Acepta títulos genéricos de logo únicamente cuando la consulta
+                # se limitó a un dominio oficial concreto.
+                if not any(f"site:{d}" in consulta for d in dominios):
+                    continue
+            clave = (imagen_url, pagina_origen)
+            if clave in vistos:
+                continue
+            vistos.add(clave)
+            imagen = _descargar_candidato_logo(imagen_url, referer=pagina_origen)
+            if imagen:
+                return imagen, pagina_origen
+
+    # Respaldo: API JSON de DuckDuckGo Images. Su estructura no depende del HTML de Bing.
+    for consulta in consultas:
+        try:
+            pagina = requests.get(
+                "https://duckduckgo.com/",
+                params={"q": consulta, "iax": "images", "ia": "images"},
+                headers=headers, timeout=(5, 12)
+            )
+            pagina.raise_for_status()
+            vqd_match = (re.search(r"vqd=([\"'])(.*?)\1", pagina.text, re.I)
+                         or re.search(r"\bvqd\s*[:=]\s*[\"']([^\"']+)", pagina.text, re.I))
+            if not vqd_match:
+                continue
+            vqd = vqd_match.group(2) if vqd_match.lastindex == 2 else vqd_match.group(1)
+            datos_r = requests.get(
+                "https://duckduckgo.com/i.js",
+                params={"l": "us-en", "o": "json", "q": consulta, "vqd": vqd, "f": ",,,,"},
+                headers={**headers, "Referer": pagina.url}, timeout=(5, 14)
+            )
+            datos_r.raise_for_status()
+            resultados = datos_r.json().get("results", [])
+        except Exception:
+            continue
+        for item in resultados[:60]:
+            pagina_origen = item.get("url", "") or item.get("source", "")
+            imagen_url = item.get("image", "")
+            titulo = _celda_texto(item.get("title", ""))
+            if not pagina_origen or not imagen_url or not _pertenece_a_dominio_verificado(pagina_origen, dominios):
+                continue
             if titulo and not _texto_coincide_empresa(nombre_empresa, titulo):
                 continue
             imagen = _descargar_candidato_logo(imagen_url, referer=pagina_origen)
@@ -4093,8 +4288,33 @@ def _buscar_logo_en_bing_images(nombre_empresa, dominios_corporativos):
     return None
 
 
+def _buscar_icono_dominio_corporativo(dominios):
+    """Último respaldo: favicon de alta resolución del dominio oficial ya identificado."""
+    for dominio in sorted({_host_dominio_base(d) for d in (dominios or []) if d}):
+        urls = [
+            f"https://www.google.com/s2/favicons?domain_url=https://{dominio}&sz=256",
+            f"https://{dominio}/favicon.ico",
+        ]
+        for url in urls:
+            imagen = _descargar_candidato_logo(url, referer=f"https://{dominio}/")
+            if not imagen:
+                continue
+            try:
+                from PIL import Image
+                imagen_pil = Image.open(BytesIO(imagen["bytes"]))
+                ancho, alto = imagen_pil.size
+                if min(ancho, alto) < 64:
+                    continue
+                if imagen_pil.format not in ("PNG", "JPEG", "GIF"):
+                    continue
+            except Exception:
+                # No se usa un icono que no podamos verificar como imagen utilizable.
+                continue
+            return imagen
+    return None
+
 def buscar_empresa_y_logo_python(nombre_empresa="", nit_empresa=""):
-    """Verifica identidad en fuentes públicas oficiales y busca logo en la web corporativa."""
+    """Verifica identidad en RUES y busca el logotipo en sitios corporativos oficiales."""
     registro = _resolver_identidad_rues(nombre_empresa, nit_empresa)
     nombre_oficial = registro["nombre"]
     nit_oficial = registro["nit"]
@@ -4114,14 +4334,15 @@ def buscar_empresa_y_logo_python(nombre_empresa="", nit_empresa=""):
     consultas = [
         f'"{nombre_oficial}" Colombia sitio oficial empresa',
         f'"{nombre_oficial}" logo sitio oficial Colombia',
-        f'"{nombre_oficial}" logo empresa',
+        f'"{nombre_oficial}" kit de prensa logo',
+        f'"{nombre_oficial}" logotipo descargar',
     ]
     resultados = []
     vistos = set()
     errores = []
     for consulta in consultas:
         try:
-            for item in _buscar_resultados_empresa(consulta, max_resultados=16):
+            for item in _buscar_resultados_empresa(consulta, max_resultados=20):
                 url = item.get("url", "")
                 clave = url.split("?")[0].rstrip("/").lower()
                 if url and clave not in vistos:
@@ -4134,26 +4355,47 @@ def buscar_empresa_y_logo_python(nombre_empresa="", nit_empresa=""):
         "datos.gov.co", "rues.org.co", "dian.gov.co", "funcionpublica.gov.co",
         "supersociedades.gov.co", "mincit.gov.co", "gov.co", "wikipedia.org",
         "registronit.com", "einforma.com.co", "empresite.com", "dateas.com",
-        "directorio-empresas", "lasempresas.com.co", "informa.co",
+        "directorio-empresas", "lasempresas.com.co", "informa.co", "youtube.com",
+        "facebook.com", "instagram.com", "linkedin.com", "x.com", "twitter.com",
+        "tiktok.com", "bing.com", "google.com", "duckduckgo.com",
     )
     dominios_verificados = []
-    for item in resultados[:60]:
+    urls_priorizadas = []
+
+    # Primera pasada: lee páginas recuperables, pero también conserva un dominio
+    # corporativo cuyo nombre coincide con la razón social aunque bloquee robots.
+    for item in resultados[:100]:
         url = item.get("url", "")
         dominio = urlparse(url).netloc.lower().removeprefix("www.")
-        if not dominio or any(d in dominio for d in dominios_no_corporativos):
-            continue
         es_social = _dominio_es_red_social(url)
+        if not dominio or (not es_social and any(d in dominio for d in dominios_no_corporativos)):
+            continue
         titulo = item.get("titulo", "")
         snippet = item.get("snippet", "")
-        if not _texto_coincide_empresa(nombre_oficial, f"{titulo} {snippet}"):
-            continue
+        texto_resultado = f"{titulo} {snippet}"
+        coincide_resumen = _texto_coincide_empresa(nombre_oficial, texto_resultado)
+        dominio_marca = _dominio_coincide_empresa(dominio, nombre_oficial)
+
+        # Un dominio que contiene una palabra distintiva de la razón social y
+        # aparece en el resultado de la búsqueda de esa empresa se conserva
+        # como candidato oficial aun si el sitio bloquea el scraping automático.
+        if dominio_marca and (coincide_resumen or not snippet):
+            base = _host_dominio_base(dominio)
+            if base not in dominios_verificados:
+                dominios_verificados.append(base)
+            urls_priorizadas.append((url, es_social, titulo, snippet))
+        elif es_social and coincide_resumen:
+            # Los perfiles sociales solo se usan para extraer la imagen de su
+            # propia página; nunca se considera todo el dominio social oficial.
+            urls_priorizadas.append((url, True, titulo, snippet))
 
         try:
             pagina = requests.get(
                 url,
                 headers={
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                                  "AppleWebKit/537.36 Chrome/120 Safari/537.36"
+                                  "AppleWebKit/537.36 Chrome/120 Safari/537.36",
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
                 },
                 timeout=(5, 12), allow_redirects=True,
             )
@@ -4164,24 +4406,65 @@ def buscar_empresa_y_logo_python(nombre_empresa="", nit_empresa=""):
                 continue
 
             host_final = urlparse(pagina.url or url).netloc.lower().removeprefix("www.")
-            if not es_social and host_final and host_final not in dominios_verificados:
-                dominios_verificados.append(host_final)
-
+            if not es_social and host_final:
+                base = _host_dominio_base(host_final)
+                if base not in dominios_verificados:
+                    dominios_verificados.append(base)
             logo = _extraer_logo_oficial_desde_sitio(
                 pagina.url or url, permitir_og_social=es_social
             )
             if logo:
                 resultado["logo"] = logo
                 resultado["sitio"] = pagina.url or url
-                resultado["fuente_logo"] = "perfil público de la empresa" if es_social else "página corporativa"
-                resultado["diagnostico"] = "Identidad confirmada en fuente oficial; logo descargado desde una página relacionada."
+                resultado["fuente_logo"] = "perfil público de la empresa" if es_social else "página corporativa oficial"
+                resultado["diagnostico"] = "Identidad confirmada en fuente oficial; logo descargado desde la propia página."
                 break
         except Exception as exc:
             errores.append(str(exc)[:180])
             continue
 
-    # Respaldo de imágenes: Bing Images, filtrado por dominios corporativos
-    # que ya fueron comprobados contra la razón social oficial.
+    # Segunda pasada: consulta las secciones de marca/kit de prensa de cada dominio
+    # identificado. Es importante para empresas cuyo logo no está en la portada.
+    if not resultado.get("logo") and dominios_verificados:
+        for dominio in list(dominios_verificados)[:8]:
+            for consulta in (
+                f'"{nombre_oficial}" logo site:{dominio}',
+                f'"{nombre_oficial}" "kit de prensa" site:{dominio}',
+                f'site:{dominio} logotipo OR logo',
+            ):
+                try:
+                    extras = _buscar_resultados_empresa(consulta, max_resultados=12)
+                    for extra in extras:
+                        extra_url = extra.get("url", "")
+                        if not _pertenece_a_dominio_verificado(extra_url, dominios_verificados):
+                            continue
+                        urls_priorizadas.append((extra_url, False, extra.get("titulo", ""), extra.get("snippet", "")))
+                        try:
+                            pagina = requests.get(
+                                extra_url,
+                                headers={"User-Agent": "Mozilla/5.0 (compatible; CesantiasAlInstante/4.2)"},
+                                timeout=(4, 9), allow_redirects=True,
+                            )
+                            if pagina.ok and "text/html" in pagina.headers.get("Content-Type", "text/html").lower():
+                                logo = _extraer_logo_oficial_desde_sitio(pagina.url, permitir_og_social=False)
+                                if logo:
+                                    resultado["logo"] = logo
+                                    resultado["sitio"] = pagina.url
+                                    resultado["fuente_logo"] = "sección de prensa o recursos de marca del sitio corporativo"
+                                    resultado["diagnostico"] = "Logo descargado de una sección de prensa o recursos de marca del dominio corporativo verificado."
+                                    break
+                        except Exception as exc:
+                            errores.append(str(exc)[:180])
+                    if resultado.get("logo"):
+                        break
+                except Exception as exc:
+                    errores.append(str(exc)[:180])
+            if resultado.get("logo"):
+                break
+
+    # Tercera pasada: buscadores de imágenes. Se aceptan imágenes alojadas en
+    # CDNs externos siempre que su página de origen sea un dominio corporativo
+    # ya identificado; así funcionan los kits de prensa servidos desde CDN.
     if not resultado.get("logo") and dominios_verificados:
         try:
             hallazgo_imagen = _buscar_logo_en_bing_images(nombre_oficial, dominios_verificados)
@@ -4189,18 +4472,31 @@ def buscar_empresa_y_logo_python(nombre_empresa="", nit_empresa=""):
                 resultado["logo"], pagina_logo = hallazgo_imagen
                 resultado["sitio"] = pagina_logo
                 resultado["fuente_logo"] = "imagen pública enlazada desde el sitio corporativo verificado"
-                resultado["diagnostico"] = "Identidad confirmada en RUES; logo recuperado desde una imagen asociada al dominio corporativo verificado."
+                resultado["diagnostico"] = "Identidad confirmada en RUES; logo recuperado de una imagen vinculada a la web corporativa."
+        except Exception as exc:
+            errores.append(str(exc)[:180])
+
+    # Último respaldo: favicon corporativo de alta resolución. Se etiqueta como icono,
+    # no como logo oficial, para distinguir la calidad de la imagen recuperada.
+    if not resultado.get("logo") and dominios_verificados:
+        try:
+            icono = _buscar_icono_dominio_corporativo(dominios_verificados)
+            if icono:
+                resultado["logo"] = icono
+                resultado["sitio"] = f"https://{dominios_verificados[0]}/"
+                resultado["fuente_logo"] = "icono del sitio corporativo (respaldo de menor resolución)"
+                resultado["diagnostico"] = "No se encontró el archivo de logotipo completo; se recuperó el icono de alta resolución del dominio corporativo."
         except Exception as exc:
             errores.append(str(exc)[:180])
 
     if not resultado.get("logo"):
         resultado["diagnostico"] = (
             "La razón social y el NIT sí fueron identificados en la fuente oficial, "
-            "pero los sitios corporativos consultados no entregaron una imagen de logo descargable. "
+            "pero los sitios corporativos identificados no ofrecieron una imagen descargable. "
             "La plantilla puede crearse y el logo quedará pendiente de revisión manual."
         )
         if errores:
-            resultado["diagnostico"] += " Detalle: " + errores[0]
+            resultado["diagnostico"] += " Detalle técnico: " + errores[0]
     return resultado
 
 def insertar_logo_en_plantilla(document_id, logo, solicitud_id, carpeta_destino_id=None):
