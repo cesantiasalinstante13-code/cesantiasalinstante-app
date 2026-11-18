@@ -3096,22 +3096,76 @@ def _consultar_dataset_rues(where, limite=30):
     return datos
 
 
+def _separar_nombre_principal_y_aliases(nombre_fuente):
+    """Separa la razón social principal de cláusulas legales de denominaciones alternativas."""
+    texto = re.sub(r"\s+", " ", _celda_texto(nombre_fuente)).strip(" ,;\n\t")
+    if not texto:
+        return "", [], []
+
+    # RUES puede incluir en el campo razon_social una transcripción de una
+    # cláusula estatutaria completa. La razón social principal termina antes
+    # de expresiones como "podrá girar..." o "pudiendo identificar...".
+    patrones_corte = (
+        r"\b(?:(?:ADEM[AÁ]S|TAMBI[EÉ]N)\s+)?PODR[AÁ]\s+GIRAR\b",
+        r"\bPUDIENDO\s+IDENTIFICAR\b",
+    )
+    posiciones = [m.start() for patron in patrones_corte
+                  for m in re.finditer(patron, texto, flags=re.IGNORECASE)]
+    nombre_principal = texto[:min(posiciones)] if posiciones else texto
+    nombre_principal = re.sub(r"[\s,;:–—-]+$", "", nombre_principal).strip()
+    if not nombre_principal:
+        nombre_principal = texto
+    # Normaliza la puntuación habitual de la forma societaria cuando el
+    # conjunto omite el punto final, sin cambiar el contenido del nombre.
+    nombre_principal = re.sub(r"\bS\.?\s*A\.?$", "S.A.", nombre_principal, flags=re.IGNORECASE)
+    nombre_principal = re.sub(r"\bS\.?\s*A\.?\s*S\.?$", "S.A.S.", nombre_principal, flags=re.IGNORECASE)
+
+    denominaciones = []
+    comerciales = []
+    patrones_alias = (
+        (r"\bdenominaci[oó]n(?:\s+social)?\s+(?P<valor>.+?)(?=\s*,|\s+pudiendo\b|$)", denominaciones),
+        (r"\bnombre\s+(?!comercial\b)(?:de\s+)?(?P<valor>.+?)(?=\s*,|\s+pudiendo\b|$)", denominaciones),
+        (r"\bnombre\s+comercial(?:\s+de)?\s+(?P<valor>.+?)(?=\s*,|\s+pudiendo\b|$)", comerciales),
+    )
+    for patron, destino in patrones_alias:
+        for match in re.finditer(patron, texto, flags=re.IGNORECASE):
+            valor = re.sub(r"\s+", " ", match.group("valor")).strip(" .;,:\t")
+            if valor and _normalizar_nombre_empresa(valor) != _normalizar_nombre_empresa(nombre_principal):
+                if valor not in destino:
+                    destino.append(valor)
+
+    return nombre_principal, denominaciones, comerciales
+
+
+def _registro_coincide_con_nombre(registro, nombre_consultado):
+    """Comprueba el nombre consultado contra la razón social y sus alias oficiales."""
+    nombres = [registro.get("nombre", "")]
+    nombres.extend(registro.get("denominaciones_alternativas", []) or [])
+    nombres.extend(registro.get("nombres_comerciales", []) or [])
+    return any(_nombres_legales_coinciden(nombre_consultado, candidato)
+               for candidato in nombres if _celda_texto(candidato))
+
+
 def _registro_rues_normalizado(fila):
-    """Normaliza una fila oficial RUES conservando razón social, NIT y DV."""
-    nombre = _celda_texto(fila.get("razon_social", ""))
-    if not nombre:
+    """Normaliza una fila oficial RUES y conserva el texto fuente y las denominaciones alternativas."""
+    nombre_fuente = _celda_texto(fila.get("razon_social", ""))
+    if not nombre_fuente:
         partes = [
             _celda_texto(fila.get("primer_nombre", "")),
             _celda_texto(fila.get("segundo_nombre", "")),
             _celda_texto(fila.get("primer_apellido", "")),
             _celda_texto(fila.get("segundo_apellido", "")),
         ]
-        nombre = " ".join(p for p in partes if p)
+        nombre_fuente = " ".join(p for p in partes if p)
+    nombre, denominaciones, comerciales = _separar_nombre_principal_y_aliases(nombre_fuente)
     nit_base = _clave_nit(fila.get("nit", "") or fila.get("numero_identificacion", ""))
     dv = re.sub(r"\D", "", _celda_texto(fila.get("digito_verificacion", "")))[:1]
     nit_completo = f"{nit_base}-{dv}" if nit_base and dv else nit_base
     return {
         "nombre": nombre,
+        "nombre_fuente": nombre_fuente,
+        "denominaciones_alternativas": denominaciones,
+        "nombres_comerciales": comerciales,
         "nit_base": nit_base,
         "digito_verificacion": dv,
         "nit": nit_completo,
@@ -3145,8 +3199,31 @@ def _deduplicar_registros_rues(filas):
             anio_anterior = int(anterior.get("ultimo_ano_renovado") or 0)
         except Exception:
             anio_anterior = 0
-        if anio_nuevo > anio_anterior:
-            unicos[clave] = registro
+        estado_nuevo = _normalizar_nombre_empresa(registro.get("estado_matricula", ""))
+        estado_anterior = _normalizar_nombre_empresa(anterior.get("estado_matricula", ""))
+        puntuacion_nueva = (1 if "activa" in estado_nuevo else 0, anio_nuevo)
+        puntuacion_anterior = (1 if "activa" in estado_anterior else 0, anio_anterior)
+
+        # Las distintas matrículas del mismo NIT pueden aportar alias o textos
+        # estatutarios complementarios. Se conservan todos, aunque se elija
+        # como registro principal la matrícula activa más útil.
+        seleccionado = registro if puntuacion_nueva > puntuacion_anterior else anterior
+        otro = anterior if seleccionado is registro else registro
+        for campo in ("denominaciones_alternativas", "nombres_comerciales"):
+            combinados = list(seleccionado.get(campo, []) or [])
+            for valor in otro.get(campo, []) or []:
+                if valor not in combinados:
+                    combinados.append(valor)
+            seleccionado[campo] = combinados
+        fuentes = []
+        for valor in (seleccionado.get("nombres_fuente", []) or [seleccionado.get("nombre_fuente", "")]):
+            if valor and valor not in fuentes:
+                fuentes.append(valor)
+        for valor in (otro.get("nombres_fuente", []) or [otro.get("nombre_fuente", "")]):
+            if valor and valor not in fuentes:
+                fuentes.append(valor)
+        seleccionado["nombres_fuente"] = fuentes
+        unicos[clave] = seleccionado
     return list(unicos.values())
 
 
@@ -3211,7 +3288,15 @@ def _consultar_rues_por_nit(nit):
     exactos = [r for r in registros if r.get("nit_base") == nit_base]
     _log_busqueda_empresa(f"RUES: {len(filas)} filas recibidas; {len(registros)} registros únicos; {len(exactos)} coincidencias exactas para el NIT base.")
     for reg in exactos[:20]:
-        _log_busqueda_empresa(f"RUES candidato: {reg.get('nombre')} | NIT={reg.get('nit')} | cámara={reg.get('camara_comercio')} | matrícula={reg.get('matricula')} | estado={reg.get('estado_matricula')}")
+        _log_busqueda_empresa(
+            f"RUES candidato: nombre principal={reg.get('nombre')} | "
+            f"nombre original={reg.get('nombre_fuente', reg.get('nombre'))} | "
+            f"textos fuente agrupados={reg.get('nombres_fuente', [reg.get('nombre_fuente', reg.get('nombre'))])} | "
+            f"denominaciones alternativas={reg.get('denominaciones_alternativas', [])} | "
+            f"nombres comerciales={reg.get('nombres_comerciales', [])} | "
+            f"NIT={reg.get('nit')} | cámara={reg.get('camara_comercio')} | "
+            f"matrícula={reg.get('matricula')} | estado={reg.get('estado_matricula')}"
+        )
     if exactos:
         return exactos
 
@@ -3289,7 +3374,7 @@ def _consultar_entidad_vigilada_superfinanciera_por_nit(nit):
             params={"$where": where, "$limit": "10"},
             headers={
                 "Accept": "application/json",
-                "User-Agent": "CesantiasAlInstante/4.5 (validacion de entidad vigilada)",
+                "User-Agent": "CesantiasAlInstante/4.6 (validacion de entidad vigilada)",
             },
             timeout=(5, 15),
         )
@@ -3561,9 +3646,10 @@ def _resolver_identidad_rues(nombre_empresa="", nit_empresa=""):
                 raise ValueError(
                     "El dígito de verificación no coincide con el registro oficial. Revisa el NIT antes de continuar."
                 )
-        if nombre_entrada and not _nombres_legales_coinciden(nombre_entrada, registro["nombre"]):
+        if nombre_entrada and not _registro_coincide_con_nombre(registro, nombre_entrada):
             raise ValueError(
-                f"El NIT pertenece a «{registro['nombre']}», pero el nombre ingresado no coincide. "
+                f"El NIT pertenece a «{registro['nombre']}», pero el nombre ingresado no coincide "
+                "con la razón social ni con las denominaciones alternativas registradas. "
                 "No se asociaron los datos para evitar mezclar empresas."
             )
         _log_busqueda_empresa(f"VALIDACIÓN: identidad aceptada: {registro.get('nombre')} | fuente={registro.get('fuente_identidad')} | URL={registro.get('url_fuente_identidad')}")
@@ -3577,7 +3663,7 @@ def _resolver_identidad_rues(nombre_empresa="", nit_empresa=""):
         )
     clave_entrada = _clave_nombre_empresa(nombre_entrada)
     exactos = [r for r in registros if _clave_nombre_empresa(r["nombre"]) == clave_entrada]
-    candidatos = exactos or [r for r in registros if _nombres_legales_coinciden(nombre_entrada, r["nombre"])]
+    candidatos = exactos or [r for r in registros if _registro_coincide_con_nombre(r, nombre_entrada)]
     por_identidad = {}
     for registro in candidatos:
         por_identidad[(registro["nit_base"], _clave_nombre_empresa(registro["nombre"]))] = registro
@@ -4556,6 +4642,10 @@ def buscar_empresa_y_logo_python(nombre_empresa="", nit_empresa=""):
     nit_oficial = registro["nit"]
     resultado = {
         "nombre": nombre_oficial,
+        "nombre_fuente": registro.get("nombre_fuente", nombre_oficial),
+        "nombres_fuente": registro.get("nombres_fuente", [registro.get("nombre_fuente", nombre_oficial)]),
+        "denominaciones_alternativas": registro.get("denominaciones_alternativas", []),
+        "nombres_comerciales": registro.get("nombres_comerciales", []),
         "nit": nit_oficial,
         "logo": None,
         "sitio": registro.get("url_fuente_identidad", RUES_PORTAL_URL),
