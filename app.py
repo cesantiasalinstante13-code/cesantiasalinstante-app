@@ -3138,12 +3138,82 @@ def _separar_nombre_principal_y_aliases(nombre_fuente):
 
 
 def _registro_coincide_con_nombre(registro, nombre_consultado):
-    """Comprueba el nombre consultado contra la razón social y sus alias oficiales."""
+    """Comprueba nombre legal, alias, nombre comercial y otras denominaciones del mismo NIT."""
     nombres = [registro.get("nombre", "")]
-    nombres.extend(registro.get("denominaciones_alternativas", []) or [])
-    nombres.extend(registro.get("nombres_comerciales", []) or [])
+    for campo in (
+        "denominaciones_alternativas",
+        "nombres_comerciales",
+        "otras_denominaciones_mismo_nit",
+    ):
+        nombres.extend(registro.get(campo, []) or [])
     return any(_nombres_legales_coinciden(nombre_consultado, candidato)
                for candidato in nombres if _celda_texto(candidato))
+
+
+def _registro_rues_tiene_matricula_activa(registro):
+    """Reconoce estados activos explícitos sin confundirlos con 'INACTIVA'."""
+    estado = _normalizar_nombre_empresa(registro.get("estado_matricula", ""))
+    return estado in {"activa", "activo", "matricula activa", "matricula activo"}
+
+
+def _seleccionar_nombre_vigente_rues(registros):
+    """Selecciona una única razón social respaldada por matrícula RUES activa.
+
+    Si el mismo NIT tiene nombres distintos y exactamente uno de ellos aparece
+    en una matrícula ACTIVA, ese nombre se usa como principal. Los demás nombres
+    se conservan como otras denominaciones para búsqueda y auditoría; no se descartan.
+    Si hay cero o más de un nombre activo, no decide y devuelve None.
+    """
+    activos = [r for r in registros if _registro_rues_tiene_matricula_activa(r)]
+    por_nombre_activo = {}
+    for registro in activos:
+        clave = _clave_nombre_empresa(registro.get("nombre", ""))
+        if clave:
+            por_nombre_activo.setdefault(clave, []).append(registro)
+
+    if len(por_nombre_activo) != 1:
+        _log_busqueda_empresa(
+            "RUES: no hay una única razón social asociada a matrícula ACTIVA; "
+            f"nombres activos distintos={len(por_nombre_activo)}. Se requiere otra fuente oficial."
+        )
+        return None
+
+    clave_vigente, candidatos_activos = next(iter(por_nombre_activo.items()))
+    # Si hay varias filas activas de la misma razón social, preferir la matrícula
+    # con año de renovación más reciente, conservando el resto como auditoría.
+    def puntaje(registro):
+        try:
+            anio = int(registro.get("ultimo_ano_renovado") or 0)
+        except (TypeError, ValueError):
+            anio = 0
+        return (anio, bool(_celda_texto(registro.get("matricula"))))
+
+    seleccionado = dict(max(candidatos_activos, key=puntaje))
+    otras_denominaciones = []
+    for registro in registros:
+        nombre = _celda_texto(registro.get("nombre", ""))
+        clave = _clave_nombre_empresa(nombre)
+        if nombre and clave != clave_vigente and nombre not in otras_denominaciones:
+            otras_denominaciones.append(nombre)
+        for anterior in registro.get("otras_denominaciones_mismo_nit", []) or []:
+            anterior = _celda_texto(anterior)
+            if anterior and _clave_nombre_empresa(anterior) != clave_vigente and anterior not in otras_denominaciones:
+                otras_denominaciones.append(anterior)
+
+    seleccionado["otras_denominaciones_mismo_nit"] = otras_denominaciones
+    seleccionado["fuente_identidad"] = (
+        "RUES / Confecámaras - única razón social con matrícula ACTIVA; "
+        "otras denominaciones del mismo NIT conservadas como denominaciones adicionales"
+    )
+    seleccionado["url_fuente_identidad"] = RUES_DATOS_ABIERTOS_URL
+    _log_busqueda_empresa(
+        "RUES: identidad resuelta por estado registral: "
+        f"nombre principal={seleccionado.get('nombre')} | "
+        f"estado={seleccionado.get('estado_matricula')} | "
+        f"matrícula={seleccionado.get('matricula')} | "
+        f"otras denominaciones del mismo NIT={otras_denominaciones}"
+    )
+    return seleccionado
 
 
 def _registro_rues_normalizado(fila):
@@ -3374,7 +3444,7 @@ def _consultar_entidad_vigilada_superfinanciera_por_nit(nit):
             params={"$where": where, "$limit": "10"},
             headers={
                 "Accept": "application/json",
-                "User-Agent": "CesantiasAlInstante/4.6 (validacion de entidad vigilada)",
+                "User-Agent": "CesantiasAlInstante/4.7 (validacion de entidad vigilada)",
             },
             timeout=(5, 15),
         )
@@ -3615,36 +3685,65 @@ def _resolver_identidad_rues(nombre_empresa="", nit_empresa=""):
                 + detalle
             )
         if len(registros) > 1:
-            # RUES puede devolver varias matrículas/históricos o variantes de
+            # RUES puede devolver varias matrículas antiguas o variantes de
             # denominación para un mismo NIT. No se elige la primera fila a ciegas:
             # se contrasta contra una fuente pública oficial de mayor autoridad
             # (superintendencia, entidad de vigilancia, DIAN o cámara de comercio).
             nombres = {_clave_nombre_empresa(r.get("nombre", "")) for r in registros if r.get("nombre")}
             nombres.discard("")
             if len(nombres) > 1:
-                _log_busqueda_empresa("VALIDACIÓN: RUES devolvió varias denominaciones: " + "; ".join(sorted(_celda_texto(r.get("nombre", "")) for r in registros if r.get("nombre"))))
-                _log_busqueda_empresa("VALIDACIÓN: se inicia contraste con buscadores y fuentes oficiales.")
-                registro_oficial = _consultar_identidad_nit_en_fuentes_oficiales(nit_entrada)
-                if registro_oficial:
-                    registros = [registro_oficial]
+                nombres_detectados = sorted({
+                    _celda_texto(r.get("nombre", "")) for r in registros if r.get("nombre")
+                })
+                _log_busqueda_empresa(
+                    "VALIDACIÓN: RUES devolvió varias denominaciones para el mismo NIT: "
+                    + "; ".join(nombres_detectados)
+                )
+
+                # Primera regla general: si entre las matrículas del mismo NIT
+                # existe exactamente una razón social distinta con estado ACTIVA,
+                # usarla como nombre vigente y conservar los demás nombres como
+                # denominaciones adicionales. Esto resuelve cambios de razón social y matrículas
+                # antiguas sin hardcodear empresas ni NIT concretos.
+                registro_vigente = _seleccionar_nombre_vigente_rues(registros)
+                if registro_vigente:
+                    registros = [registro_vigente]
                 else:
-                    _log_busqueda_empresa("VALIDACIÓN: la fuente alternativa no confirmó una razón social única. Se detiene el proceso sin modificar Drive ni Sheets.")
-                    nombres_detectados = sorted({
-                        _celda_texto(r.get("nombre", "")) for r in registros if r.get("nombre")
-                    })
-                    detalle_nombres = "; ".join(nombres_detectados[:5])
-                    raise ValueError(
-                        "RUES devolvió varias denominaciones para el mismo NIT y no fue posible "
-                        "confirmar una única razón social en otra fuente oficial. "
-                        "No se creó plantilla ni se modificó la base para evitar asociar datos "
-                        "incorrectos. Denominaciones encontradas: " + detalle_nombres
+                    _log_busqueda_empresa(
+                        "VALIDACIÓN: se inicia contraste con fuentes oficiales adicionales; "
+                        "no se utilizarán buscadores generales como prueba de identidad."
                     )
+                    registro_oficial = _consultar_identidad_nit_en_fuentes_oficiales(nit_entrada)
+                    if registro_oficial:
+                        registros = [registro_oficial]
+                    else:
+                        _log_busqueda_empresa(
+                            "VALIDACIÓN: ninguna fuente oficial resolvió el conflicto. "
+                            "Se detiene el proceso sin modificar Drive ni Sheets."
+                        )
+                        detalle_nombres = "; ".join(nombres_detectados[:5])
+                        raise ValueError(
+                            "RUES encontró varias denominaciones para el mismo NIT y no hay "
+                            "una única razón social con matrícula ACTIVA ni una confirmación "
+                            "suficiente en otra fuente oficial. No se creó plantilla ni se "
+                            "modificó la base para evitar asociar datos incorrectos. "
+                            "Denominaciones encontradas: " + detalle_nombres
+                        )
         registro = registros[0]
         digitos_entrada = _normalizar_nit(nit_entrada)
         if len(digitos_entrada) == 10 and registro.get("digito_verificacion"):
             if digitos_entrada[-1] != registro["digito_verificacion"]:
                 raise ValueError(
                     "El dígito de verificación no coincide con el registro oficial. Revisa el NIT antes de continuar."
+                )
+        if nombre_entrada and _registro_coincide_con_nombre(registro, nombre_entrada):
+            if any(
+                _nombres_legales_coinciden(nombre_entrada, otra_denominacion)
+                for otra_denominacion in (registro.get("otras_denominaciones_mismo_nit", []) or [])
+            ):
+                _log_busqueda_empresa(
+                    f"VALIDACIÓN: el nombre ingresado coincide con otra denominación registrada para el mismo NIT; "
+                    f"se conservará como nombre principal vigente {registro.get('nombre')}."
                 )
         if nombre_entrada and not _registro_coincide_con_nombre(registro, nombre_entrada):
             raise ValueError(
