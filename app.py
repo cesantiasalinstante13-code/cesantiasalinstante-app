@@ -23,6 +23,9 @@ from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
 
+# Identificador de compilación para comprobar qué archivo ejecuta Streamlit.
+APP_BUILD_ID = "CESANTIAS_IDENTIDAD_4.8_2026-11-19"
+
 GOOGLE_DRIVE_SCOPE = "https://www.googleapis.com/auth/drive"
 
 # ---------- CONFIG ----------
@@ -3021,6 +3024,8 @@ def _iniciar_log_busqueda_empresa(nombre, nit):
     except Exception:
         pass
     _log_busqueda_empresa("INICIO DE VALIDACIÓN")
+    _log_busqueda_empresa(f"APP_BUILD_ID={APP_BUILD_ID}")
+    _log_busqueda_empresa("RUES_TIMEOUT_CONFIG=connect:8s/read:35s")
     _log_busqueda_empresa(f"Datos recibidos: nombre={_celda_texto(nombre) or '(vacío)'} | NIT={_celda_texto(nit) or '(vacío)'}")
 
 
@@ -3077,12 +3082,15 @@ def _consultar_dataset_rues(where, limite=30):
     if app_token:
         headers["X-App-Token"] = str(app_token).strip()
 
-    _log_busqueda_empresa(f"RUES: enviando consulta al conjunto oficial; límite={limite}; filtro={where}")
+    _log_busqueda_empresa(
+        f"RUES: enviando consulta al conjunto oficial; límite={limite}; "
+        f"timeout_connect=8s; timeout_read=35s; filtro={where}"
+    )
     respuesta = requests.get(
         RUES_DATOS_ABIERTOS_API,
         params={"$where": where, "$limit": str(limite)},
         headers=headers,
-        timeout=(5, 20),
+        timeout=(8, 35),
     )
     _log_busqueda_empresa(f"RUES: HTTP {respuesta.status_code}; content-type={respuesta.headers.get('Content-Type', '')}")
     respuesta.raise_for_status()
@@ -3298,80 +3306,65 @@ def _deduplicar_registros_rues(filas):
 
 
 def _consultar_rues_por_nit(nit):
-    """Busca cualquier NIT en el conjunto RUES, probando los campos y formatos publicados."""
+    """Busca NIT exacto en RUES; evita una batería de consultas parciales vacías."""
     nit_digitos = _normalizar_nit(nit)
     nit_base = _clave_nit(nit)
     if len(nit_base) < 7:
         return []
 
-    # En el conjunto público, nit y numero_identificacion son campos de texto.
-    # Algunas filas conservan el NIT base, otras pueden presentar el DV aparte
-    # o dentro del mismo identificador. Se consultan todas las variantes y se
-    # filtran localmente para no aceptar coincidencias parciales o falsas.
     variantes = []
     for valor in (nit_base, nit_digitos):
         if valor and valor not in variantes:
             variantes.append(valor)
-
-    condiciones_exactas = []
-    condiciones_parciales = []
+    condiciones = []
     for campo in ("nit", "numero_identificacion"):
         for valor in variantes:
-            seguro = _soql_escape(valor)
-            condiciones_exactas.append(f"{campo} = '{seguro}'")
-        seguro_base = _soql_escape(nit_base)
-        condiciones_parciales.append(f"{campo} like '%{seguro_base}%'")
+            condiciones.append(f"{campo} = '{_soql_escape(valor)}'")
+    where = "(" + " OR ".join(condiciones) + ")"
 
     filas = []
-    errores = []
-    consultas = [
-        "(" + " OR ".join(condiciones_exactas) + ")",
-        "(" + " OR ".join(condiciones_parciales) + ")",
-    ]
-    for indice_consulta, where in enumerate(consultas, 1):
+    error_consulta = None
+    try:
+        filas = _consultar_dataset_rues(where, limite=100)
+    except Exception as exc:
+        error_consulta = exc
+        _log_busqueda_empresa(
+            f"RUES: falló la consulta exacta: {type(exc).__name__}: {str(exc)[:220]}. "
+            "Se hará una sola consulta de recuperación."
+        )
         try:
-            filas.extend(_consultar_dataset_rues(where, limite=100))
-            # Si la consulta exacta ya encontró filas cuyo NIT normalizado es
-            # exactamente el solicitado, no hace falta ejecutar el LIKE amplio.
-            # Evita una segunda petición lenta que puede agotar el timeout.
-            registros_temporales = _deduplicar_registros_rues(filas)
-            if indice_consulta == 1 and any(r.get("nit_base") == nit_base for r in registros_temporales):
-                _log_busqueda_empresa(
-                    "RUES: la consulta exacta ya encontró coincidencias verificables; "
-                    "se omite la consulta parcial LIKE."
-                )
-                break
-        except Exception as exc:
-            errores.append(str(exc)[:180])
-            _log_busqueda_empresa(f"RUES: error en consulta: {type(exc).__name__}: {str(exc)[:250]}")
-
-    # Respaldo por consultas individuales: evita que una cláusula OR/LIKE
-    # incompatible con cambios del portal invalide todas las búsquedas.
-    if not filas:
-        for condicion in condiciones_exactas + condiciones_parciales:
-            try:
-                filas.extend(_consultar_dataset_rues(condicion, limite=50))
-            except Exception as exc:
-                errores.append(str(exc)[:180])
+            where_reintento = " OR ".join(
+                f"nit = '{_soql_escape(valor)}'" for valor in variantes
+            )
+            filas = _consultar_dataset_rues("(" + where_reintento + ")", limite=100)
+            _log_busqueda_empresa("RUES: consulta de recuperación completada.")
+        except Exception as exc_reintento:
+            _log_busqueda_empresa(
+                f"RUES: también falló la recuperación: {type(exc_reintento).__name__}: "
+                f"{str(exc_reintento)[:220]}"
+            )
+            filas = []
 
     registros = _deduplicar_registros_rues(filas)
     exactos = [r for r in registros if r.get("nit_base") == nit_base]
-    _log_busqueda_empresa(f"RUES: {len(filas)} filas recibidas; {len(registros)} registros únicos; {len(exactos)} coincidencias exactas para el NIT base.")
+    _log_busqueda_empresa(
+        f"RUES: {len(filas)} filas recibidas; {len(registros)} registros únicos; "
+        f"{len(exactos)} coincidencias exactas para el NIT base."
+    )
     for reg in exactos[:20]:
         _log_busqueda_empresa(
             f"RUES candidato: nombre principal={reg.get('nombre')} | "
             f"nombre original={reg.get('nombre_fuente', reg.get('nombre'))} | "
-            f"textos fuente agrupados={reg.get('nombres_fuente', [reg.get('nombre_fuente', reg.get('nombre'))])} | "
             f"denominaciones alternativas={reg.get('denominaciones_alternativas', [])} | "
-            f"nombres comerciales={reg.get('nombres_comerciales', [])} | "
             f"NIT={reg.get('nit')} | cámara={reg.get('camara_comercio')} | "
             f"matrícula={reg.get('matricula')} | estado={reg.get('estado_matricula')}"
         )
     if exactos:
         return exactos
-
-    # Solo se aceptan registros cuyo NIT normalizado coincide exactamente.
-    # Un resultado que meramente contenga los dígitos buscados se descarta.
+    if error_consulta:
+        _log_busqueda_empresa("RUES: sin resultado por incidencia de conexión; se continuará con fuentes oficiales alternativas.")
+    else:
+        _log_busqueda_empresa("RUES: la consulta exacta respondió correctamente, pero este NIT no figura en el conjunto consultado.")
     return []
 
 def _consultar_rues_por_nombre(nombre):
@@ -3532,22 +3525,26 @@ def _consultar_identidad_nit_en_fuentes_oficiales(nit):
     variantes = [nit_digitos] if nit_digitos else []
     if nit_base not in variantes:
         variantes.append(nit_base)
-    consultas = []
-    for valor in variantes:
-        consultas.extend([
-            f'"{valor}" Colombia "razón social"',
-            f'"{valor}" Colombia "certificado de existencia"',
-            f'"{valor}" Colombia NIT empresa Cámara de Comercio',
-        ])
+    # Máximo cuatro búsquedas dirigidas (sin repetir cada consulta por el NIT con y sin DV).
+    consultas = [
+        f'site:superservicios.gov.co "{nit_base}" "Nombre o razón social" RUPS',
+        f'site:wa-reportsui.azurewebsites.net "{nit_base}" OR "{nit_digitos}"',
+        f'site:superfinanciera.gov.co "{nit_base}" OR "{nit_digitos}" NIT',
+        f'site:supersociedades.gov.co "{nit_base}" OR "{nit_digitos}" NIT',
+    ]
 
     dominios_oficiales = (
         "datos.gov.co", "gov.co", "rues.org.co", "ccc.org.co", "ccb.org.co",
         "camaramedellin.com.co", "camaracali.com.co", "camarapereira.org.co",
         "camarabogota.org.co", "confecamaras.org.co", "supersociedades.gov.co",
-        "superfinanciera.gov.co", "sic.gov.co", "mincit.gov.co", "invima.gov.co", "dian.gov.co",
+        "superfinanciera.gov.co", "superservicios.gov.co", "sui.superservicios.gov.co",
+        "wa-reportsui.azurewebsites.net", "sic.gov.co", "mincit.gov.co", "invima.gov.co", "dian.gov.co",
     )
     candidatos = {}
-    _log_busqueda_empresa(f"Respaldo oficial: iniciando búsqueda externa para NIT base {nit_base}; {len(consultas)} consultas previstas.")
+    _log_busqueda_empresa(
+        f"Respaldo oficial: búsqueda dirigida por NIT {nit_base}; {len(consultas)} consultas oficiales previstas. "
+        "Se consultan documentos SUI/RUPS de Superservicios y publicaciones de las superintendencias."
+    )
     for indice_consulta, consulta in enumerate(consultas, 1):
         _log_busqueda_empresa(f"Buscador: consulta {indice_consulta}/{len(consultas)}: {consulta}")
         try:
@@ -3573,10 +3570,15 @@ def _consultar_identidad_nit_en_fuentes_oficiales(nit):
             # certificados mercantiles alojados en el propio dominio empresarial.
             dominio_oficial = any(host == d or host.endswith("." + d) for d in dominios_oficiales)
             menciona_certificado = bool(re.search(
-                r"certificado\s+de\s+(?:existencia|representaci[oó]n)|c[aá]mara\s+de\s+comercio|registro\s+mercantil",
+                r"certificado\s+de\s+(?:existencia|representaci[oó]n)|c[aá]mara\s+de\s+comercio|registro\s+mercantil|RUPS|identificador\s+del\s+prestador",
                 texto_resumen, re.I
             ))
+            dominio_sui = any(host == d or host.endswith("." + d) for d in (
+                "superservicios.gov.co", "sui.superservicios.gov.co", "wa-reportsui.azurewebsites.net"
+            ))
             if not dominio_oficial and not menciona_certificado:
+                continue
+            if dominio_sui and not _nit_coincide_con_texto(nit, texto_resumen):
                 continue
 
             candidato = _nombre_candidato_desde_resultado(titulo, snippet, nit)
@@ -3585,7 +3587,7 @@ def _consultar_identidad_nit_en_fuentes_oficiales(nit):
             # intentar leer la página pública; en certificados oficiales el nombre
             # suele estar en el cuerpo y no en el título del resultado.
             tiene_forma_legal = bool(candidato and re.search(
-                r"(?:S\.?\s*A\.?\s*S\.?|S\.?\s*A\.?|LTDA\.?|LIMITADA|E\.?\s*U\.?|S\.?\s*EN\s*C\.?)$",
+                r"(?:S\.?\s*A\.?\s*S\.?|S\.?\s*A\.?\s*E\.?\s*S\.?\s*P\.?|S\.?\s*A\.?|E\.?\s*S\.?\s*P\.?|E\.?\s*I\.?\s*C\.?\s*E\.?|LTDA\.?|LIMITADA|E\.?\s*U\.?|S\.?\s*EN\s*C\.?)$",
                 candidato, re.I
             ))
             if not candidato or len(_normalizar_nombre_empresa(candidato).split()) < 2 or not tiene_forma_legal:
@@ -3613,7 +3615,7 @@ def _consultar_identidad_nit_en_fuentes_oficiales(nit):
             if not _nit_coincide_con_texto(nit, texto_verificacion):
                 continue
             if not re.search(
-                r"\b(?:S\.?\s*A\.?\s*S\.?|S\.?\s*A\.?|LTDA\.?|LIMITADA|E\.?\s*U\.?|S\.?\s*EN\s*C\.?)\b",
+                r"\b(?:S\.?\s*A\.?\s*S\.?|S\.?\s*A\.?\s*E\.?\s*S\.?\s*P\.?|S\.?\s*A\.?|E\.?\s*S\.?\s*P\.?|E\.?\s*I\.?\s*C\.?\s*E\.?|LTDA\.?|LIMITADA|E\.?\s*U\.?|S\.?\s*EN\s*C\.?)\b",
                 candidato, re.I
             ):
                 continue
@@ -3950,7 +3952,7 @@ def _buscar_resultados_empresa(query, max_resultados=12):
     try:
         respuesta = requests.get(
             "https://html.duckduckgo.com/html/",
-            params={"q": query}, headers=headers, timeout=(4, 10)
+            params={"q": query, "kl": "co-es"}, headers=headers, timeout=(6, 15)
         )
         _log_busqueda_empresa(f"DuckDuckGo: HTTP {respuesta.status_code}; respuesta={len(respuesta.text)} caracteres.")
         respuesta.raise_for_status()
@@ -3999,8 +4001,8 @@ def _buscar_resultados_empresa(query, max_resultados=12):
         try:
             respuesta = requests.get(
                 "https://www.bing.com/search",
-                params={"q": query, "count": max(10, max_resultados)},
-                headers=headers, timeout=(4, 10)
+                params={"q": query, "count": max(10, max_resultados), "cc": "CO", "setlang": "es"},
+                headers=headers, timeout=(6, 18)
             )
             _log_busqueda_empresa(f"Bing: HTTP {respuesta.status_code}; respuesta={len(respuesta.text)} caracteres.")
             respuesta.raise_for_status()
@@ -4072,9 +4074,9 @@ def _buscar_resultados_empresa(query, max_resultados=12):
             _log_busqueda_empresa("Google: se inicia consulta de respaldo porque DDG/Bing no aportaron un resultado con el NIT en título o resumen.")
             respuesta = requests.get(
                 "https://www.google.com/search",
-                params={"q": query, "num": max(10, max_resultados)},
+                params={"q": query, "num": max(10, max_resultados), "gl": "co", "hl": "es"},
                 headers=headers,
-                timeout=(4, 10)
+                timeout=(6, 18)
             )
             _log_busqueda_empresa(f"Google: HTTP {respuesta.status_code}; respuesta={len(respuesta.text)} caracteres.")
             respuesta.raise_for_status()
@@ -4137,7 +4139,19 @@ def _nombre_candidato_cercano_al_nit(texto, nit):
     if not texto or not base:
         return ""
     patron_nit = r"(?<!\d)" + r"[\s.\-]*".join(map(re.escape, base)) + r"(?:[\s.\-]*\d)?(?!\d)"
-    sufijo_legal = r"(?:S\.?\s*A\.?\s*S\.?|S\.?\s*A\.?|LTDA\.?|LIMITADA|E\.?\s*U\.?|S\.?\s*EN\s*C\.?|S\.?\s*C\.?\s*A\.?)"
+    sufijo_legal = r"(?:S\.?\s*A\.?\s*S\.?|S\.?\s*A\.?\s*E\.?\s*S\.?\s*P\.?|S\.?\s*A\.?|E\.?\s*S\.?\s*P\.?|E\.?\s*I\.?\s*C\.?\s*E\.?|LTDA\.?|LIMITADA|E\.?\s*U\.?|S\.?\s*EN\s*C\.?|S\.?\s*C\.?\s*A\.?)"
+    # En informes SUI/Superservicios la razón social suele aparecer bajo una etiqueta explícita.
+    etiqueta_nombre = re.search(
+        r"(?:nombre\s+o\s+raz[oó]n\s+social|raz[oó]n\s+social|nombre\s+del\s+prestador)\s*[:：-]?\s*"
+        r"(.{3,180}?)\s*(?=(?:\d+(?:\.\d+)*\s*)?(?:NIT|N\.\s*I\.\s*T\.?|identificador\s+del\s+prestador))",
+        texto, re.I | re.S
+    )
+    if etiqueta_nombre and _nit_coincide_con_texto(nit, texto):
+        candidato = re.sub(r"\s+", " ", etiqueta_nombre.group(1)).strip(" ,:;-–—")
+        candidato = re.sub(r"^(?:\d+(?:\.\d+)*\s*)", "", candidato)
+        candidato = re.sub(r"\s+\d+(?:\.\d+)*\.?$", "", candidato).strip(" ,:;-–—")
+        if len(_normalizar_nombre_empresa(candidato).split()) >= 2 and re.search(sufijo_legal + r"$", candidato, re.I):
+            return candidato[:180]
     ruido = {
         "consulta", "consultas", "empresa", "empresas", "resultado", "resultados",
         "registro", "registros", "ministerio", "mintrabajo", "trabajo", "gobierno", "calificacion",
@@ -4547,7 +4561,7 @@ def _extraer_nombre_de_fila_con_nit(html_pagina, nit):
     if not html_pagina or not nit:
         return ""
     sufijo_legal = re.compile(
-        r"\b(?:S\.?\s*A\.?\s*S\.?|S\.?\s*A\.?|LTDA\.?|LIMITADA|E\.?\s*U\.?|S\.?\s*EN\s*C\.?|S\.?\s*C\.?\s*A\.?)(?=$|[^A-Za-z0-9])",
+        r"\b(?:S\.?\s*A\.?\s*S\.?|S\.?\s*A\.?\s*E\.?\s*S\.?\s*P\.?|S\.?\s*A\.?|E\.?\s*S\.?\s*P\.?|E\.?\s*I\.?\s*C\.?\s*E\.?|LTDA\.?|LIMITADA|E\.?\s*U\.?|S\.?\s*EN\s*C\.?|S\.?\s*C\.?\s*A\.?)(?=$|[^A-Za-z0-9])",
         re.I
     )
     for fila_html in re.findall(r"<tr\b[^>]*>(.*?)</tr>", str(html_pagina), re.I | re.S):
