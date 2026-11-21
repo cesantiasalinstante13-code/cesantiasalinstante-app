@@ -24,7 +24,7 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
 
 # Identificador de compilación para comprobar qué archivo ejecuta Streamlit.
-APP_BUILD_ID = "CESANTIAS_LOGO_5.1_2026-11-21"
+APP_BUILD_ID = "CESANTIAS_LOGO_5.2_2026-11-21"
 
 GOOGLE_DRIVE_SCOPE = "https://www.googleapis.com/auth/drive"
 
@@ -4273,11 +4273,13 @@ def _nombre_candidato_desde_resultado(titulo="", snippet="", nit=""):
 
 
 def _descargar_candidato_logo(candidato, referer=""):
-    """Descarga logo web y normaliza formatos admitidos por Google Docs."""
+    """Descarga un candidato y registra por qué se acepta o descarta."""
     if not candidato or urlparse(candidato).scheme not in ("http", "https"):
+        _log_busqueda_empresa(f"LOGO DESCARGA: candidato omitido por URL no válida: {str(candidato)[:220]}")
         return None
     url_limpia = candidato.lower().split("?")[0]
     if any(palabra in url_limpia for palabra in ("loader", "loading", "spinner", "placeholder", "tracking-pixel")):
+        _log_busqueda_empresa(f"LOGO DESCARGA: candidato omitido por ser placeholder: {candidato[:220]}")
         return None
     try:
         headers = {
@@ -4288,13 +4290,16 @@ def _descargar_candidato_logo(candidato, referer=""):
         if referer:
             headers["Referer"] = referer
         imagen = requests.get(
-            candidato, headers=headers, timeout=(5, 12),
+            candidato, headers=headers, timeout=(8, 18),
             allow_redirects=True, stream=True
         )
+        tipo = imagen.headers.get("Content-Type", "").lower().split(";")[0].strip()
         if not imagen.ok:
+            _log_busqueda_empresa(
+                f"LOGO DESCARGA: HTTP {imagen.status_code}; URL={candidato[:220]}; content-type={tipo}."
+            )
             imagen.close()
             return None
-        tipo = imagen.headers.get("Content-Type", "").lower().split(";")[0].strip()
         contenido = bytearray()
         for bloque in imagen.iter_content(65536):
             if not bloque:
@@ -4302,14 +4307,17 @@ def _descargar_candidato_logo(candidato, referer=""):
             contenido.extend(bloque)
             if len(contenido) > 5_000_000:
                 imagen.close()
+                _log_busqueda_empresa(f"LOGO DESCARGA: imagen excede 5 MB y se descarta: {candidato[:220]}")
                 return None
         url_final = imagen.url
         imagen.close()
         if len(contenido) < 100:
+            _log_busqueda_empresa(
+                f"LOGO DESCARGA: respuesta demasiado pequeña ({len(contenido)} bytes): {url_final[:220]}"
+            )
             return None
 
         datos_imagen = bytes(contenido)
-        # Algunos CDNs responden como octet-stream o text/xml aunque entreguen imagen.
         if datos_imagen.startswith(b"\x89PNG\r\n\x1a\n"):
             tipo = "image/png"
         elif datos_imagen.startswith(b"\xff\xd8\xff"):
@@ -4326,7 +4334,10 @@ def _descargar_candidato_logo(candidato, referer=""):
                 import cairosvg
                 datos_imagen = cairosvg.svg2png(bytestring=datos_imagen, output_width=1200)
                 tipo = "image/png"
-            except Exception:
+            except Exception as exc:
+                _log_busqueda_empresa(
+                    f"LOGO DESCARGA: SVG recibido pero no convertido; {type(exc).__name__}: {str(exc)[:220]}"
+                )
                 return None
         elif tipo == "image/webp":
             try:
@@ -4336,14 +4347,27 @@ def _descargar_candidato_logo(candidato, referer=""):
                 origen.save(salida, format="PNG")
                 datos_imagen = salida.getvalue()
                 tipo = "image/png"
-            except Exception:
+            except Exception as exc:
+                _log_busqueda_empresa(
+                    f"LOGO DESCARGA: WEBP recibido pero no convertido; {type(exc).__name__}: {str(exc)[:220]}"
+                )
                 return None
 
         if tipo not in ("image/png", "image/jpeg", "image/gif"):
+            _log_busqueda_empresa(
+                f"LOGO DESCARGA: formato no admitido ({tipo or 'desconocido'}); URL={url_final[:220]}"
+            )
             return None
+        _log_busqueda_empresa(
+            f"LOGO DESCARGA: imagen válida descargada; mime={tipo}; bytes={len(datos_imagen)}; URL={url_final[:260]}"
+        )
         return {"url": url_final, "bytes": datos_imagen, "mime": tipo}
-    except Exception:
+    except Exception as exc:
+        _log_busqueda_empresa(
+            f"LOGO DESCARGA: error descargando {candidato[:220]}: {type(exc).__name__}: {str(exc)[:260]}"
+        )
         return None
+
 
 def _extraer_logo_oficial_desde_sitio(url_sitio, permitir_og_social=False):
     """Extrae logos declarados por la propia web: schema, metadatos, HTML, SVG y CSS."""
@@ -4747,6 +4771,131 @@ def _buscar_logo_en_bing_images(nombre_empresa, dominios_corporativos):
     return None
 
 
+def _buscar_logo_en_directorio_procolombia(nombre_empresa, nit_empresa):
+    """Busca una ficha ProColombia asociada al NIT y extrae su imagen empresarial.
+
+    No contiene NIT ni empresas hardcodeados. Solo acepta fichas del directorio
+    B2B de ProColombia cuyo contenido confirma simultáneamente nombre y NIT.
+    """
+    nit_base = _clave_nit(nit_empresa)
+    if not nit_base or len(nit_base) < 8 or not nombre_empresa:
+        _log_busqueda_empresa("LOGO ProColombia: omitido; falta nombre o NIT base válido.")
+        return None
+
+    consultas = [
+        f'site:b2bmarketplace.procolombia.co "{nit_base}" "{nombre_empresa}"',
+        f'site:b2bmarketplace.procolombia.co "{nit_base}"',
+    ]
+    paginas_vistas = set()
+    for consulta in consultas:
+        try:
+            resultados = _buscar_resultados_empresa(consulta, max_resultados=10)
+        except Exception as exc:
+            _log_busqueda_empresa(
+                f"LOGO ProColombia: error buscando ficha: {type(exc).__name__}: {str(exc)[:220]}"
+            )
+            continue
+        _log_busqueda_empresa(
+            f"LOGO ProColombia: consulta devolvió {len(resultados)} resultados candidatos."
+        )
+        for item in resultados:
+            url_pagina = item.get("url", "")
+            host = urlparse(url_pagina).netloc.lower().removeprefix("www.")
+            if host != "b2bmarketplace.procolombia.co":
+                continue
+            clave = url_pagina.split("?")[0].rstrip("/").lower()
+            if clave in paginas_vistas:
+                continue
+            paginas_vistas.add(clave)
+            try:
+                pagina = requests.get(
+                    url_pagina,
+                    headers={
+                        "User-Agent": "Mozilla/5.0 (compatible; CesantiasAlInstante/5.2)",
+                        "Accept": "text/html,application/xhtml+xml,*/*;q=0.8",
+                    },
+                    timeout=(8, 18), allow_redirects=True,
+                )
+                _log_busqueda_empresa(
+                    f"LOGO ProColombia: ficha HTTP {pagina.status_code}; URL={pagina.url[:260]}; "
+                    f"content-type={pagina.headers.get('Content-Type', '')}; bytes={len(pagina.content)}."
+                )
+                if not pagina.ok or "text/html" not in pagina.headers.get("Content-Type", "text/html").lower():
+                    continue
+                html_pagina = pagina.text[:5_000_000]
+                texto_pagina = _texto_html_limpio(html_pagina)
+                if not _nit_coincide_con_texto(nit_empresa, texto_pagina):
+                    _log_busqueda_empresa("LOGO ProColombia: ficha descartada; no contiene el NIT buscado.")
+                    continue
+                if not _texto_coincide_empresa(nombre_empresa, texto_pagina):
+                    _log_busqueda_empresa("LOGO ProColombia: ficha descartada; no coincide el nombre empresarial.")
+                    continue
+
+                candidatos = []
+                for match in re.finditer(r"<img\b[^>]*>", html_pagina, re.I | re.S):
+                    attrs = _obtener_atributos_html(match.group(0))
+                    src = (attrs.get("data-src") or attrs.get("data-original") or
+                           attrs.get("data-lazy-src") or attrs.get("src") or "").strip()
+                    if not src:
+                        continue
+                    url_imagen = urljoin(pagina.url, src)
+                    path_digitos = _normalizar_nit(url_imagen)
+                    señales = " ".join((attrs.get("alt", ""), attrs.get("title", ""),
+                                        attrs.get("class", ""), attrs.get("id", ""), src)).lower()
+                    contexto = html_pagina[max(0, match.start()-2200):match.end()+2200]
+                    contexto_txt = _texto_html_limpio(contexto)
+                    score = 0
+                    # Algunas fichas B2B nombran el archivo con el ID empresarial
+                    # seguido del NIT; es la asociación más específica.
+                    if "empresaid" in src.lower() and nit_base in path_digitos:
+                        score = 140
+                    elif nit_base in path_digitos:
+                        score = 125
+                    elif any(x in señales for x in ("logo", "logotipo", "brand", "empresa", "marca")):
+                        score = 100
+                    elif _nit_coincide_con_texto(nit_empresa, contexto_txt) and _texto_coincide_empresa(nombre_empresa, contexto_txt):
+                        score = 75
+                    if score:
+                        candidatos.append((score, url_imagen))
+
+                # También revisa enlaces directos a imágenes si la etiqueta img
+                # está envuelta en un anchor.
+                for match in re.finditer(r"<a\b[^>]*href=[\"']([^\"']+)[\"'][^>]*>", html_pagina, re.I | re.S):
+                    href = urljoin(pagina.url, html.unescape(match.group(1)))
+                    if re.search(r"\.(?:png|jpe?g|gif|webp|svg)(?:[?#]|$)", href, re.I):
+                        digitos = _normalizar_nit(href)
+                        if nit_base in digitos:
+                            candidatos.append((130, href))
+
+                candidatos.sort(key=lambda x: x[0], reverse=True)
+                _log_busqueda_empresa(
+                    f"LOGO ProColombia: ficha confirmada para {nombre_empresa}; "
+                    f"{len(candidatos)} imágenes candidatas."
+                )
+                vistos_img = set()
+                for prioridad, url_imagen in candidatos[:20]:
+                    if url_imagen in vistos_img:
+                        continue
+                    vistos_img.add(url_imagen)
+                    _log_busqueda_empresa(
+                        f"LOGO ProColombia: probando imagen prioridad={prioridad}: {url_imagen[:300]}"
+                    )
+                    imagen = _descargar_candidato_logo(url_imagen, referer=pagina.url)
+                    if imagen:
+                        _log_busqueda_empresa(
+                            f"LOGO ProColombia: imagen descargada correctamente ({imagen['mime']}, "
+                            f"{len(imagen['bytes'])} bytes)."
+                        )
+                        return imagen, pagina.url
+                _log_busqueda_empresa("LOGO ProColombia: la ficha coincide, pero sus imágenes no pudieron descargarse como imagen válida.")
+            except Exception as exc:
+                _log_busqueda_empresa(
+                    f"LOGO ProColombia: error leyendo ficha: {type(exc).__name__}: {str(exc)[:240]}"
+                )
+    _log_busqueda_empresa("LOGO ProColombia: no se encontró una ficha con NIT y nombre coincidentes.")
+    return None
+
+
 def _buscar_icono_dominio_corporativo(dominios):
     """Último respaldo: favicon de alta resolución del dominio oficial ya identificado."""
     for dominio in sorted({_host_dominio_base(d) for d in (dominios or []) if d}):
@@ -4803,9 +4952,12 @@ def buscar_empresa_y_logo_python(nombre_empresa="", nit_empresa=""):
     resultados = []
     vistos = set()
     errores = []
-    for consulta in consultas:
+    _log_busqueda_empresa(f"LOGO: inicia búsqueda para nombre={nombre_oficial} | NIT={nit_oficial}.")
+    for numero_consulta, consulta in enumerate(consultas, 1):
         try:
-            for item in _buscar_resultados_empresa(consulta, max_resultados=20):
+            items_consulta = _buscar_resultados_empresa(consulta, max_resultados=20)
+            _log_busqueda_empresa(f"LOGO: consulta general {numero_consulta}/{len(consultas)} devolvió {len(items_consulta)} resultados.")
+            for item in items_consulta:
                 url = item.get("url", "")
                 clave = url.split("?")[0].rstrip("/").lower()
                 if url and clave not in vistos:
@@ -4824,6 +4976,10 @@ def buscar_empresa_y_logo_python(nombre_empresa="", nit_empresa=""):
     )
     dominios_verificados = []
     urls_priorizadas = []
+    _log_busqueda_empresa(
+        f"LOGO: {len(resultados)} URLs únicas para revisar; "
+        + ("primeras URLs: " + " | ".join(x.get("url", "")[:180] for x in resultados[:6]) if resultados else "sin resultados RSS")
+    )
 
     # Primera pasada: lee páginas recuperables, pero también conserva un dominio
     # corporativo cuyo nombre coincide con la razón social aunque bloquee robots.
@@ -4939,6 +5095,16 @@ def buscar_empresa_y_logo_python(nombre_empresa="", nit_empresa=""):
         except Exception as exc:
             errores.append(str(exc)[:180])
 
+    # Respaldo adicional: ficha empresarial de ProColombia. Se acepta únicamente
+    # cuando la página contiene el mismo NIT y la misma razón social.
+    if not resultado.get("logo"):
+        hallazgo_procolombia = _buscar_logo_en_directorio_procolombia(nombre_oficial, nit_oficial)
+        if hallazgo_procolombia:
+            resultado["logo"], pagina_logo = hallazgo_procolombia
+            resultado["sitio"] = pagina_logo
+            resultado["fuente_logo"] = "ficha empresarial de ProColombia verificada por NIT y razón social"
+            resultado["diagnostico"] = "Logo recuperado de una ficha empresarial de ProColombia que coincide con el NIT y el nombre oficial."
+
     # Último respaldo: favicon corporativo de alta resolución. Se etiqueta como icono,
     # no como logo oficial, para distinguir la calidad de la imagen recuperada.
     if not resultado.get("logo") and dominios_verificados:
@@ -4952,6 +5118,17 @@ def buscar_empresa_y_logo_python(nombre_empresa="", nit_empresa=""):
         except Exception as exc:
             errores.append(str(exc)[:180])
 
+    if resultado.get("logo"):
+        _log_busqueda_empresa(
+            f"LOGO: imagen encontrada; fuente={resultado.get('fuente_logo', '')}; "
+            f"URL={resultado.get('logo', {}).get('url', '')[:300]}; "
+            f"mime={resultado.get('logo', {}).get('mime', '')}; bytes={len(resultado.get('logo', {}).get('bytes', b''))}."
+        )
+    else:
+        _log_busqueda_empresa(
+            "LOGO: no se descargó ninguna imagen válida después de revisar sitio corporativo, "
+            "secciones de marca, imágenes y ProColombia."
+        )
     if not resultado.get("logo"):
         resultado["diagnostico"] = (
             "La razón social y el NIT sí fueron identificados en la fuente oficial, "
@@ -5052,40 +5229,60 @@ def _documento_contiene_marcador(documento, marcador="{{LOGO_EMPRESA}}"):
 
 
 def insertar_logo_en_plantilla(document_id, logo, solicitud_id, carpeta_destino_id=None, limpiar_marcador_si_falla=False):
-    """Inserta el logo en cuerpo, encabezado, pie o tabla. En plantillas conserva el marcador si falla."""
+    """Inserta imagen en Google Docs y verifica que el documento recibió un InlineObject."""
     marcador = "{{LOGO_EMPRESA}}"
     docs = obtener_servicio_docs()
     documento = docs.documents().get(documentId=document_id).execute()
     ubicacion = _buscar_marcador_en_documento(documento, marcador)
     if not ubicacion:
         mensaje = "No se encontró {{LOGO_EMPRESA}} en cuerpo, encabezados, pies ni tablas del documento."
-        try:
-            st.session_state["error_insercion_logo_empresa"] = mensaje
-        except Exception:
-            pass
-        _log_busqueda_empresa("LOGO: " + mensaje)
+        st.session_state["error_insercion_logo_empresa"] = mensaje
+        _log_busqueda_empresa("LOGO INSERCIÓN: " + mensaje)
         return False
 
     indice = int(ubicacion["index"])
     segment_id = ubicacion.get("segmentId")
 
-    def rango_documento():
-        rango = {"startIndex": indice, "endIndex": indice + _longitud_indice_google_docs(marcador)}
-        if segment_id:
-            rango["segmentId"] = segment_id
+    def rango_actual(documento_actual=None):
+        doc = documento_actual or docs.documents().get(documentId=document_id).execute()
+        ubicacion_actual = _buscar_marcador_en_documento(doc, marcador)
+        if not ubicacion_actual:
+            return None
+        rango = {
+            "startIndex": int(ubicacion_actual["index"]),
+            "endIndex": int(ubicacion_actual["index"]) + _longitud_indice_google_docs(marcador),
+        }
+        if ubicacion_actual.get("segmentId"):
+            rango["segmentId"] = ubicacion_actual["segmentId"]
         return rango
 
-    def eliminar_marcador():
-        docs.documents().batchUpdate(
-            documentId=document_id,
-            body={"requests": [{"deleteContentRange": {"range": rango_documento()}}]}
-        ).execute()
+    def limpiar_marcador_final():
+        if not limpiar_marcador_si_falla:
+            return
+        try:
+            actual = docs.documents().get(documentId=document_id).execute()
+            rango = rango_actual(actual)
+            if rango:
+                docs.documents().batchUpdate(
+                    documentId=document_id,
+                    body={"requests": [{"deleteContentRange": {"range": rango}}]},
+                ).execute()
+                _log_busqueda_empresa("LOGO INSERCIÓN: marcador eliminado solo de la copia final; la plantilla conserva su marcador.")
+        except Exception as exc:
+            _log_busqueda_empresa(
+                f"LOGO INSERCIÓN: no se pudo limpiar el marcador de la copia final: {type(exc).__name__}: {str(exc)[:300]}"
+            )
 
-    if not logo:
-        eliminar_marcador()
-        _log_busqueda_empresa("LOGO: no había imagen descargada; marcador eliminado sin dejar texto técnico.")
+    if not logo or not logo.get("bytes"):
+        mensaje = "La búsqueda de la empresa no entregó bytes de una imagen de logo utilizable."
+        st.session_state["error_insercion_logo_empresa"] = mensaje
+        _log_busqueda_empresa("LOGO INSERCIÓN: " + mensaje)
+        limpiar_marcador_final()
         return False
 
+    # Carga una copia en Drive para conservar el recurso, además de probar la URL
+    # original como respaldo si Google Docs no puede descargar el enlace de Drive.
+    uris_candidatas = []
     logo_id = None
     try:
         servicio_drive = _crear_servicio_drive_nuevo()
@@ -5095,77 +5292,112 @@ def insertar_logo_en_plantilla(document_id, logo, solicitud_id, carpeta_destino_
         archivo = servicio_drive.files().create(
             body={"name": nombre, "parents": [folder_id]},
             media_body=media,
-            fields="id,webContentLink,webViewLink"
+            fields="id,webContentLink,webViewLink",
         ).execute()
         logo_id = archivo["id"]
+        _log_busqueda_empresa(
+            f"LOGO DRIVE: imagen cargada; file_id={logo_id}; mime={logo['mime']}; "
+            f"bytes={len(logo['bytes'])}; carpeta={folder_id}."
+        )
         servicio_drive.permissions().create(
             fileId=logo_id,
             body={"type": "anyone", "role": "reader"},
-            fields="id"
+            fields="id",
         ).execute()
-        # URL de descarga directa del archivo que acabamos de hacer público.
-        uri_publica = f"https://drive.google.com/uc?export=download&id={logo_id}"
-        location = {"index": indice}
-        if segment_id:
-            location["segmentId"] = segment_id
-        docs.documents().batchUpdate(
-            documentId=document_id,
-            body={"requests": [
-                {"deleteContentRange": {"range": rango_documento()}},
-                {"insertInlineImage": {
-                    "location": location,
-                    "uri": uri_publica,
-                    "objectSize": {
-                        "width": {"magnitude": 95, "unit": "PT"},
-                        "height": {"magnitude": 45, "unit": "PT"}
-                    }
-                }}
-            ]}
-        ).execute()
-        try:
-            st.session_state["error_insercion_logo_empresa"] = ""
-        except Exception:
-            pass
-        _log_busqueda_empresa(
-            f"LOGO: imagen subida a Drive (archivo {logo_id}) e insertada en documento {document_id}; "
-            f"segmento={'encabezado/pie' if segment_id else 'cuerpo'}; índice={indice}."
-        )
-        return True
+        _log_busqueda_empresa("LOGO DRIVE: permiso de lectura pública confirmado.")
+        uris_candidatas.append((
+            archivo.get("webContentLink") or f"https://drive.google.com/uc?export=download&id={logo_id}",
+            "archivo público de Google Drive",
+        ))
     except Exception as exc:
-        detalle = f"{type(exc).__name__}: {str(exc)[:600]}"
+        detalle_drive = f"{type(exc).__name__}: {str(exc)[:500]}"
+        _log_busqueda_empresa("LOGO DRIVE: no se pudo guardar/compartir la imagen: " + detalle_drive)
+
+    url_origen = str(logo.get("url") or "").strip()
+    if url_origen.startswith(("https://", "http://")):
+        uris_candidatas.append((url_origen, "URL original de la imagen"))
+
+    # Evita intentar dos veces la misma URL.
+    uris_unicas = []
+    vistos_uri = set()
+    for uri, etiqueta in uris_candidatas:
+        if uri and uri not in vistos_uri:
+            vistos_uri.add(uri)
+            uris_unicas.append((uri, etiqueta))
+
+    error_final = "No se obtuvo una URL pública para insertar la imagen."
+    for uri, etiqueta in uris_unicas:
         try:
-            st.session_state["error_insercion_logo_empresa"] = detalle
-        except Exception:
-            pass
-        _log_busqueda_empresa("LOGO: error al subir o insertar la imagen: " + detalle)
-        # En la plantilla reutilizable NO quitamos el marcador si falla la
-        # inserción: la carta individual necesita poder reintentar usando ese
-        # mismo punto. Solo limpiamos el marcador en la copia final de la carta.
-        if limpiar_marcador_si_falla:
-            try:
-                documento_actual = docs.documents().get(documentId=document_id).execute()
-                ubicacion_actual = _buscar_marcador_en_documento(documento_actual, marcador)
-                if ubicacion_actual:
-                    idx = int(ubicacion_actual["index"])
-                    seg = ubicacion_actual.get("segmentId")
-                    rango = {"startIndex": idx, "endIndex": idx + _longitud_indice_google_docs(marcador)}
-                    if seg:
-                        rango["segmentId"] = seg
-                    docs.documents().batchUpdate(
-                        documentId=document_id,
-                        body={"requests": [{"deleteContentRange": {"range": rango}}]}
-                    ).execute()
-            except Exception as limpieza_exc:
-                _log_busqueda_empresa(
-                    "LOGO: tampoco fue posible limpiar el marcador en la copia final: "
-                    f"{type(limpieza_exc).__name__}: {str(limpieza_exc)[:300]}"
-                )
-        else:
+            documento_actual = docs.documents().get(documentId=document_id).execute()
+            ubi = _buscar_marcador_en_documento(documento_actual, marcador)
+            if not ubi:
+                # En caso de que una tentativa anterior insertara la imagen
+                # correctamente, valida el objeto antes de marcar fallo.
+                inline_antes = set((documento.get("inlineObjects") or {}).keys())
+                inline_ahora = set((documento_actual.get("inlineObjects") or {}).keys())
+                if inline_ahora - inline_antes:
+                    st.session_state["error_insercion_logo_empresa"] = ""
+                    _log_busqueda_empresa("LOGO DOCS: el documento ya contiene el objeto de imagen insertado.")
+                    return True
+                error_final = "El marcador ya no está disponible en el documento para insertar el logo."
+                break
+
+            loc = {"index": int(ubi["index"])}
+            if ubi.get("segmentId"):
+                loc["segmentId"] = ubi["segmentId"]
+            rango = {
+                "startIndex": int(ubi["index"]),
+                "endIndex": int(ubi["index"]) + _longitud_indice_google_docs(marcador),
+            }
+            if ubi.get("segmentId"):
+                rango["segmentId"] = ubi["segmentId"]
+
+            inline_antes = set((documento_actual.get("inlineObjects") or {}).keys())
             _log_busqueda_empresa(
-                "LOGO: se conserva {{LOGO_EMPRESA}} en la plantilla para permitir "
-                "un nuevo intento al crear la carta individual."
+                f"LOGO DOCS: intentando insertar desde {etiqueta}; documento={document_id}; "
+                f"segmento={'encabezado/pie' if ubi.get('segmentId') else 'cuerpo'}; índice={ubi['index']}."
             )
-        return False
+            respuesta = docs.documents().batchUpdate(
+                documentId=document_id,
+                body={"requests": [
+                    {"deleteContentRange": {"range": rango}},
+                    {"insertInlineImage": {
+                        "location": loc,
+                        "uri": uri,
+                        "objectSize": {
+                            "width": {"magnitude": 95, "unit": "PT"},
+                            "height": {"magnitude": 45, "unit": "PT"},
+                        },
+                    }},
+                ]},
+            ).execute()
+
+            documento_verificacion = docs.documents().get(documentId=document_id).execute()
+            inline_despues = set((documento_verificacion.get("inlineObjects") or {}).keys())
+            nuevos_objetos = inline_despues - inline_antes
+            replies = respuesta.get("replies", []) if isinstance(respuesta, dict) else []
+            reply_objeto = bool(
+                len(replies) > 1 and
+                isinstance(replies[1], dict) and
+                replies[1].get("insertInlineImage", {}).get("objectId")
+            )
+            if nuevos_objetos or reply_objeto:
+                st.session_state["error_insercion_logo_empresa"] = ""
+                _log_busqueda_empresa(
+                    f"LOGO DOCS: inserción confirmada; fuente={etiqueta}; "
+                    f"objetos_nuevos={len(nuevos_objetos)}; file_id_drive={logo_id or 'no guardado'}."
+                )
+                return True
+            error_final = "Google Docs respondió, pero no aparece un InlineObject nuevo al volver a leer el documento."
+            _log_busqueda_empresa("LOGO DOCS: " + error_final)
+        except Exception as exc:
+            error_final = f"{type(exc).__name__}: {str(exc)[:600]}"
+            _log_busqueda_empresa(f"LOGO DOCS: falló intento con {etiqueta}: {error_final}")
+
+    st.session_state["error_insercion_logo_empresa"] = error_final
+    _log_busqueda_empresa("LOGO INSERCIÓN: resultado final fallido: " + error_final)
+    limpiar_marcador_final()
+    return False
 
 
 def _forzar_columnas_texto(df, nombres):
@@ -6319,7 +6551,7 @@ def render_generando():
             if detalle_logo:
                 st.warning("La empresa se identificó, pero el logo no pudo insertarse. Detalle técnico: " + detalle_logo[:500])
             elif not st.session_state.get("logo_empresa_pendiente"):
-                st.warning("La empresa se identificó, pero no se pudo recuperar una imagen de logo utilizable desde su sitio web.")
+                st.warning("La empresa se identificó, pero no se pudo recuperar una imagen de logo utilizable. Abre el diagnóstico técnico al finalizar la solicitud para ver qué etapa falló.")
     if st.session_state.get("empresa") or st.session_state.get("nit"):
         # Conserva el estado final exacto solicitado para revisión administrativa.
         if st.session_state.get("estado_logo_empresa") != "logo-insertado":
@@ -6417,6 +6649,17 @@ def render_final():
           <div class="footer-brand">Cesantías al Instante... siempre contigo</div>
         </section>
         """, unsafe_allow_html=True)
+        if st.session_state.get("log_busqueda_empresa"):
+            with st.expander("Diagnóstico técnico de empresa y logo"):
+                st.caption("Este registro permite distinguir si falló la búsqueda de la imagen, su descarga, la carga a Drive o la inserción en Google Docs.")
+                st.download_button(
+                    "Descargar diagnóstico de empresa y logo (.txt)",
+                    data=_texto_log_busqueda_empresa(),
+                    file_name=f"diagnostico_logo_{st.session_state.get('nit', 'empresa')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
+                    mime="text/plain",
+                    key="descargar_diagnostico_logo_final",
+                    use_container_width=True,
+                )
         if st.button("⌂  Volver al inicio", key="finish_home", use_container_width=True):
             reiniciar_solicitud()
             st.session_state.step = "landing"
