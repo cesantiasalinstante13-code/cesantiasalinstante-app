@@ -24,7 +24,7 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
 
 # Identificador de compilación para comprobar qué archivo ejecuta Streamlit.
-APP_BUILD_ID = "CESANTIAS_LOGO_5.2_2026-11-21"
+APP_BUILD_ID = "CESANTIAS_LOGO_5.3_2026-11-21"
 
 GOOGLE_DRIVE_SCOPE = "https://www.googleapis.com/auth/drive"
 
@@ -4087,72 +4087,150 @@ def _desenvolver_url_bing(href):
 
 
 def _buscar_resultados_empresa(query, max_resultados=12):
-    """Busca resultados mediante el feed RSS de Bing (no mediante scraping HTML).
+    """Busca páginas candidatas por RSS y, si RSS viene vacío, usa resultados HTML estructurados.
 
-    El HTML de los buscadores cambia con frecuencia y puede incluir sugerencias
-    ajenas a la consulta. El RSS entrega pares explícitos título/enlace/resumen,
-    reduciendo resultados basura para búsqueda de sitios corporativos y logos.
+    Bing RSS está respondiendo HTTP 200 con feeds de ~1 KB y ningún <item>.
+    En ese caso se activa el HTML normal y se aceptan solo resultados cuyo título,
+    resumen o dominio guarden relación con la empresa buscada.
     """
     import xml.etree.ElementTree as ET
 
-    endpoint = "https://www.bing.com/search"
+    max_resultados = max(1, min(int(max_resultados), 50))
+    resultados = []
+    vistos = set()
     headers = {
-        "User-Agent": "Mozilla/5.0 (compatible; CesantiasAlInstante/5.1; +https://www.bing.com/bingbot.htm)",
-        "Accept": "application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
+        "Accept": "application/rss+xml, application/xml, text/xml;q=0.9, text/html;q=0.8, */*;q=0.7",
     }
+
+    # Primera opción: RSS.
     try:
         respuesta = requests.get(
-            endpoint,
-            params={
-                "format": "rss",
-                "q": query,
-                "cc": "CO",
-                "setlang": "es",
-                "count": max(10, min(int(max_resultados), 50)),
-            },
+            "https://www.bing.com/search",
+            params={"format": "rss", "q": query, "cc": "CO", "setlang": "es", "count": max(10, max_resultados)},
             headers=headers,
             timeout=(8, 20),
         )
         _log_busqueda_empresa(
-            f"Bing RSS: HTTP {respuesta.status_code}; "
-            f"content-type={respuesta.headers.get('Content-Type', '')}; "
+            f"Bing RSS: HTTP {respuesta.status_code}; content-type={respuesta.headers.get('Content-Type', '')}; "
             f"respuesta={len(respuesta.content)} bytes."
         )
         respuesta.raise_for_status()
-        root = ET.fromstring(respuesta.content)
+        try:
+            root = ET.fromstring(respuesta.content)
+            channel_title = root.findtext(".//channel/title", default="")
+            channel_desc = root.findtext(".//channel/description", default="")
+            for item in root.findall(".//item"):
+                titulo = _celda_texto(item.findtext("title", default=""))
+                url = html.unescape(_celda_texto(item.findtext("link", default=""))).strip()
+                snippet = _celda_texto(item.findtext("description", default=""))
+                if not titulo or not url.startswith(("http://", "https://")):
+                    continue
+                host = urlparse(url).netloc.lower().split(":")[0].removeprefix("www.")
+                if not host or host.endswith("bing.com"):
+                    continue
+                clave_url = url.split("?")[0].rstrip("/").lower()
+                if clave_url in vistos:
+                    continue
+                vistos.add(clave_url)
+                resultados.append({"url": url, "titulo": titulo, "snippet": snippet})
+                if len(resultados) >= max_resultados:
+                    break
+            _log_busqueda_empresa(
+                f"Bing RSS: raíz={root.tag}; canal={channel_title[:120]}; "
+                f"descripción={channel_desc[:160]}; elementos item={len(root.findall('.//item'))}."
+            )
+        except Exception as exc_xml:
+            _log_busqueda_empresa(
+                f"Bing RSS: XML no interpretable ({type(exc_xml).__name__}: {str(exc_xml)[:180]})."
+            )
     except Exception as exc:
         _log_busqueda_empresa(
-            f"Bing RSS: no se pudo obtener/leer el feed: {type(exc).__name__}: {str(exc)[:220]}"
+            f"Bing RSS: no se pudo obtener el feed: {type(exc).__name__}: {str(exc)[:220]}"
         )
-        return []
 
-    resultados = []
-    vistos = set()
-    for item in root.findall(".//item"):
-        titulo = _celda_texto(item.findtext("title", default=""))
-        url = _celda_texto(item.findtext("link", default=""))
-        snippet = _celda_texto(item.findtext("description", default=""))
-        url = html.unescape(url).strip()
-        if not url.startswith(("http://", "https://")):
-            continue
-        host = urlparse(url).netloc.lower().split(":")[0].removeprefix("www.")
-        if not host or host.endswith("bing.com"):
-            continue
-        clave_url = url.split("?")[0].rstrip("/").lower()
-        if not titulo or clave_url in vistos:
-            continue
-        vistos.add(clave_url)
-        resultados.append({"url": url, "titulo": titulo, "snippet": snippet})
-        if len(resultados) >= max(1, int(max_resultados)):
-            break
+    # Segunda opción: HTML de Bing. Se usa cuando RSS no trae resultados.
+    if not resultados:
+        try:
+            respuesta_html = requests.get(
+                "https://www.bing.com/search",
+                params={"q": query, "cc": "CO", "setlang": "es", "count": max(10, max_resultados)},
+                headers={**headers, "Accept": "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8"},
+                timeout=(8, 20),
+            )
+            _log_busqueda_empresa(
+                f"Bing HTML fallback: HTTP {respuesta_html.status_code}; "
+                f"content-type={respuesta_html.headers.get('Content-Type', '')}; bytes={len(respuesta_html.content)}."
+            )
+            respuesta_html.raise_for_status()
+            pagina_html = respuesta_html.text
+            comillas = re.findall(r'[\"“]([^\"”]{2,100})[\"”]', query)
+            empresa_esperada = next(
+                (q.strip() for q in comillas if not re.fullmatch(r"[\d.\- ]+", q.strip())), ""
+            )
+            sitio_restringido = re.search(r"\bsite:([a-z0-9.-]+)", query, re.I)
 
-    _log_busqueda_empresa(
-        f"Bing RSS: {len(resultados)} resultados válidos extraídos para la consulta."
-    )
+            # Los resultados web de Bing normalmente están en <li class="b_algo">.
+            bloques = []
+            for match_li in re.finditer(r"<li\b([^>]*)>(.*?)</li>", pagina_html, re.I | re.S):
+                attrs_li = _obtener_atributos_html("<li " + match_li.group(1) + ">")
+                clases = attrs_li.get("class", "").lower().split()
+                if "b_algo" in clases:
+                    bloques.append(match_li.group(2))
+
+            # Fallback secundario si Bing cambia la envoltura <li> pero conserva h2>a.
+            if not bloques:
+                bloques = [m.group(0) for m in re.finditer(
+                    r"<h2\b[^>]*>\s*<a\b[^>]*>.*?</a>\s*</h2>.*?(?=<h2\b|$)",
+                    pagina_html, re.I | re.S
+                )]
+
+            for bloque in bloques:
+                match_a = re.search(r"<h2\b[^>]*>\s*<a\b([^>]*)>(.*?)</a>", bloque, re.I | re.S)
+                if not match_a:
+                    continue
+                attrs_a = _obtener_atributos_html("<a " + match_a.group(1) + ">")
+                url = _desenvolver_url_bing(attrs_a.get("href", ""))
+                titulo = _texto_html_limpio(match_a.group(2))
+                match_p = re.search(r"<p\b[^>]*>(.*?)</p>", bloque, re.I | re.S)
+                snippet = _texto_html_limpio(match_p.group(1)) if match_p else ""
+                if not url or not titulo:
+                    continue
+                host = urlparse(url).netloc.lower().removeprefix("www.")
+                if not host or host.endswith(("bing.com", "microsoft.com")):
+                    continue
+                if sitio_restringido:
+                    dominio_objetivo = sitio_restringido.group(1).lower().removeprefix("www.")
+                    if host != dominio_objetivo and not host.endswith("." + dominio_objetivo):
+                        continue
+                # Evita repetir el problema de resultados irrelevantes: el resultado
+                # debe mencionar la empresa o usar un dominio cuyo nombre la identifique.
+                if empresa_esperada and not (
+                    _texto_coincide_empresa(empresa_esperada, f"{titulo} {snippet}")
+                    or _dominio_coincide_empresa(host, empresa_esperada)
+                ):
+                    continue
+                clave_url = url.split("?")[0].rstrip("/").lower()
+                if clave_url in vistos:
+                    continue
+                vistos.add(clave_url)
+                resultados.append({"url": url, "titulo": titulo, "snippet": snippet})
+                if len(resultados) >= max_resultados:
+                    break
+            _log_busqueda_empresa(
+                f"Bing HTML fallback: bloques={len(bloques)}; resultados relevantes={len(resultados)}; "
+                f"empresa_filtro={empresa_esperada or '(sin frase exacta)'}."
+            )
+        except Exception as exc:
+            _log_busqueda_empresa(
+                f"Bing HTML fallback: error {type(exc).__name__}: {str(exc)[:240]}"
+            )
+
+    _log_busqueda_empresa(f"Búsqueda web: {len(resultados)} resultados válidos para la consulta.")
     for item in resultados[:5]:
         _log_busqueda_empresa(
-            f"Bing RSS resultado: título={item['titulo'][:150]} | "
-            f"URL={item['url'][:250]} | resumen={item['snippet'][:220]}"
+            f"Resultado búsqueda: título={item['titulo'][:150]} | URL={item['url'][:250]} | "
+            f"resumen={item['snippet'][:220]}"
         )
     return resultados
 
@@ -4921,6 +4999,150 @@ def _buscar_icono_dominio_corporativo(dominios):
             return imagen
     return None
 
+def _dominios_probables_por_nombre(nombre_empresa, max_dominios=10):
+    """Genera dominios candidatos desde la razón social, sin nombres/NIT codificados.
+
+    Solo propone dominios; jamás los considera oficiales hasta que el sitio responde
+    y su contenido confirma el nombre de la empresa.
+    """
+    palabras = _normalizar_nombre_empresa(nombre_empresa).split()
+    legales = {
+        "sa", "sas", "s", "a", "esp", "e", "sp", "p", "bic", "ltda", "limitada",
+        "eu", "cia", "compania", "sociedad", "anonima", "anónima", "sc", "sca",
+    }
+    conectores = {"de", "del", "la", "el", "los", "las", "y", "e", "en"}
+    genericas = {
+        "grupo", "grupos", "empresa", "empresas", "publica", "publicas", "publico", "publicos",
+        "servicios", "servicio", "industria", "industrial", "comercial", "nacional", "nacionales",
+        "colombia", "colombiana", "colombiano", "energia", "electricas", "electrica", "municipal",
+        "municipales", "medellin", "bogota", "cali", "productos", "alimenticios", "sociedad", "compania", "empresarial",
+    }
+    significativas = [w for w in palabras if w not in legales and w not in conectores]
+    marcas = [w for w in significativas if w not in genericas and len(w) >= 4]
+    semillas = []
+
+    # Nombres de grupo: "Grupo Nutresa" -> gruponutresa.com y nutresa.com.
+    if "grupo" in significativas:
+        siguientes = [w for w in significativas if w != "grupo" and w not in genericas]
+        if siguientes:
+            semillas.append("grupo" + siguientes[0])
+
+    # Para una marca distintiva (Colombina, Alpina, Postobón), prueba primero
+    # el nombre de marca antes de construir acrónimos a partir de palabras largas.
+    semillas.extend(marcas[:4])
+
+    # Acrónimo para razones sociales sin palabra de marca distintiva, como EPM.
+    if not marcas and 3 <= len(significativas) <= 6:
+        acronimo = "".join(w[0] for w in significativas if w)
+        if 2 <= len(acronimo) <= 6:
+            semillas.append(acronimo)
+    # Para nombres compuestos comerciales, intenta la unión de las dos palabras de marca.
+    if len(marcas) >= 2:
+        semillas.append("".join(marcas[:2]))
+
+    extensiones = ("com.co", "com", "co") if len(significativas) >= 3 else ("com", "com.co", "co")
+    dominios = []
+    for semilla in semillas:
+        if not re.fullmatch(r"[a-z0-9]{3,30}", semilla):
+            continue
+        for extension in extensiones:
+            dominio = f"{semilla}.{extension}"
+            if dominio not in dominios:
+                dominios.append(dominio)
+            if len(dominios) >= max_dominios:
+                return dominios
+    return dominios[:max_dominios]
+
+
+def _acronimo_nombre_empresa(nombre_empresa):
+    palabras = _normalizar_nombre_empresa(nombre_empresa).split()
+    ignorar = {
+        "sa", "sas", "s", "a", "esp", "e", "sp", "p", "bic", "ltda", "limitada", "eu",
+        "de", "del", "la", "el", "los", "las", "y", "e", "en", "cia", "compania",
+        "sociedad", "anonima", "grupo", "grupos",
+    }
+    palabras = [w for w in palabras if w not in ignorar]
+    if 2 <= len(palabras) <= 6:
+        return "".join(w[0] for w in palabras if w)
+    return ""
+
+
+def _buscar_logo_en_dominio_derivado(nombre_empresa):
+    """Prueba dominios candidatos construidos desde el nombre y exige validar el contenido.
+
+    Esta ruta no depende de Bing RSS, que puede devolver HTTP 200 sin ningún resultado.
+    """
+    dominios = _dominios_probables_por_nombre(nombre_empresa)
+    _log_busqueda_empresa(
+        "LOGO WEB DIRECTA: dominios candidatos generados desde la razón social: "
+        + (", ".join(dominios) if dominios else "ninguno")
+    )
+    dominios_verificados = []
+    for dominio in dominios:
+        url = f"https://{dominio}/"
+        try:
+            pagina = requests.get(
+                url,
+                headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
+                    "Accept": "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
+                },
+                timeout=(5, 12), allow_redirects=True,
+            )
+            tipo = pagina.headers.get("Content-Type", "").lower()
+            _log_busqueda_empresa(
+                f"LOGO WEB DIRECTA: candidato={dominio}; HTTP={pagina.status_code}; "
+                f"tipo={tipo}; bytes={len(pagina.content)}; destino={pagina.url[:220]}"
+            )
+            if not pagina.ok or "text/html" not in tipo:
+                continue
+            contenido = pagina.text[:2_000_000]
+            texto_pagina = _texto_html_limpio(contenido)
+            titulo = re.search(r"<title[^>]*>(.*?)</title>", contenido, re.I | re.S)
+            title_text = _texto_html_limpio(titulo.group(1)) if titulo else ""
+            coincide = _texto_coincide_empresa(nombre_empresa, f"{title_text} {texto_pagina}")
+            acronimo = _acronimo_nombre_empresa(nombre_empresa)
+            normalizado = _normalizar_nombre_empresa(f"{title_text} {texto_pagina}")
+            coincide_acronimo = bool(
+                acronimo and re.search(r"(?<![a-z0-9])" + re.escape(acronimo) + r"(?![a-z0-9])", normalizado)
+            )
+            if not (coincide or coincide_acronimo):
+                _log_busqueda_empresa(
+                    f"LOGO WEB DIRECTA: {dominio} descartado; contenido no confirma la empresa "
+                    f"(título={title_text[:100]})."
+                )
+                continue
+
+            dominio_final = _host_dominio_base(urlparse(pagina.url).netloc)
+            if dominio_final and dominio_final not in dominios_verificados:
+                dominios_verificados.append(dominio_final)
+            _log_busqueda_empresa(
+                f"LOGO WEB DIRECTA: sitio aceptado por coincidencia de nombre; sitio={pagina.url[:250]}"
+            )
+            try:
+                logo = _extraer_logo_oficial_desde_sitio(pagina.url, permitir_og_social=False)
+            except Exception as exc:
+                _log_busqueda_empresa(
+                    f"LOGO WEB DIRECTA: extracción de HTML falló en {dominio_final}: "
+                    f"{type(exc).__name__}: {str(exc)[:220]}"
+                )
+                logo = None
+            if logo:
+                _log_busqueda_empresa(
+                    f"LOGO WEB DIRECTA: logo descargado desde {pagina.url}; "
+                    f"mime={logo.get('mime')}; bytes={len(logo.get('bytes', b''))}."
+                )
+                return logo, pagina.url, dominios_verificados
+            _log_busqueda_empresa(
+                f"LOGO WEB DIRECTA: el sitio {dominio_final} coincide, pero no publicó un archivo de logo reconocible en su HTML."
+            )
+        except Exception as exc:
+            _log_busqueda_empresa(
+                f"LOGO WEB DIRECTA: error consultando {dominio}: {type(exc).__name__}: {str(exc)[:220]}"
+            )
+    return None, "", dominios_verificados
+
+
 def buscar_empresa_y_logo_python(nombre_empresa="", nit_empresa=""):
     """Verifica identidad en RUES y busca el logotipo en sitios corporativos oficiales."""
     registro = _resolver_identidad_rues(nombre_empresa, nit_empresa)
@@ -4952,19 +5174,37 @@ def buscar_empresa_y_logo_python(nombre_empresa="", nit_empresa=""):
     resultados = []
     vistos = set()
     errores = []
+    dominios_verificados = []
+    urls_priorizadas = []
     _log_busqueda_empresa(f"LOGO: inicia búsqueda para nombre={nombre_oficial} | NIT={nit_oficial}.")
-    for numero_consulta, consulta in enumerate(consultas, 1):
-        try:
-            items_consulta = _buscar_resultados_empresa(consulta, max_resultados=20)
-            _log_busqueda_empresa(f"LOGO: consulta general {numero_consulta}/{len(consultas)} devolvió {len(items_consulta)} resultados.")
-            for item in items_consulta:
-                url = item.get("url", "")
-                clave = url.split("?")[0].rstrip("/").lower()
-                if url and clave not in vistos:
-                    vistos.add(clave)
-                    resultados.append(item)
-        except Exception as exc:
-            errores.append(str(exc)[:180])
+
+    # Primero prueba el dominio que puede derivarse del nombre legal. Esta ruta
+    # evita depender exclusivamente de Bing RSS, que en el diagnóstico 5.2
+    # respondió HTTP 200 pero no entregó ningún resultado.
+    logo_directo, sitio_directo, dominios_directos = _buscar_logo_en_dominio_derivado(nombre_oficial)
+    for dominio_directo in dominios_directos:
+        if dominio_directo not in dominios_verificados:
+            dominios_verificados.append(dominio_directo)
+    if logo_directo:
+        resultado["logo"] = logo_directo
+        resultado["sitio"] = sitio_directo
+        resultado["fuente_logo"] = "página corporativa localizada por dominio derivado y validada por el nombre de la empresa"
+        resultado["diagnostico"] = "Logo descargado directamente del sitio corporativo tras validar que su contenido corresponde a la razón social."
+
+    # Si el dominio derivado no funcionó, recurre al buscador web (RSS + HTML).
+    if not resultado.get("logo"):
+        for numero_consulta, consulta in enumerate(consultas, 1):
+            try:
+                items_consulta = _buscar_resultados_empresa(consulta, max_resultados=20)
+                _log_busqueda_empresa(f"LOGO: consulta general {numero_consulta}/{len(consultas)} devolvió {len(items_consulta)} resultados.")
+                for item in items_consulta:
+                    url = item.get("url", "")
+                    clave = url.split("?")[0].rstrip("/").lower()
+                    if url and clave not in vistos:
+                        vistos.add(clave)
+                        resultados.append(item)
+            except Exception as exc:
+                errores.append(str(exc)[:180])
 
     dominios_no_corporativos = (
         "datos.gov.co", "rues.org.co", "dian.gov.co", "funcionpublica.gov.co",
@@ -4974,8 +5214,6 @@ def buscar_empresa_y_logo_python(nombre_empresa="", nit_empresa=""):
         "facebook.com", "instagram.com", "linkedin.com", "x.com", "twitter.com",
         "tiktok.com", "bing.com", "google.com", "duckduckgo.com",
     )
-    dominios_verificados = []
-    urls_priorizadas = []
     _log_busqueda_empresa(
         f"LOGO: {len(resultados)} URLs únicas para revisar; "
         + ("primeras URLs: " + " | ".join(x.get("url", "")[:180] for x in resultados[:6]) if resultados else "sin resultados RSS")
@@ -5126,8 +5364,8 @@ def buscar_empresa_y_logo_python(nombre_empresa="", nit_empresa=""):
         )
     else:
         _log_busqueda_empresa(
-            "LOGO: no se descargó ninguna imagen válida después de revisar sitio corporativo, "
-            "secciones de marca, imágenes y ProColombia."
+            "LOGO: no se descargó ninguna imagen válida después de probar dominios derivados del nombre, "
+            "páginas corporativas, Bing RSS/HTML, imágenes y ProColombia."
         )
     if not resultado.get("logo"):
         resultado["diagnostico"] = (
