@@ -24,7 +24,7 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
 
 # Identificador de compilación para comprobar qué archivo ejecuta Streamlit.
-APP_BUILD_ID = "CESANTIAS_IDENTIDAD_4.8_2026-11-19"
+APP_BUILD_ID = "CESANTIAS_IDENTIDAD_4.9_2026-11-21"
 
 GOOGLE_DRIVE_SCOPE = "https://www.googleapis.com/auth/drive"
 
@@ -3508,6 +3508,128 @@ def _consultar_entidad_vigilada_superfinanciera_por_nit(nit):
     }
 
 
+def _consultar_secop_ii_por_nit(nit):
+    """Consulta el dataset oficial SECOP II por NIT de la entidad contratante.
+
+    Es una fuente estructurada adicional para entidades públicas que pueden no
+    aparecer en el conjunto mercantil RUES (por ejemplo, empresas industriales
+    y comerciales del Estado). No depende de Bing/Google.
+    """
+    nit_base = _clave_nit(nit)
+    nit_digitos = _normalizar_nit(nit)
+    if len(nit_base) < 7:
+        return None
+
+    api = "https://www.datos.gov.co/resource/p6dx-8zbt.json"
+    variantes = []
+    for valor in (nit_base, nit_digitos):
+        if valor and valor not in variantes:
+            variantes.append(valor)
+    literales = ", ".join("'" + _soql_escape(v) + "'" for v in variantes)
+    where = f"nit_entidad in ({literales})"
+    _log_busqueda_empresa(
+        f"SECOP II: consulta directa del conjunto oficial p6dx-8zbt por NIT; filtro={where}"
+    )
+    try:
+        respuesta = requests.get(
+            api,
+            params={
+                "$select": "nit_entidad,entidad,count(*) as frecuencia",
+                "$where": where,
+                "$group": "nit_entidad,entidad",
+                "$order": "frecuencia DESC",
+                "$limit": "20",
+            },
+            headers={
+                "Accept": "application/json",
+                "User-Agent": "CesantiasAlInstante/4.9 (consulta de datos abiertos SECOP II)",
+            },
+            timeout=(8, 25),
+        )
+        _log_busqueda_empresa(
+            f"SECOP II: HTTP {respuesta.status_code}; "
+            f"content-type={respuesta.headers.get('Content-Type', '')}"
+        )
+        respuesta.raise_for_status()
+        filas = respuesta.json()
+        if not isinstance(filas, list):
+            _log_busqueda_empresa("SECOP II: la respuesta no es una lista JSON; se omite esta fuente.")
+            return None
+    except Exception as exc:
+        _log_busqueda_empresa(
+            f"SECOP II: consulta directa falló: {type(exc).__name__}: {str(exc)[:220]}"
+        )
+        return None
+
+    candidatos = {}
+    for fila in filas:
+        nit_fila = _normalizar_nit(fila.get("nit_entidad", ""))
+        if _clave_nit(nit_fila) != nit_base:
+            continue
+        nombre = _celda_texto(fila.get("entidad", ""))
+        if not nombre:
+            continue
+        try:
+            frecuencia = int(float(fila.get("frecuencia", 0) or 0))
+        except Exception:
+            frecuencia = 0
+        clave = _clave_nombre_empresa(nombre)
+        if not clave:
+            continue
+        actual = candidatos.get(clave)
+        if actual is None or frecuencia > actual["frecuencia"]:
+            candidatos[clave] = {
+                "nombre": nombre,
+                "nit": nit_fila,
+                "frecuencia": frecuencia,
+            }
+
+    _log_busqueda_empresa(
+        f"SECOP II: {len(filas)} filas agregadas; "
+        f"{len(candidatos)} nombres distintos para el NIT."
+    )
+    for item in sorted(candidatos.values(), key=lambda x: x["frecuencia"], reverse=True)[:10]:
+        _log_busqueda_empresa(
+            f"SECOP II candidato: {item['nombre']} | NIT={item['nit']} | "
+            f"procesos={item['frecuencia']}"
+        )
+    if not candidatos:
+        _log_busqueda_empresa("SECOP II: no se encontró coincidencia exacta para el NIT.")
+        return None
+
+    ordenados = sorted(candidatos.values(), key=lambda x: x["frecuencia"], reverse=True)
+    principal = ordenados[0]
+    # La fuente es el NIT exacto de la entidad que publicó procesos. Si el
+    # dataset conserva nombres históricos, se guardan como denominaciones
+    # adicionales y se usa el nombre de mayor recurrencia.
+    digitos = _normalizar_nit(nit)
+    dv = digitos[-1] if len(digitos) == 10 else _calcular_dv_nit_colombiano(nit_base)
+    nit_formateado = f"{nit_base}-{dv}" if dv else nit_base
+    alternativas = [x["nombre"] for x in ordenados[1:] if x["nombre"] != principal["nombre"]]
+    _log_busqueda_empresa(
+        f"SECOP II: identidad candidata por NIT exacto: {principal['nombre']} | "
+        f"alternativas conservadas={alternativas[:5]}"
+    )
+    return {
+        "nombre": principal["nombre"],
+        "nombre_fuente": principal["nombre"],
+        "nombres_fuente": [principal["nombre"]] + alternativas,
+        "denominaciones_alternativas": alternativas,
+        "nombres_comerciales": [],
+        "otras_denominaciones_mismo_nit": alternativas,
+        "nit_base": nit_base,
+        "digito_verificacion": dv or "",
+        "nit": nit_formateado,
+        "estado_matricula": "",
+        "camara_comercio": "",
+        "codigo_camara": "",
+        "matricula": "",
+        "ultimo_ano_renovado": "",
+        "fuente_identidad": "Agencia Nacional de Contratación Pública - SECOP II / Datos Abiertos",
+        "url_fuente_identidad": "https://www.datos.gov.co/Estad-sticas-Nacionales/SECOP-II-Procesos-de-Contrataci-n/p6dx-8zbt",
+    }
+
+
 def _consultar_identidad_nit_en_fuentes_oficiales(nit):
     """Respalda RUES con documentos públicos oficiales que identifican el mismo NIT."""
     nit_digitos = _normalizar_nit(nit)
@@ -3515,12 +3637,17 @@ def _consultar_identidad_nit_en_fuentes_oficiales(nit):
     if not nit_base:
         return None
 
-    # Antes de consultar buscadores externos, intenta la fuente de datos
-    # estructurada de la Superintendencia Financiera. Para bancos y otras
-    # entidades vigiladas, esta consulta devuelve el registro oficial por NIT.
+    # Primero se consultan fuentes oficiales estructuradas, por NIT exacto.
     registro_sfc = _consultar_entidad_vigilada_superfinanciera_por_nit(nit)
     if registro_sfc:
         return registro_sfc
+
+    # Segunda fuente estructurada: SECOP II contiene el NIT y nombre de la
+    # entidad que publica procesos. Es útil para entidades públicas que no
+    # necesariamente figuran en RUES. Se consulta por API, no por buscadores.
+    registro_secop = _consultar_secop_ii_por_nit(nit)
+    if registro_secop:
+        return registro_secop
 
     variantes = [nit_digitos] if nit_digitos else []
     if nit_base not in variantes:
@@ -3542,16 +3669,17 @@ def _consultar_identidad_nit_en_fuentes_oficiales(nit):
     )
     candidatos = {}
     _log_busqueda_empresa(
-        f"Respaldo oficial: búsqueda dirigida por NIT {nit_base}; {len(consultas)} consultas oficiales previstas. "
-        "Se consultan documentos SUI/RUPS de Superservicios y publicaciones de las superintendencias."
+        f"Respaldo documental: búsqueda dirigida por NIT {nit_base}; "
+        f"{len(consultas)} consultas en fuentes oficiales mediante Bing RSS. "
+        "La identidad solo se acepta si el documento o página consultada contiene el NIT exacto."
     )
     for indice_consulta, consulta in enumerate(consultas, 1):
-        _log_busqueda_empresa(f"Buscador: consulta {indice_consulta}/{len(consultas)}: {consulta}")
+        _log_busqueda_empresa(f"Búsqueda documental: consulta {indice_consulta}/{len(consultas)}: {consulta}")
         try:
             resultados = _buscar_resultados_empresa(consulta, max_resultados=12)
-            _log_busqueda_empresa(f"Buscador: consulta {indice_consulta} devolvió {len(resultados)} resultados combinados.")
+            _log_busqueda_empresa(f"Búsqueda documental: consulta {indice_consulta} devolvió {len(resultados)} resultados RSS.")
         except Exception as exc:
-            _log_busqueda_empresa(f"Buscador: error en consulta {indice_consulta}: {type(exc).__name__}: {str(exc)[:250]}")
+            _log_busqueda_empresa(f"Búsqueda documental: error en consulta {indice_consulta}: {type(exc).__name__}: {str(exc)[:250]}")
             continue
 
         for item in resultados:
@@ -3563,9 +3691,10 @@ def _consultar_identidad_nit_en_fuentes_oficiales(nit):
             texto_resumen = f"{titulo} {snippet}"
             if not url.startswith(("http://", "https://")):
                 continue
-            if not _nit_coincide_con_texto(nit, texto_resumen):
-                continue
 
+            # No se descarta solo porque el buscador no muestre el NIT en el
+            # resumen. Se consulta la página oficial y se exige el NIT exacto
+            # en su contenido antes de aceptar cualquier razón social.
             # Las fuentes admitidas son portales oficiales, cámaras, RUES o
             # certificados mercantiles alojados en el propio dominio empresarial.
             dominio_oficial = any(host == d or host.endswith("." + d) for d in dominios_oficiales)
@@ -3576,9 +3705,14 @@ def _consultar_identidad_nit_en_fuentes_oficiales(nit):
             dominio_sui = any(host == d or host.endswith("." + d) for d in (
                 "superservicios.gov.co", "sui.superservicios.gov.co", "wa-reportsui.azurewebsites.net"
             ))
-            if not dominio_oficial and not menciona_certificado:
-                continue
-            if dominio_sui and not _nit_coincide_con_texto(nit, texto_resumen):
+            dominio_empresarial_candidato = not any(
+                host == d or host.endswith("." + d) for d in (
+                    "bing.com", "google.com", "duckduckgo.com", "wikipedia.org",
+                    "facebook.com", "instagram.com", "linkedin.com", "youtube.com",
+                    "x.com", "twitter.com", "tiktok.com"
+                )
+            )
+            if not (dominio_oficial or menciona_certificado or dominio_empresarial_candidato):
                 continue
 
             candidato = _nombre_candidato_desde_resultado(titulo, snippet, nit)
@@ -3598,13 +3732,26 @@ def _consultar_identidad_nit_en_fuentes_oficiales(nit):
                         timeout=(5, 12),
                         allow_redirects=True,
                     )
-                    if pagina.ok and "text/html" in pagina.headers.get("Content-Type", "text/html").lower():
-                        texto_pagina = _texto_html_limpio(pagina.text[:2_500_000])
-                        texto_verificacion += " " + texto_pagina
-                        candidato = (
-                            _nombre_candidato_cercano_al_nit(texto_pagina, nit)
-                            or _nombre_candidato_desde_resultado(titulo, texto_pagina, nit)
-                        )
+                    if pagina.ok:
+                        content_type = pagina.headers.get("Content-Type", "").lower()
+                        texto_pagina = ""
+                        if "text/html" in content_type or "application/xhtml" in content_type:
+                            texto_pagina = _texto_html_limpio(pagina.text[:2_500_000])
+                        elif "pdf" in content_type or (pagina.content[:5] == b"%PDF-"):
+                            try:
+                                from pypdf import PdfReader
+                                import io
+                                lector_pdf = PdfReader(io.BytesIO(pagina.content))
+                                texto_pagina = " ".join((p.extract_text() or "") for p in lector_pdf.pages[:20])
+                            except Exception as exc_pdf:
+                                _log_busqueda_empresa(f"Respaldo oficial: no se pudo extraer PDF {url}: {type(exc_pdf).__name__}: {str(exc_pdf)[:140]}")
+                        if texto_pagina:
+                            texto_verificacion += " " + texto_pagina
+                            candidato = (
+                                _nombre_candidato_cercano_al_nit(texto_pagina, nit)
+                                or _nombre_candidato_desde_resultado(titulo, texto_pagina, nit)
+                                or candidato
+                            )
                 except Exception:
                     pass
 
@@ -3682,8 +3829,8 @@ def _resolver_identidad_rues(nombre_empresa="", nit_empresa=""):
         if not registros:
             detalle = (" Detalle técnico RUES: " + errores_rues[0]) if errores_rues else ""
             raise ValueError(
-                "No encontramos ese NIT en el conjunto público RUES/Confecámaras ni en los "
-                "documentos oficiales consultados. Comprueba el número o intenta con el nombre legal."
+                "No encontramos ese NIT en RUES ni en las fuentes estructuradas y documentos oficiales consultados. "
+                "La búsqueda no pudo confirmar la empresa; no se creó plantilla ni se modificó la base."
                 + detalle
             )
         if len(registros) > 1:
@@ -3940,197 +4087,74 @@ def _desenvolver_url_bing(href):
 
 
 def _buscar_resultados_empresa(query, max_resultados=12):
-    """Busca páginas empresariales con DuckDuckGo y Bing como respaldo."""
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                      "AppleWebKit/537.36 Chrome/120 Safari/537.36"
-    }
-    resultados = []
-    vistos = set()
+    """Busca resultados mediante el feed RSS de Bing (no mediante scraping HTML).
 
-    # Primer proveedor: DuckDuckGo HTML.
+    El HTML de los buscadores cambia con frecuencia y puede incluir sugerencias
+    ajenas a la consulta. El RSS entrega pares explícitos título/enlace/resumen,
+    reduciendo resultados basura para búsqueda de sitios corporativos y logos.
+    """
+    import xml.etree.ElementTree as ET
+
+    endpoint = "https://www.bing.com/search"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (compatible; CesantiasAlInstante/4.9; +https://www.bing.com/bingbot.htm)",
+        "Accept": "application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8",
+    }
     try:
         respuesta = requests.get(
-            "https://html.duckduckgo.com/html/",
-            params={"q": query, "kl": "co-es"}, headers=headers, timeout=(6, 15)
+            endpoint,
+            params={
+                "format": "rss",
+                "q": query,
+                "cc": "CO",
+                "setlang": "es",
+                "count": max(10, min(int(max_resultados), 50)),
+            },
+            headers=headers,
+            timeout=(8, 20),
         )
-        _log_busqueda_empresa(f"DuckDuckGo: HTTP {respuesta.status_code}; respuesta={len(respuesta.text)} caracteres.")
+        _log_busqueda_empresa(
+            f"Bing RSS: HTTP {respuesta.status_code}; "
+            f"content-type={respuesta.headers.get('Content-Type', '')}; "
+            f"respuesta={len(respuesta.content)} bytes."
+        )
         respuesta.raise_for_status()
-        if respuesta.status_code == 202:
-            _log_busqueda_empresa("DuckDuckGo: respondió HTTP 202; probablemente entregó una página de desafío y no resultados de búsqueda.")
-        html_busqueda = respuesta.text
-        # Procesar cada enlace result__a sin depender del orden de sus atributos.
-        for atributos, titulo_html in re.findall(r"<a\b([^>]*)>(.*?)</a>", html_busqueda, re.I | re.S):
-            attrs = {}
-            for clave, comilla, valor in re.findall(r"([\w:-]+)\s*=\s*([\"'])(.*?)\2", atributos, re.I | re.S):
-                attrs[clave.lower()] = html.unescape(valor)
-            if "result__a" not in attrs.get("class", "").lower():
-                continue
-            href = attrs.get("href", "").strip()
-            if "uddg=" in href:
-                try:
-                    href = parse_qs(urlparse(href).query).get("uddg", [href])[0]
-                except Exception:
-                    pass
-            href = urljoin("https://html.duckduckgo.com", href)
-            dominio = urlparse(href).netloc.lower()
-            if (
-                not href.startswith(("http://", "https://"))
-                or not dominio
-                or any(x in dominio for x in (
-                    "duckduckgo.com", "google.com", "bing.com", "yahoo.com",
-                    "wikipedia.org"
-                ))
-            ):
-                continue
-            titulo = _texto_html_limpio(titulo_html)
-            clave_url = href.split("?")[0].rstrip("/").lower()
-            if titulo and clave_url not in vistos:
-                vistos.add(clave_url)
-                resultados.append({"url": href, "titulo": titulo, "snippet": ""})
-            if len(resultados) >= max_resultados:
-                break
+        root = ET.fromstring(respuesta.content)
     except Exception as exc:
-        _log_busqueda_empresa(f"DuckDuckGo: falló la consulta: {type(exc).__name__}: {str(exc)[:220]}")
-        # El buscador de respaldo se intenta incluso si DuckDuckGo bloquea la petición.
-        pass
-    _log_busqueda_empresa(f"DuckDuckGo: {len(resultados)} resultados extraídos hasta este punto.")
-
-    # Segundo proveedor: Bing. Reduce la dependencia de un solo buscador.
-    if len(resultados) < max_resultados or not any(item.get("snippet") for item in resultados):
-        try:
-            respuesta = requests.get(
-                "https://www.bing.com/search",
-                params={"q": query, "count": max(10, max_resultados), "cc": "CO", "setlang": "es"},
-                headers=headers, timeout=(6, 18)
-            )
-            _log_busqueda_empresa(f"Bing: HTTP {respuesta.status_code}; respuesta={len(respuesta.text)} caracteres.")
-            respuesta.raise_for_status()
-            bloques = re.findall(
-                r"<li\b[^>]*class=[\"'][^\"']*\bb_algo\b[^\"']*[\"'][^>]*>(.*?)(?=<li\b|</ol>|$)",
-                respuesta.text, re.I | re.S
-            )
-            for bloque in bloques:
-                enlace = re.search(r"<h2\b[^>]*>\s*<a\b([^>]*)>(.*?)</a>", bloque, re.I | re.S)
-                if not enlace:
-                    continue
-                attrs = {}
-                for clave, comilla, valor in re.findall(r"([\w:-]+)\s*=\s*([\"'])(.*?)\2", enlace.group(1), re.I | re.S):
-                    attrs[clave.lower()] = html.unescape(valor)
-                href_original = attrs.get("href", "").strip()
-                href = _desenvolver_url_bing(href_original)
-                if not href:
-                    _log_busqueda_empresa("Bing: se descartó un enlace de seguimiento sin destino verificable.")
-                    continue
-                dominio = urlparse(href).netloc.lower()
-                if not href.startswith(("http://", "https://")) or not dominio:
-                    continue
-                titulo = _texto_html_limpio(enlace.group(2))
-                match_snippet = re.search(r"<p\b[^>]*>(.*?)</p>", bloque, re.I | re.S)
-                snippet = _texto_html_limpio(match_snippet.group(1)) if match_snippet else ""
-                clave_url = href.split("?")[0].rstrip("/").lower()
-                if titulo and clave_url not in vistos:
-                    # Conserva resultados de ambos motores: los resúmenes de Bing
-                    # pueden aportar el NIT/razón social que DDG no entrega.
-                    limite_combinado = max(1, int(max_resultados)) * 2
-                    if len(resultados) < limite_combinado:
-                        vistos.add(clave_url)
-                        resultados.append({"url": href, "titulo": titulo, "snippet": snippet})
-                elif snippet:
-                    # Si DuckDuckGo ya añadió esta URL sin resumen, conserva el
-                    # resumen de Bing porque puede contener la razón social y el NIT.
-                    for previo in resultados:
-                        clave_previa = previo.get("url", "").split("?")[0].rstrip("/").lower()
-                        if clave_previa == clave_url:
-                            if not previo.get("snippet"):
-                                previo["snippet"] = snippet
-                            if titulo and len(titulo) > len(previo.get("titulo", "")):
-                                previo["titulo"] = titulo
-                            break
-        except Exception as exc:
-            _log_busqueda_empresa(f"Bing: falló la consulta: {type(exc).__name__}: {str(exc)[:220]}")
-            pass
-    _log_busqueda_empresa(f"Bing: resultados acumulados={len(resultados)}.")
-
-    # Tercer proveedor: Google Search HTML. Se usa como respaldo cuando los
-    # otros motores no devuelven resúmenes legibles. No se considera válida una
-    # coincidencia por sí sola: la función principal verifica que el resultado
-    # contenga el NIT o el nombre buscado.
-    nit_en_consulta = re.search(r"(?<!\d)(\d(?:[\s.\-]*\d){8,9})(?!\d)", query)
-    nit_clave_consulta = ""
-    if nit_en_consulta:
-        digitos_consulta = _normalizar_nit(nit_en_consulta.group(1))
-        nit_clave_consulta = digitos_consulta[:-1] if len(digitos_consulta) == 10 else digitos_consulta
-    resultado_contiene_nit = bool(
-        nit_clave_consulta and any(
-            nit_clave_consulta in _normalizar_nit(item.get("titulo", "") + " " + item.get("snippet", ""))
-            for item in resultados
+        _log_busqueda_empresa(
+            f"Bing RSS: no se pudo obtener/leer el feed: {type(exc).__name__}: {str(exc)[:220]}"
         )
+        return []
+
+    resultados = []
+    vistos = set()
+    for item in root.findall(".//item"):
+        titulo = _celda_texto(item.findtext("title", default=""))
+        url = _celda_texto(item.findtext("link", default=""))
+        snippet = _celda_texto(item.findtext("description", default=""))
+        url = html.unescape(url).strip()
+        if not url.startswith(("http://", "https://")):
+            continue
+        host = urlparse(url).netloc.lower().split(":")[0].removeprefix("www.")
+        if not host or host.endswith("bing.com"):
+            continue
+        clave_url = url.split("?")[0].rstrip("/").lower()
+        if not titulo or clave_url in vistos:
+            continue
+        vistos.add(clave_url)
+        resultados.append({"url": url, "titulo": titulo, "snippet": snippet})
+        if len(resultados) >= max(1, int(max_resultados)):
+            break
+
+    _log_busqueda_empresa(
+        f"Bing RSS: {len(resultados)} resultados válidos extraídos para la consulta."
     )
-    # Cuando la búsqueda es por NIT, consulta también Google si DDG/Bing no
-    # devolvieron el número dentro de título o resumen, aunque sí den otros links.
-    if not resultados or not any(item.get("snippet") for item in resultados) or (nit_clave_consulta and not resultado_contiene_nit):
-        try:
-            _log_busqueda_empresa("Google: se inicia consulta de respaldo porque DDG/Bing no aportaron un resultado con el NIT en título o resumen.")
-            respuesta = requests.get(
-                "https://www.google.com/search",
-                params={"q": query, "num": max(10, max_resultados), "gl": "co", "hl": "es"},
-                headers=headers,
-                timeout=(6, 18)
-            )
-            _log_busqueda_empresa(f"Google: HTTP {respuesta.status_code}; respuesta={len(respuesta.text)} caracteres.")
-            respuesta.raise_for_status()
-            html_google = respuesta.text
-            cantidad_google_antes = len(resultados)
-            for coincidencia in re.finditer(r"<a\b([^>]*)>(.*?)</a>", html_google, re.I | re.S):
-                atributos, interior = coincidencia.group(1), coincidencia.group(2)
-                if not re.search(r"<h3\b", interior, re.I):
-                    continue
-                attrs = {}
-                for clave, comilla, valor in re.findall(
-                    r"([\w:-]+)\s*=\s*([\"'])(.*?)\2", atributos, re.I | re.S
-                ):
-                    attrs[clave.lower()] = html.unescape(valor)
-                href = attrs.get("href", "").strip()
-                if href.startswith("/url?") or "google.com/url?" in href:
-                    href = parse_qs(urlparse(href).query).get("q", [href])[0]
-                href = urljoin("https://www.google.com", href)
-                dominio = urlparse(href).netloc.lower()
-                if (
-                    not href.startswith(("http://", "https://"))
-                    or not dominio
-                    or dominio.endswith("google.com")
-                    or any(x in dominio for x in ("youtube.com/redirect",))
-                ):
-                    continue
-                titulo = _texto_html_limpio(interior)
-                if not titulo:
-                    continue
-                clave_url = href.split("?")[0].rstrip("/").lower()
-                if clave_url in vistos:
-                    continue
-
-                # En Google el resumen aparece habitualmente en VwiC3b/IsZvec;
-                # se extraen esos bloques del fragmento posterior al título.
-                siguiente = html_google[coincidencia.end(): coincidencia.end() + 2600]
-                snippet = ""
-                match_snippet = re.search(
-                    r'<div[^>]+class=["\'][^"\']*(?:VwiC3b|IsZvec|aCOpRe)[^"\']*["\'][^>]*>(.*?)</div>',
-                    siguiente, re.I | re.S
-                )
-                if match_snippet:
-                    snippet = _texto_html_limpio(match_snippet.group(1))
-                vistos.add(clave_url)
-                resultados.insert(0, {"url": href, "titulo": titulo, "snippet": snippet})
-                if len(resultados) >= max(1, int(max_resultados)) * 2:
-                    break
-            _log_busqueda_empresa(f"Google: resultados nuevos extraídos={len(resultados) - cantidad_google_antes}.")
-        except Exception as exc:
-            _log_busqueda_empresa(f"Google: consulta de respaldo falló: {type(exc).__name__}: {str(exc)[:220]}")
-
-    _log_busqueda_empresa(f"Buscadores: total final de resultados únicos={len(resultados)}.")
-    return resultados[:max(1, int(max_resultados)) * 2]
-
+    for item in resultados[:5]:
+        _log_busqueda_empresa(
+            f"Bing RSS resultado: título={item['titulo'][:150]} | "
+            f"URL={item['url'][:250]} | resumen={item['snippet'][:220]}"
+        )
+    return resultados
 
 def _nombre_candidato_cercano_al_nit(texto, nit):
     """Extrae una razón social adyacente al NIT de un snippet o fila de resultados."""
