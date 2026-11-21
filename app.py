@@ -24,7 +24,7 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
 
 # Identificador de compilación para comprobar qué archivo ejecuta Streamlit.
-APP_BUILD_ID = "CESANTIAS_IDENTIDAD_4.9_2026-11-21"
+APP_BUILD_ID = "CESANTIAS_LOGO_5.1_2026-11-21"
 
 GOOGLE_DRIVE_SCOPE = "https://www.googleapis.com/auth/drive"
 
@@ -3542,7 +3542,7 @@ def _consultar_secop_ii_por_nit(nit):
             },
             headers={
                 "Accept": "application/json",
-                "User-Agent": "CesantiasAlInstante/4.9 (consulta de datos abiertos SECOP II)",
+                "User-Agent": "CesantiasAlInstante/5.1 (consulta de datos abiertos SECOP II)",
             },
             timeout=(8, 25),
         )
@@ -4097,7 +4097,7 @@ def _buscar_resultados_empresa(query, max_resultados=12):
 
     endpoint = "https://www.bing.com/search"
     headers = {
-        "User-Agent": "Mozilla/5.0 (compatible; CesantiasAlInstante/4.9; +https://www.bing.com/bingbot.htm)",
+        "User-Agent": "Mozilla/5.0 (compatible; CesantiasAlInstante/5.1; +https://www.bing.com/bingbot.htm)",
         "Accept": "application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8",
     }
     try:
@@ -4962,57 +4962,131 @@ def buscar_empresa_y_logo_python(nombre_empresa="", nit_empresa=""):
             resultado["diagnostico"] += " Detalle técnico: " + errores[0]
     return resultado
 
-def insertar_logo_en_plantilla(document_id, logo, solicitud_id, carpeta_destino_id=None):
-    """Reemplaza {{LOGO_EMPRESA}} por el logo o elimina el marcador si no hay logo.
+def _longitud_indice_google_docs(texto):
+    """Google Docs mide los índices en unidades UTF-16, no en caracteres Python."""
+    return len(str(texto).encode("utf-16-le")) // 2
 
-    La ausencia de logo nunca debe dejar texto técnico en la carta ni impedir
-    que el documento continúe generándose.
-    """
+
+def _buscar_marcador_en_bloque(contenido, marcador, segment_id=None):
+    """Busca un marcador en párrafos y tablas, incluso si está partido en varios TextRun."""
+    for elemento in contenido or []:
+        if not isinstance(elemento, dict):
+            continue
+
+        # Los marcadores suelen estar en párrafos de encabezado, cuerpo o pie.
+        parrafo = elemento.get("paragraph")
+        if isinstance(parrafo, dict):
+            grupos = []
+            grupo_actual = []
+            cursor = elemento.get("startIndex", 1)
+            for parte in parrafo.get("elements", []) or []:
+                if not isinstance(parte, dict):
+                    continue
+                text_run = parte.get("textRun")
+                if isinstance(text_run, dict):
+                    texto = text_run.get("content", "") or ""
+                    inicio = parte.get("startIndex", cursor)
+                    if texto:
+                        grupo_actual.append((int(inicio), texto))
+                    cursor = parte.get("endIndex", int(inicio) + _longitud_indice_google_docs(texto))
+                else:
+                    if grupo_actual:
+                        grupos.append(grupo_actual)
+                        grupo_actual = []
+                    cursor = parte.get("endIndex", cursor)
+            if grupo_actual:
+                grupos.append(grupo_actual)
+
+            for grupo in grupos:
+                texto_combinado = "".join(texto for _, texto in grupo)
+                posicion = texto_combinado.find(marcador)
+                if posicion < 0:
+                    continue
+                desplazamiento = posicion
+                for inicio_run, texto_run in grupo:
+                    if desplazamiento < len(texto_run):
+                        indice = inicio_run + _longitud_indice_google_docs(texto_run[:desplazamiento])
+                        return {"index": indice, "segmentId": segment_id}
+                    desplazamiento -= len(texto_run)
+
+        # Google Docs puede ubicar el marcador dentro de una tabla (p. ej. la
+        # celda del membrete). Cada celda contiene su propio arreglo content.
+        tabla = elemento.get("table")
+        if isinstance(tabla, dict):
+            for fila in tabla.get("tableRows", []) or []:
+                for celda in fila.get("tableCells", []) or []:
+                    encontrado = _buscar_marcador_en_bloque(
+                        celda.get("content", []), marcador, segment_id
+                    )
+                    if encontrado:
+                        return encontrado
+    return None
+
+
+def _buscar_marcador_en_documento(documento, marcador="{{LOGO_EMPRESA}}"):
+    """Busca el marcador en cuerpo, encabezados y pies del Google Doc."""
+    if not isinstance(documento, dict):
+        return None
+    encontrado = _buscar_marcador_en_bloque(
+        documento.get("body", {}).get("content", []), marcador, None
+    )
+    if encontrado:
+        return encontrado
+    for segmento_id, encabezado in (documento.get("headers") or {}).items():
+        encontrado = _buscar_marcador_en_bloque(
+            encabezado.get("content", []), marcador, segmento_id
+        )
+        if encontrado:
+            return encontrado
+    for segmento_id, pie in (documento.get("footers") or {}).items():
+        encontrado = _buscar_marcador_en_bloque(
+            pie.get("content", []), marcador, segmento_id
+        )
+        if encontrado:
+            return encontrado
+    return None
+
+
+def _documento_contiene_marcador(documento, marcador="{{LOGO_EMPRESA}}"):
+    return _buscar_marcador_en_documento(documento, marcador) is not None
+
+
+def insertar_logo_en_plantilla(document_id, logo, solicitud_id, carpeta_destino_id=None, limpiar_marcador_si_falla=False):
+    """Inserta el logo en cuerpo, encabezado, pie o tabla. En plantillas conserva el marcador si falla."""
     marcador = "{{LOGO_EMPRESA}}"
     docs = obtener_servicio_docs()
-
-    def localizar_marcador():
-        documento = docs.documents().get(documentId=document_id).execute()
-
-        def buscar(elemento):
-            if isinstance(elemento, dict):
-                text_run = elemento.get("textRun", {})
-                texto = text_run.get("content", "") if isinstance(text_run, dict) else ""
-                if marcador in texto:
-                    inicio = elemento.get("startIndex")
-                    if inicio is not None:
-                        return int(inicio) + texto.index(marcador)
-                for valor in elemento.values():
-                    encontrado = buscar(valor)
-                    if encontrado is not None:
-                        return encontrado
-            elif isinstance(elemento, list):
-                for valor in elemento:
-                    encontrado = buscar(valor)
-                    if encontrado is not None:
-                        return encontrado
-            return None
-
-        return buscar(documento.get("body", {}).get("content", []))
-
-    def eliminar_marcador(indice):
-        if indice is not None:
-            docs.documents().batchUpdate(
-                documentId=document_id,
-                body={"requests": [{"deleteContentRange": {
-                    "range": {"startIndex": indice, "endIndex": indice + len(marcador)}
-                }}]}
-            ).execute()
-
-    indice = localizar_marcador()
-    if indice is None:
+    documento = docs.documents().get(documentId=document_id).execute()
+    ubicacion = _buscar_marcador_en_documento(documento, marcador)
+    if not ubicacion:
+        mensaje = "No se encontró {{LOGO_EMPRESA}} en cuerpo, encabezados, pies ni tablas del documento."
+        try:
+            st.session_state["error_insercion_logo_empresa"] = mensaje
+        except Exception:
+            pass
+        _log_busqueda_empresa("LOGO: " + mensaje)
         return False
 
-    # Si no se encontró logo, se elimina el marcador y se deja el espacio vacío.
+    indice = int(ubicacion["index"])
+    segment_id = ubicacion.get("segmentId")
+
+    def rango_documento():
+        rango = {"startIndex": indice, "endIndex": indice + _longitud_indice_google_docs(marcador)}
+        if segment_id:
+            rango["segmentId"] = segment_id
+        return rango
+
+    def eliminar_marcador():
+        docs.documents().batchUpdate(
+            documentId=document_id,
+            body={"requests": [{"deleteContentRange": {"range": rango_documento()}}]}
+        ).execute()
+
     if not logo:
-        eliminar_marcador(indice)
+        eliminar_marcador()
+        _log_busqueda_empresa("LOGO: no había imagen descargada; marcador eliminado sin dejar texto técnico.")
         return False
 
+    logo_id = None
     try:
         servicio_drive = _crear_servicio_drive_nuevo()
         folder_id = str(carpeta_destino_id or obtener_id_carpeta_solicitudes()).strip()
@@ -5021,7 +5095,7 @@ def insertar_logo_en_plantilla(document_id, logo, solicitud_id, carpeta_destino_
         archivo = servicio_drive.files().create(
             body={"name": nombre, "parents": [folder_id]},
             media_body=media,
-            fields="id"
+            fields="id,webContentLink,webViewLink"
         ).execute()
         logo_id = archivo["id"]
         servicio_drive.permissions().create(
@@ -5029,15 +5103,17 @@ def insertar_logo_en_plantilla(document_id, logo, solicitud_id, carpeta_destino_
             body={"type": "anyone", "role": "reader"},
             fields="id"
         ).execute()
+        # URL de descarga directa del archivo que acabamos de hacer público.
         uri_publica = f"https://drive.google.com/uc?export=download&id={logo_id}"
+        location = {"index": indice}
+        if segment_id:
+            location["segmentId"] = segment_id
         docs.documents().batchUpdate(
             documentId=document_id,
             body={"requests": [
-                {"deleteContentRange": {"range": {
-                    "startIndex": indice, "endIndex": indice + len(marcador)
-                }}},
+                {"deleteContentRange": {"range": rango_documento()}},
                 {"insertInlineImage": {
-                    "location": {"index": indice},
+                    "location": location,
                     "uri": uri_publica,
                     "objectSize": {
                         "width": {"magnitude": 95, "unit": "PT"},
@@ -5046,19 +5122,49 @@ def insertar_logo_en_plantilla(document_id, logo, solicitud_id, carpeta_destino_
                 }}
             ]}
         ).execute()
+        try:
+            st.session_state["error_insercion_logo_empresa"] = ""
+        except Exception:
+            pass
+        _log_busqueda_empresa(
+            f"LOGO: imagen subida a Drive (archivo {logo_id}) e insertada en documento {document_id}; "
+            f"segmento={'encabezado/pie' if segment_id else 'cuerpo'}; índice={indice}."
+        )
         return True
     except Exception as exc:
-        # Conserva el detalle técnico para diagnóstico sin interrumpir la carta.
+        detalle = f"{type(exc).__name__}: {str(exc)[:600]}"
         try:
-            st.session_state["error_insercion_logo_empresa"] = str(exc)[:700]
+            st.session_state["error_insercion_logo_empresa"] = detalle
         except Exception:
             pass
-        # Si falla la carga o inserción de la imagen, volver a consultar el
-        # documento y quitar el marcador de todas formas.
-        try:
-            eliminar_marcador(localizar_marcador())
-        except Exception:
-            pass
+        _log_busqueda_empresa("LOGO: error al subir o insertar la imagen: " + detalle)
+        # En la plantilla reutilizable NO quitamos el marcador si falla la
+        # inserción: la carta individual necesita poder reintentar usando ese
+        # mismo punto. Solo limpiamos el marcador en la copia final de la carta.
+        if limpiar_marcador_si_falla:
+            try:
+                documento_actual = docs.documents().get(documentId=document_id).execute()
+                ubicacion_actual = _buscar_marcador_en_documento(documento_actual, marcador)
+                if ubicacion_actual:
+                    idx = int(ubicacion_actual["index"])
+                    seg = ubicacion_actual.get("segmentId")
+                    rango = {"startIndex": idx, "endIndex": idx + _longitud_indice_google_docs(marcador)}
+                    if seg:
+                        rango["segmentId"] = seg
+                    docs.documents().batchUpdate(
+                        documentId=document_id,
+                        body={"requests": [{"deleteContentRange": {"range": rango}}]}
+                    ).execute()
+            except Exception as limpieza_exc:
+                _log_busqueda_empresa(
+                    "LOGO: tampoco fue posible limpiar el marcador en la copia final: "
+                    f"{type(limpieza_exc).__name__}: {str(limpieza_exc)[:300]}"
+                )
+        else:
+            _log_busqueda_empresa(
+                "LOGO: se conserva {{LOGO_EMPRESA}} en la plantilla para permitir "
+                "un nuevo intento al crear la carta individual."
+            )
         return False
 
 
@@ -5383,16 +5489,15 @@ def preparar_empresa_nueva_y_template(nombre_ingresado="", nit_ingresado=""):
             raise ValueError("No se encontró la fila 'Otra' con el Doc_ID de la plantilla universal en la hoja Empresas.")
         docs = obtener_servicio_docs()
         documento_base = docs.documents().get(documentId=doc_id_base).execute()
-        texto_base = json.dumps(documento_base.get("body", {}).get("content", []), ensure_ascii=False)
-        if "{{LOGO_EMPRESA}}" not in texto_base:
+        if not _documento_contiene_marcador(documento_base):
             raise ValueError("La plantilla universal no contiene el marcador {{LOGO_EMPRESA}}. Agrégalo en el lugar del logo y vuelve a probar.")
         copia, carpeta_templates_id, _ = copiar_template_empresa(doc_id_base, nombre_final, nit_final)
         doc_id_empresa = copia["id"]
 
     docs = obtener_servicio_docs()
     documento_copia = docs.documents().get(documentId=doc_id_empresa).execute()
-    texto_copia = json.dumps(documento_copia.get("body", {}).get("content", []), ensure_ascii=False)
-    tiene_marcador = "{{LOGO_EMPRESA}}" in texto_copia
+    texto_copia = json.dumps(documento_copia, ensure_ascii=False)
+    tiene_marcador = _documento_contiene_marcador(documento_copia)
     tiene_imagen = "inlineObjectElement" in texto_copia
     logo_insertado = bool(tiene_imagen and not tiene_marcador)
 
@@ -5495,6 +5600,7 @@ def reiniciar_solicitud():
         "whatsapp_test_message_id", "whatsapp_test_recipient",
         "busqueda_otra_completada", "logo_empresa_pendiente", "logo_empresa_insertado",
         "logo_marcador_procesado", "estado_logo_empresa", "estado_empresa_web", "logo_empresa_en_template", "diagnostico_logo_empresa",
+        "error_insercion_logo_empresa",
     ]
     for key in llaves:
         st.session_state[key] = ""
@@ -6191,10 +6297,14 @@ def render_generando():
                 logo_insertado = insertar_logo_en_plantilla(
                     st.session_state.doc_id_copia,
                     st.session_state.get("logo_empresa_pendiente"),
-                    st.session_state.solicitud_id
+                    st.session_state.solicitud_id,
+                    limpiar_marcador_si_falla=True
                 )
             st.session_state.logo_empresa_insertado = bool(logo_insertado)
             st.session_state.logo_marcador_procesado = True
+            error_logo = str(st.session_state.get("error_insercion_logo_empresa", "") or "").strip()
+            if error_logo:
+                _log_busqueda_empresa("LOGO: último error de inserción: " + error_logo[:700])
             if logo_insertado:
                 st.session_state.estado_logo_empresa = "logo-insertado"
             else:
@@ -6204,6 +6314,12 @@ def render_generando():
             st.session_state.estado_logo_empresa = "falta-logo-revision manual"
             # No bloqueamos la carta si la operación del logo falla.
             st.session_state.logo_marcador_procesado = True
+        if not st.session_state.get("logo_empresa_insertado", False):
+            detalle_logo = str(st.session_state.get("error_insercion_logo_empresa", "") or "").strip()
+            if detalle_logo:
+                st.warning("La empresa se identificó, pero el logo no pudo insertarse. Detalle técnico: " + detalle_logo[:500])
+            elif not st.session_state.get("logo_empresa_pendiente"):
+                st.warning("La empresa se identificó, pero no se pudo recuperar una imagen de logo utilizable desde su sitio web.")
     if st.session_state.get("empresa") or st.session_state.get("nit"):
         # Conserva el estado final exacto solicitado para revisión administrativa.
         if st.session_state.get("estado_logo_empresa") != "logo-insertado":
