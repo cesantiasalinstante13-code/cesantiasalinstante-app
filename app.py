@@ -15,7 +15,7 @@ import time
 import json
 import requests
 from html.parser import HTMLParser
-from urllib.parse import urljoin, urlparse, parse_qs
+from urllib.parse import urljoin, urlparse, parse_qs, unquote
 from threading import Lock
 from io import BytesIO
 from streamlit_gsheets import GSheetsConnection
@@ -25,7 +25,7 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
 
 # Identificador de compilación para comprobar qué archivo ejecuta Streamlit.
-APP_BUILD_ID = "CESANTIAS_LOGO_IDENTIDAD_5.7_2026-11-22"
+APP_BUILD_ID = "CESANTIAS_LOGO_CORPORATIVO_5.8_2026-11-22"
 
 GOOGLE_DRIVE_SCOPE = "https://www.googleapis.com/auth/drive"
 
@@ -4796,7 +4796,7 @@ def _extraer_logo_oficial_desde_sitio(url_sitio, permitir_og_social=False, nombr
     candidatos = []
     vistos = set()
 
-    def agregar(valor, prioridad=0):
+    def agregar(valor, prioridad=0, origen_logo_confiable=False):
         if not valor:
             return
         valor = html.unescape(str(valor)).strip().strip("\"'()")
@@ -4811,7 +4811,7 @@ def _extraer_logo_oficial_desde_sitio(url_sitio, permitir_og_social=False, nombr
             return
         # Evita que un logo de producto (por ejemplo, AMAZON dentro del catálogo
         # de Colombina) sea aceptado como identidad visual de la empresa solicitada.
-        if nombre_empresa:
+        if nombre_empresa and not origen_logo_confiable:
             nombre_archivo = partes.path.rsplit("/", 1)[-1]
             nombre_archivo = re.sub(r"([a-z])([A-Z])", r"\1 \2", nombre_archivo)
             tokens_archivo = set(_normalizar_nombre_empresa(nombre_archivo).split())
@@ -4866,7 +4866,7 @@ def _extraer_logo_oficial_desde_sitio(url_sitio, permitir_og_social=False, nombr
                     if isinstance(logo, list):
                         logo = next((x.get("url") if isinstance(x, dict) else x for x in logo if x), None)
                     if isinstance(logo, str):
-                        agregar(logo, 120)
+                        agregar(logo, 120, origen_logo_confiable=True)
                 pendientes.extend(v for v in elemento.values() if isinstance(v, (dict, list)))
             elif isinstance(elemento, list):
                 pendientes.extend(elemento)
@@ -4878,9 +4878,9 @@ def _extraer_logo_oficial_desde_sitio(url_sitio, permitir_og_social=False, nombr
         clave = (attrs.get("itemprop") or attrs.get("property") or attrs.get("name") or "").lower()
         rel = attrs.get("rel", "").lower()
         if clave in ("logo", "og:logo", "organization:logo", "twitter:image:src"):
-            agregar(attrs.get("content") or attrs.get("href"), 110)
+            agregar(attrs.get("content") or attrs.get("href"), 110, origen_logo_confiable=True)
         elif "logo" in rel.split():
-            agregar(attrs.get("href"), 108)
+            agregar(attrs.get("href"), 108, origen_logo_confiable=True)
         elif "apple-touch-icon" in rel or "mask-icon" in rel:
             agregar(attrs.get("href"), 90)
         elif es_social and clave in ("og:image", "twitter:image"):
@@ -4899,6 +4899,25 @@ def _extraer_logo_oficial_desde_sitio(url_sitio, permitir_og_social=False, nombr
         nombre_archivo_imagen = urlparse(src or "").path.rsplit("/", 1)[-1]
         señales = " ".join((attrs.get("alt", ""), attrs.get("title", ""), attrs.get("class", ""),
                             attrs.get("id", ""), attrs.get("aria-label", ""), nombre_archivo_imagen)).lower()
+        contexto_tag = contenido[max(0, match_tag.start() - 1800):match_tag.end() + 1000].lower()
+        marca_logo_explicita = bool(re.search(
+            r"\b(?:logo|logotipo|brand-logo|site-logo|header-brand|navbar-brand|masthead-brand|wordmark|isotipo)\b",
+            señales, re.I
+        ))
+        contexto_cabecera = bool(re.search(
+            r"<header\b|site-header|header-brand|navbar-brand|masthead|branding|brand-logo|site-logo",
+            contexto_tag, re.I
+        ))
+        texto_alt_titulo = " ".join((attrs.get("alt", ""), attrs.get("title", ""), attrs.get("aria-label", "")))
+        marca_coincide_en_alt = bool(nombre_empresa and texto_alt_titulo and _texto_coincide_empresa(nombre_empresa, texto_alt_titulo))
+        contexto_producto = bool(re.search(r"product[-_ ]?(?:card|item|image)|productos?[-_ ]?(?:card|item)|catalogue|catalogo", contexto_tag, re.I))
+        # La marca en el ALT o el contexto de cabecera permite aceptar nombres de archivo
+        # técnicos/hasheados (por ejemplo, logo-es-<hash>.png) que no repiten la razón social.
+        logo_corporativo_explicito = bool(
+            marca_logo_explicita and not contexto_producto and
+            (contexto_cabecera or marca_coincide_en_alt or
+             re.search(r"site[-_ ]?logo|header[-_ ]?logo|corporate[-_ ]?logo|company[-_ ]?logo", señales, re.I))
+        )
         if nombre_empresa:
             tokens_empresa = {t for t in _clave_nombre_empresa(nombre_empresa).split() if len(t) >= 5}
             tokens_senal = set(_normalizar_nombre_empresa(señales).split())
@@ -4907,24 +4926,26 @@ def _extraer_logo_oficial_desde_sitio(url_sitio, permitir_og_social=False, nombr
                 "navbar", "site", "corporate", "identity", "wordmark", "isotipo", "png",
                 "jpg", "jpeg", "svg", "webp", "desktop", "mobile", "white", "black",
                 "color", "main", "primary", "footer", "menu", "icon", "col", "ingles",
-                "english", "02",
+                "english", "02", "es", "en", "logoempresa", "logocol",
             }
             tokens_distintivos = tokens_senal - tokens_empresa - ruido_senal
             # Si ALT/título/archivo identifica otra marca (p. ej. AMAZON),
             # no se usa como logo corporativo de la empresa solicitada.
             if tokens_distintivos and not (tokens_senal & tokens_empresa):
                 continue
-        if src and any(p in señales for p in ("logo", "brand", "marca", "identity", "corporate", "wordmark", "isotipo", "logotipo")):
-            agregar(src, 100)
+        if src and logo_corporativo_explicito:
+            agregar(src, 132, origen_logo_confiable=True)
+        elif src and any(p in señales for p in ("logo", "brand", "marca", "identity", "corporate", "wordmark", "isotipo", "logotipo")):
+            agregar(src, 100, origen_logo_confiable=logo_corporativo_explicito)
         elif src and any(p in señales for p in ("site-header", "header-brand", "navbar-brand", "masthead-brand")):
-            agregar(src, 82)
+            agregar(src, 82, origen_logo_confiable=True)
         elif src:
             contexto = contenido[max(0, match_tag.start() - 1600):match_tag.end() + 700].lower()
             if re.search(r"<header\b|<nav\b|site-header|navbar|masthead|branding|brand-logo", contexto):
                 agregar(src, 72)
         if srcset and any(p in señales for p in ("logo", "brand", "marca", "identity", "corporate", "wordmark", "logotipo")):
             for opcion in srcset.split(","):
-                agregar(opcion.strip().split(" ", 1)[0], 98)
+                agregar(opcion.strip().split(" ", 1)[0], 98, origen_logo_confiable=logo_corporativo_explicito)
 
     # 4) SVG inline: busca image href o use href asociados al logotipo.
     for bloque_svg in re.findall(r"<svg\b.*?</svg>", contenido, re.I | re.S):
@@ -4936,9 +4957,11 @@ def _extraer_logo_oficial_desde_sitio(url_sitio, permitir_og_social=False, nombr
     # 5) CSS inline de todo el documento, priorizando selectores que mencionen logo/brand.
     for bloque_css in re.findall(r"<style\b[^>]*>(.*?)</style>", contenido, re.I | re.S):
         for selector, urls in re.findall(r"([^{}]+)\{([^{}]*background(?:-image)?\s*:[^{}]+)\}", bloque_css, re.I | re.S):
-            prioridad = 92 if re.search(r"logo|brand|marca|identity", selector, re.I) else 35
+            selector_marca = bool(re.search(r"logo|brand|marca|identity", selector, re.I))
+            prioridad = 112 if selector_marca and re.search(r"header|navbar|masthead|site-brand", selector, re.I) else (92 if selector_marca else 35)
+            logo_css_confiable = bool(selector_marca and re.search(r"header|navbar|masthead|site-brand", selector, re.I))
             for imagen_css in re.findall(r"url\((.*?)\)", urls, re.I | re.S):
-                agregar(imagen_css.strip(" \t\r\n\"'"), prioridad)
+                agregar(imagen_css.strip(" \t\r\n\"'"), prioridad, origen_logo_confiable=logo_css_confiable)
 
     # 6) Enlaces directos a archivos de logo y kits de prensa descargables.
     # Muchas empresas publican los logos como enlaces de descarga, no como <img>.
@@ -5278,7 +5301,28 @@ def _buscar_logo_en_directorio_procolombia(nombre_empresa, nit_empresa):
                 f"bytes={len(respuesta_busqueda.content)}; URL={respuesta_busqueda.url[:280]}."
             )
             if respuesta_busqueda.ok and "text/html" in respuesta_busqueda.headers.get("Content-Type", "text/html").lower():
-                for item_directo in _extraer_enlaces_con_titulo_html(respuesta_busqueda.text[:5_000_000], respuesta_busqueda.url):
+                html_busqueda = respuesta_busqueda.text[:5_000_000]
+                items_directos = _extraer_enlaces_con_titulo_html(html_busqueda, respuesta_busqueda.url)
+                # Fallback: perfiles de empresa del marketplace actual usan rutas
+                # /es/<slug>-<id> o /en/<slug>-<id>. El título a veces se renderiza
+                # fuera del anchor y el parser convencional no lo detecta.
+                tokens_nombre = [t for t in _clave_nombre_empresa(nombre_empresa).split() if len(t) >= 4]
+                for match_href in re.finditer(r'''<a\\b[^>]*href=[\\\"']([^\\\"']+)[\\\"'][^>]*>(.*?)</a>''', html_busqueda, re.I | re.S):
+                    href_raw = html.unescape(match_href.group(1)).strip()
+                    url_raw = urljoin(respuesta_busqueda.url, href_raw)
+                    host_raw = urlparse(url_raw).netloc.lower().removeprefix("www.")
+                    partes_raw = [p for p in urlparse(url_raw).path.split("/") if p]
+                    if host_raw not in dominios_procolombia or len(partes_raw) < 2 or partes_raw[0] not in ("es", "en"):
+                        continue
+                    slug = unquote(partes_raw[1]).lower()
+                    slug_normalizado = _normalizar_nombre_empresa(slug)
+                    slug_tokens = set(slug_normalizado.split())
+                    nombre_en_slug = any(t in slug_tokens or t in slug_normalizado for t in tokens_nombre)
+                    parece_perfil = bool(re.search(r"-\\d+$", slug)) or (".." in slug)
+                    if nombre_en_slug and parece_perfil:
+                        titulo_raw = _texto_html_limpio(match_href.group(2)) or slug
+                        items_directos.append({"url": url_raw, "titulo": titulo_raw, "snippet": titulo_raw})
+                for item_directo in items_directos:
                     host_directo = urlparse(item_directo.get("url", "")).netloc.lower().removeprefix("www.")
                     titulo_directo = item_directo.get("titulo", "")
                     if host_directo not in dominios_procolombia:
@@ -5720,6 +5764,7 @@ def buscar_empresa_y_logo_python(nombre_empresa="", nit_empresa=""):
     dominios_verificados = []
     urls_priorizadas = []
     _log_busqueda_empresa(f"LOGO: inicia búsqueda para nombre={nombre_oficial} | NIT={nit_oficial}.")
+    _log_busqueda_empresa("LOGO_POLICY=v5.8: acepta logo declarado en cabecera/meta/JSON-LD aunque el archivo sea hasheado; bloquea favicons genéricos.")
 
     # Primero consulta el directorio B2B de ProColombia. Su ficha actual publica
     # un logo corporativo explícito y un enlace a la web de la empresa. Se prioriza
@@ -5889,18 +5934,12 @@ def buscar_empresa_y_logo_python(nombre_empresa="", nit_empresa=""):
         except Exception as exc:
             errores.append(str(exc)[:180])
 
-    # Último respaldo: favicon corporativo de alta resolución. Se etiqueta como icono,
-    # no como logo oficial, para distinguir la calidad de la imagen recuperada.
+    # No se acepta un favicon genérico como logotipo corporativo: puede ser un
+    # icono mínimo o una imagen del proveedor de búsqueda, y acabar impreso en la carta.
     if not resultado.get("logo") and dominios_verificados:
-        try:
-            icono = _buscar_icono_dominio_corporativo(dominios_verificados)
-            if icono:
-                resultado["logo"] = icono
-                resultado["sitio"] = f"https://{dominios_verificados[0]}/"
-                resultado["fuente_logo"] = "icono del sitio corporativo (respaldo de menor resolución)"
-                resultado["diagnostico"] = "No se encontró el archivo de logotipo completo; se recuperó el icono de alta resolución del dominio corporativo."
-        except Exception as exc:
-            errores.append(str(exc)[:180])
+        _log_busqueda_empresa(
+            "LOGO: no se usa favicon como sustituto. Se deja el logo pendiente antes que insertar una imagen incorrecta."
+        )
 
     if resultado.get("logo"):
         _log_busqueda_empresa(
