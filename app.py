@@ -25,7 +25,7 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
 
 # Identificador de compilación para comprobar qué archivo ejecuta Streamlit.
-APP_BUILD_ID = "CESANTIAS_LOGO_IDENTIDAD_5.6_2026-11-21"
+APP_BUILD_ID = "CESANTIAS_LOGO_IDENTIDAD_5.7_2026-11-22"
 
 GOOGLE_DRIVE_SCOPE = "https://www.googleapis.com/auth/drive"
 
@@ -2781,7 +2781,7 @@ def _clave_template_empresa(nombre, nit):
     # El sufijo permite renovar plantillas antiguas creadas por buscadores de
     # logos menos estrictos. La fila existente en Sheets se actualiza al nuevo
     # Doc_ID; no se crea una segunda empresa.
-    return f"Plantilla_Empresa_{slug}_{resumen}_v56"
+    return f"Plantilla_Empresa_{slug}_{resumen}_v57"
 
 
 def copiar_template_empresa(doc_id_base, nombre, nit):
@@ -2897,6 +2897,12 @@ def rellenar_identidad_en_plantilla_empresa(document_id, nombre_empresa, nit_emp
     docs = obtener_servicio_docs()
     documento = docs.documents().get(documentId=document_id).execute()
     texto_antes = _texto_plano_documento_google_docs(documento)
+    habia_marcador_logo = _documento_contiene_marcador(documento, "{{LOGO_EMPRESA}}")
+    if habia_marcador_logo:
+        _log_busqueda_empresa(
+            "PLANTILLA EMPRESA: {{LOGO_EMPRESA}} detectado; se conservará intacto "
+            "para insertar una imagen real. Nunca se sustituye por el nombre de la empresa."
+        )
 
     posibles = {
         "{{NOMBRE EMPRESA}}": nombre_empresa,
@@ -2925,6 +2931,16 @@ def rellenar_identidad_en_plantilla_empresa(document_id, nombre_empresa, nit_emp
         marcadores_detectados.append(marcador)
         tokens = set(_normalizar_nombre_empresa(interior).split())
         if not tokens:
+            continue
+        # IMPORTANTE: {{LOGO_EMPRESA}} contiene la palabra "empresa", pero NO
+        # es un marcador de razón social. La versión 5.6 lo clasificaba por error
+        # como campo de nombre y lo reemplazaba por texto, dejando sin destino
+        # a la inserción de la imagen. Todo marcador de logo debe permanecer intacto.
+        if tokens.intersection({"logo", "logotipo", "logotype"}):
+            _log_busqueda_empresa(
+                f"PLANTILLA EMPRESA: marcador {marcador} excluido de sustitución de identidad; "
+                "se reserva para insertar el archivo de imagen."
+            )
             continue
         if "nit" in tokens or {"identificacion", "tributaria"}.issubset(tokens):
             posibles[marcador] = nit_empresa
@@ -2985,6 +3001,13 @@ def rellenar_identidad_en_plantilla_empresa(document_id, nombre_empresa, nit_emp
     documento_despues = docs.documents().get(documentId=document_id).execute()
     texto_despues = _texto_plano_documento_google_docs(documento_despues)
     pendientes = [marcador for marcador in reemplazos if marcador in texto_despues]
+    if habia_marcador_logo and not _documento_contiene_marcador(documento_despues, "{{LOGO_EMPRESA}}"):
+        mensaje_logo = (
+            "El marcador {{LOGO_EMPRESA}} desapareció durante el rellenado del nombre/NIT. "
+            "Se detiene el proceso para no sustituir el logo por texto ni guardar una plantilla dañada."
+        )
+        _log_busqueda_empresa("PLANTILLA EMPRESA: " + mensaje_logo)
+        raise RuntimeError(mensaje_logo)
     nombre_normalizado = _normalizar_nombre_empresa(nombre_empresa)
     texto_normalizado = _normalizar_nombre_empresa(texto_despues)
     nit_normalizado = _normalizar_nit(nit_empresa)
@@ -6126,6 +6149,7 @@ def insertar_logo_en_plantilla(document_id, logo, solicitud_id, carpeta_destino_
                         "location": loc,
                         "uri": uri,
                         "objectSize": {
+                            # Logo 31% más grande, manteniendo prácticamente la proporción original.
                             "width": {"magnitude": 125, "unit": "PT"},
                             "height": {"magnitude": 59, "unit": "PT"},
                         },
@@ -6410,7 +6434,7 @@ def preparar_empresa_nueva_y_template(nombre_ingresado="", nit_ingresado=""):
     nit_guardado = ""
     doc_guardado = ""
     estado_guardado = ""
-    plantilla_guardada_v56 = False
+    plantilla_guardada_v57 = False
     if fila_existente is not None:
         fila = df.loc[fila_existente]
         nombre_guardado = _celda_texto(fila.get("Nombre_Empresa", ""))
@@ -6428,7 +6452,7 @@ def preparar_empresa_nueva_y_template(nombre_ingresado="", nit_ingresado=""):
     nombre_busqueda = nombre_guardado or nombre_original
     nit_busqueda = nit_guardado or nit_original
 
-    # Solo reutiliza plantillas creadas con la lógica actual. Las anteriores se
+    # Solo reutiliza plantillas creadas con la revisión actual. Las anteriores se
     # renuevan una vez para retirar logos erróneos o plantillas que no guardaron
     # el nombre/NIT. La misma fila de Empresas se actualiza con el nuevo Doc_ID.
     if doc_guardado and doc_guardado != doc_id_base:
@@ -6436,14 +6460,14 @@ def preparar_empresa_nueva_y_template(nombre_ingresado="", nit_ingresado=""):
         nombre_esperado = _clave_template_empresa(
             nombre_guardado or nombre_original, nit_guardado or nit_original
         )
-        plantilla_guardada_v56 = _celda_texto(info_guardada.get("name", "")) == nombre_esperado
-        if not plantilla_guardada_v56:
+        plantilla_guardada_v57 = _celda_texto(info_guardada.get("name", "")) == nombre_esperado
+        if not plantilla_guardada_v57:
             _log_busqueda_empresa(
-                "PLANTILLA EMPRESA: se detectó una plantilla de versión anterior; "
-                "se creará una copia renovada desde la plantilla universal."
+                "PLANTILLA EMPRESA: se detectó una plantilla anterior a v5.7; "
+                "se creará una copia limpia desde la plantilla universal para recuperar {{LOGO_EMPRESA}}."
             )
 
-        if plantilla_guardada_v56 and estado_guardado.lower() == "logo-insertado":
+        if plantilla_guardada_v57 and estado_guardado.lower() == "logo-insertado":
             rellenar_identidad_en_plantilla_empresa(
                 doc_guardado, nombre_guardado or nombre_original, nit_guardado or nit_original
             )
@@ -6490,7 +6514,7 @@ def preparar_empresa_nueva_y_template(nombre_ingresado="", nit_ingresado=""):
 
     # Si el registro ya existe y tiene una plantilla, se actualiza esa misma.
     # Si existe pero no tiene Doc_ID, se crea una copia desde la plantilla universal.
-    if doc_guardado and doc_guardado != doc_id_base and plantilla_guardada_v56:
+    if doc_guardado and doc_guardado != doc_id_base and plantilla_guardada_v57:
         doc_id_empresa = doc_guardado
         carpeta_templates_id = obtener_id_carpeta_plantillas_empresas()
     else:
