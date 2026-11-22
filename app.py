@@ -14,6 +14,7 @@ import secrets
 import time
 import json
 import requests
+from html.parser import HTMLParser
 from urllib.parse import urljoin, urlparse, parse_qs
 from threading import Lock
 from io import BytesIO
@@ -24,7 +25,7 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
 
 # Identificador de compilación para comprobar qué archivo ejecuta Streamlit.
-APP_BUILD_ID = "CESANTIAS_LOGO_5.3_2026-11-21"
+APP_BUILD_ID = "CESANTIAS_LOGO_IDENTIDAD_5.6_2026-11-21"
 
 GOOGLE_DRIVE_SCOPE = "https://www.googleapis.com/auth/drive"
 
@@ -2777,7 +2778,10 @@ def _clave_template_empresa(nombre, nit):
     identidad = _clave_nit(nit) or _normalizar_nombre_empresa(nombre)
     resumen = hashlib.sha256(identidad.encode("utf-8")).hexdigest()[:10]
     slug = re.sub(r"[^A-Za-z0-9_-]+", "_", str(nombre or "Empresa")).strip("_")[:55]
-    return f"Plantilla_Empresa_{slug}_{resumen}"
+    # El sufijo permite renovar plantillas antiguas creadas por buscadores de
+    # logos menos estrictos. La fila existente en Sheets se actualiza al nuevo
+    # Doc_ID; no se crea una segunda empresa.
+    return f"Plantilla_Empresa_{slug}_{resumen}_v56"
 
 
 def copiar_template_empresa(doc_id_base, nombre, nit):
@@ -2858,6 +2862,152 @@ def rellenar_plantilla_google_docs(document_id, valores):
         except Exception:
             raise
     raise RuntimeError(f"No se pudo actualizar la copia de Google Docs: {ultimo_error}")
+
+
+def _texto_plano_documento_google_docs(documento):
+    """Extrae texto de body, tablas, encabezados y pies de un documento Docs."""
+    partes = []
+
+    def recorrer_bloque(contenido):
+        for elemento in contenido or []:
+            if not isinstance(elemento, dict):
+                continue
+            parrafo = elemento.get("paragraph")
+            if isinstance(parrafo, dict):
+                for parte in parrafo.get("elements", []) or []:
+                    text_run = parte.get("textRun") if isinstance(parte, dict) else None
+                    if isinstance(text_run, dict):
+                        partes.append(text_run.get("content", ""))
+            tabla = elemento.get("table")
+            if isinstance(tabla, dict):
+                for fila in tabla.get("tableRows", []) or []:
+                    for celda in fila.get("tableCells", []) or []:
+                        recorrer_bloque(celda.get("content", []))
+
+    recorrer_bloque((documento.get("body") or {}).get("content", []))
+    for encabezado in (documento.get("headers") or {}).values():
+        recorrer_bloque(encabezado.get("content", []))
+    for pie in (documento.get("footers") or {}).values():
+        recorrer_bloque(pie.get("content", []))
+    return "".join(partes)
+
+
+def rellenar_identidad_en_plantilla_empresa(document_id, nombre_empresa, nit_empresa):
+    """Fija nombre y NIT en la plantilla específica y verifica el resultado."""
+    docs = obtener_servicio_docs()
+    documento = docs.documents().get(documentId=document_id).execute()
+    texto_antes = _texto_plano_documento_google_docs(documento)
+
+    posibles = {
+        "{{NOMBRE EMPRESA}}": nombre_empresa,
+        "{{NOMBRE_EMPRESA}}": nombre_empresa,
+        "{{NOMBRE_DE_LA_EMPRESA}}": nombre_empresa,
+        "{{EMPRESA_NOMBRE}}": nombre_empresa,
+        "{{RAZON_SOCIAL}}": nombre_empresa,
+        "{{RAZON SOCIAL}}": nombre_empresa,
+        "{{RAZON_SOCIAL_EMPRESA}}": nombre_empresa,
+        "{{NOMBRE_RAZON_SOCIAL}}": nombre_empresa,
+        "{{EMPRESA}}": nombre_empresa,
+        "{{NIT}}": nit_empresa,
+        "{{NUMERO_NIT}}": nit_empresa,
+        "{{NIT_EMPRESA}}": nit_empresa,
+        "{{NIT EMPRESA}}": nit_empresa,
+        "{{NIT_DE_LA_EMPRESA}}": nit_empresa,
+        "{{NIT_EMPLEADOR}}": nit_empresa,
+        "{{IDENTIFICACION_TRIBUTARIA}}": nit_empresa,
+        "{{NUMERO_IDENTIFICACION_TRIBUTARIA}}": nit_empresa,
+    }
+
+    marcadores_detectados = []
+    for match_marcador in re.finditer(r"\{\{\s*([^{}]+?)\s*\}\}", texto_antes):
+        marcador = match_marcador.group(0)
+        interior = match_marcador.group(1)
+        marcadores_detectados.append(marcador)
+        tokens = set(_normalizar_nombre_empresa(interior).split())
+        if not tokens:
+            continue
+        if "nit" in tokens or {"identificacion", "tributaria"}.issubset(tokens):
+            posibles[marcador] = nit_empresa
+        elif (
+            "razon" in tokens or "empresa" in tokens or "compania" in tokens
+            or "sociedad" in tokens or "empleador" in tokens
+        ):
+            posibles[marcador] = nombre_empresa
+
+    reemplazos = {
+        marcador: valor for marcador, valor in posibles.items()
+        if marcador in texto_antes and str(valor or "").strip()
+    }
+    hay_nombre = any(str(valor or "") == str(nombre_empresa or "") for valor in reemplazos.values())
+    hay_nit = any(str(valor or "") == str(nit_empresa or "") for valor in reemplazos.values())
+
+    texto_normalizado_antes = _normalizar_nombre_empresa(texto_antes)
+    nombre_ya_guardado = bool(
+        _normalizar_nombre_empresa(nombre_empresa)
+        and _normalizar_nombre_empresa(nombre_empresa) in texto_normalizado_antes
+    )
+    nit_base_ya_guardado = _normalizar_nit(nit_empresa)
+    nit_ya_guardado = bool(nit_base_ya_guardado and nit_base_ya_guardado in _normalizar_nit(texto_antes))
+
+    # Si la plantilla de esta misma empresa ya tiene los valores literales,
+    # no se necesitan marcadores: se considera una identidad ya persistida.
+    if not hay_nombre and nombre_ya_guardado:
+        hay_nombre = True
+    if not hay_nit and nit_ya_guardado:
+        hay_nit = True
+    if not reemplazos and hay_nombre and hay_nit:
+        _log_busqueda_empresa(
+            "PLANTILLA EMPRESA: la plantilla ya contiene el nombre legal y el NIT; "
+            "no se necesitan sustituciones adicionales."
+        )
+        return True
+
+    if not hay_nombre or not hay_nit:
+        faltan = []
+        if not hay_nombre:
+            faltan.append("marcador de nombre/razón social o valor legal ya guardado")
+        if not hay_nit:
+            faltan.append("marcador de NIT o valor ya guardado")
+        mensaje = (
+            "La plantilla específica no tiene los marcadores necesarios para guardar la identidad "
+            "de la empresa: " + ", ".join(faltan) + ". Marcadores encontrados: "
+            + (", ".join(marcadores_detectados[:30]) if marcadores_detectados else "ninguno")
+        )
+        _log_busqueda_empresa("PLANTILLA EMPRESA: " + mensaje)
+        raise RuntimeError(mensaje)
+
+    _log_busqueda_empresa(
+        f"PLANTILLA EMPRESA: fijando identidad en Doc_ID={document_id}; "
+        f"marcadores={', '.join(reemplazos.keys())}."
+    )
+    rellenar_plantilla_google_docs(document_id, reemplazos)
+
+    documento_despues = docs.documents().get(documentId=document_id).execute()
+    texto_despues = _texto_plano_documento_google_docs(documento_despues)
+    pendientes = [marcador for marcador in reemplazos if marcador in texto_despues]
+    nombre_normalizado = _normalizar_nombre_empresa(nombre_empresa)
+    texto_normalizado = _normalizar_nombre_empresa(texto_despues)
+    nit_normalizado = _normalizar_nit(nit_empresa)
+    texto_numeros = _normalizar_nit(texto_despues)
+    nombre_presente = bool(nombre_normalizado and nombre_normalizado in texto_normalizado)
+    nit_presente = bool(nit_normalizado and nit_normalizado in texto_numeros)
+    if pendientes or not nombre_presente or not nit_presente:
+        detalles = []
+        if pendientes:
+            detalles.append("marcadores sin sustituir: " + ", ".join(pendientes))
+        if not nombre_presente:
+            detalles.append("el nombre legal no aparece al volver a leer la plantilla")
+        if not nit_presente:
+            detalles.append("el NIT no aparece al volver a leer la plantilla")
+        mensaje = "Google Docs no confirmó la identidad completa en la plantilla: " + "; ".join(detalles)
+        _log_busqueda_empresa("PLANTILLA EMPRESA: " + mensaje)
+        raise RuntimeError(mensaje)
+
+    _log_busqueda_empresa(
+        "PLANTILLA EMPRESA: verificación posterior correcta; nombre legal y NIT "
+        "están guardados en la plantilla reutilizable."
+    )
+    return True
 
 
 def exportar_google_doc_a_pdf(document_id, solicitud_id, nombre_persona):
@@ -4086,6 +4236,151 @@ def _desenvolver_url_bing(href):
     return destino
 
 
+def _desenvolver_url_google(href, url_base="https://www.google.com/"):
+    """Recupera el destino real de enlaces de redirección de Google Search."""
+    href = html.unescape(str(href or "")).strip()
+    if not href:
+        return ""
+    url_absoluta = urljoin(url_base, href)
+    parsed = urlparse(url_absoluta)
+    host = parsed.netloc.lower().split(":", 1)[0].removeprefix("www.")
+    if not (host == "google.com" or host.endswith(".google.com") or host.startswith("google.")):
+        return url_absoluta
+    if parsed.path not in ("/url", "/imgres"):
+        return ""
+    parametros = parse_qs(parsed.query)
+    destino = ""
+    for clave in ("q", "url", "imgurl"):
+        valores = parametros.get(clave) or []
+        if valores and valores[0].startswith(("http://", "https://")):
+            destino = html.unescape(valores[0]).strip()
+            break
+    if not destino:
+        return ""
+    host_destino = urlparse(destino).netloc.lower().split(":", 1)[0]
+    if not host_destino or "google." in host_destino:
+        return ""
+    return destino
+
+
+def _extraer_enlaces_con_titulo_html(html_pagina, url_base):
+    """Extrae enlaces con encabezado/título visible, sin depender de una clase CSS."""
+    class _ParserEnlaces(HTMLParser):
+        def __init__(self):
+            super().__init__(convert_charrefs=True)
+            self.enlaces = []
+            self.actual = None
+            self.profundidad_h = 0
+
+        def handle_starttag(self, tag, attrs):
+            attrs = dict(attrs)
+            if tag.lower() == "a" and attrs.get("href"):
+                if self.actual:
+                    # Cierra defensivamente un anchor mal formado antes de abrir otro.
+                    self._cerrar_actual()
+                self.actual = {"href": attrs.get("href", ""), "texto": [], "titulo": [], "en_h": False}
+            elif self.actual and tag.lower() in ("h1", "h2", "h3", "h4"):
+                self.actual["en_h"] = True
+
+        def handle_data(self, data):
+            if self.actual:
+                self.actual["texto"].append(data)
+                if self.actual["en_h"]:
+                    self.actual["titulo"].append(data)
+
+        def handle_endtag(self, tag):
+            if not self.actual:
+                return
+            if tag.lower() in ("h1", "h2", "h3", "h4"):
+                self.actual["en_h"] = False
+            elif tag.lower() == "a":
+                self._cerrar_actual()
+
+        def _cerrar_actual(self):
+            if not self.actual:
+                return
+            href = html.unescape(self.actual.get("href", "")).strip()
+            titulo = re.sub(r"\s+", " ", " ".join(self.actual.get("titulo") or [])).strip()
+            texto = re.sub(r"\s+", " ", " ".join(self.actual.get("texto") or [])).strip()
+            if href:
+                url_candidata = urljoin(url_base, href)
+                host_candidato = urlparse(url_candidata).netloc.lower().split(":", 1)[0].removeprefix("www.")
+                if host_candidato == "google.com" or host_candidato.endswith(".google.com") or host_candidato.startswith("google."):
+                    url_candidata = _desenvolver_url_google(url_candidata, url_base=url_base)
+                if url_candidata:
+                    self.enlaces.append({"url": url_candidata, "titulo": titulo or texto[:180], "snippet": texto[:350]})
+            self.actual = None
+
+    parser = _ParserEnlaces()
+    try:
+        parser.feed(str(html_pagina or ""))
+    except Exception:
+        pass
+    resultados = []
+    vistos = set()
+    for item in parser.enlaces:
+        url = item.get("url", "")
+        host = urlparse(url).netloc.lower().removeprefix("www.")
+        if not url.startswith(("http://", "https://")) or not host:
+            continue
+        if any(x in host for x in ("google.com", "bing.com", "microsoft.com")):
+            continue
+        clave = url.split("?", 1)[0].rstrip("/").lower()
+        if clave in vistos:
+            continue
+        vistos.add(clave)
+        resultados.append(item)
+    return resultados
+
+
+def _buscar_resultados_google(query, max_resultados=12):
+    """Respaldo de búsqueda Google: extrae anchors con h1-h4 y exige dominio/título relacionado."""
+    max_resultados = max(1, min(int(max_resultados), 30))
+    try:
+        respuesta = requests.get(
+            "https://www.google.com/search",
+            params={"q": query, "num": max(10, max_resultados), "hl": "es", "gl": "co"},
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122 Safari/537.36",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            },
+            timeout=(8, 18), allow_redirects=True,
+        )
+        _log_busqueda_empresa(
+            f"Google HTML fallback: HTTP {respuesta.status_code}; content-type={respuesta.headers.get('Content-Type','')}; bytes={len(respuesta.content)}."
+        )
+        respuesta.raise_for_status()
+        pagina_html = respuesta.text[:5_000_000]
+        resultados = _extraer_enlaces_con_titulo_html(pagina_html, respuesta.url)
+        comillas = re.findall(r'[\"“]([^\"”]{2,100})[\"”]', query)
+        empresa_esperada = next((q.strip() for q in comillas if not re.fullmatch(r"[\d.\- ]+", q.strip())), "")
+        sitio_restringido = re.search(r"\bsite:([a-z0-9.-]+)", query, re.I)
+        filtrados = []
+        for item in resultados:
+            host = urlparse(item["url"]).netloc.lower().removeprefix("www.")
+            if sitio_restringido:
+                dominio_objetivo = sitio_restringido.group(1).lower().removeprefix("www.")
+                if host != dominio_objetivo and not host.endswith("." + dominio_objetivo):
+                    continue
+            if empresa_esperada and not (
+                _texto_coincide_empresa(empresa_esperada, item.get("titulo", ""))
+                or _texto_coincide_empresa(empresa_esperada, item.get("snippet", ""))
+                or _dominio_coincide_empresa(host, empresa_esperada)
+            ):
+                continue
+            filtrados.append(item)
+            if len(filtrados) >= max_resultados:
+                break
+        _log_busqueda_empresa(
+            f"Google HTML fallback: enlaces={len(resultados)}; resultados relevantes={len(filtrados)}; "
+            f"empresa_filtro={empresa_esperada or '(sin frase exacta)'}."
+        )
+        return filtrados
+    except Exception as exc:
+        _log_busqueda_empresa(f"Google HTML fallback: error {type(exc).__name__}: {str(exc)[:240]}")
+        return []
+
+
 def _buscar_resultados_empresa(query, max_resultados=12):
     """Busca páginas candidatas por RSS y, si RSS viene vacío, usa resultados HTML estructurados.
 
@@ -4225,6 +4520,18 @@ def _buscar_resultados_empresa(query, max_resultados=12):
             _log_busqueda_empresa(
                 f"Bing HTML fallback: error {type(exc).__name__}: {str(exc)[:240]}"
             )
+
+    # Tercer proveedor: Google HTML. Se usa solo si Bing RSS/HTML no entregó
+    # candidatos; el resultado debe coincidir con la empresa y respetar site:.
+    if not resultados:
+        resultados_google = _buscar_resultados_google(query, max_resultados=max_resultados)
+        for item in resultados_google:
+            clave_url = item.get("url", "").split("?", 1)[0].rstrip("/").lower()
+            if clave_url and clave_url not in vistos:
+                vistos.add(clave_url)
+                resultados.append(item)
+                if len(resultados) >= max_resultados:
+                    break
 
     _log_busqueda_empresa(f"Búsqueda web: {len(resultados)} resultados válidos para la consulta.")
     for item in resultados[:5]:
@@ -4447,8 +4754,8 @@ def _descargar_candidato_logo(candidato, referer=""):
         return None
 
 
-def _extraer_logo_oficial_desde_sitio(url_sitio, permitir_og_social=False):
-    """Extrae logos declarados por la propia web: schema, metadatos, HTML, SVG y CSS."""
+def _extraer_logo_oficial_desde_sitio(url_sitio, permitir_og_social=False, nombre_empresa=""):
+    """Extrae el logo corporativo y descarta imágenes etiquetadas con otra marca."""
     respuesta = requests.get(
         url_sitio,
         headers={
@@ -4479,6 +4786,26 @@ def _extraer_logo_oficial_desde_sitio(url_sitio, permitir_og_social=False):
         partes = urlparse(url)
         if partes.scheme not in ("http", "https"):
             return
+        # Evita que un logo de producto (por ejemplo, AMAZON dentro del catálogo
+        # de Colombina) sea aceptado como identidad visual de la empresa solicitada.
+        if nombre_empresa:
+            nombre_archivo = partes.path.rsplit("/", 1)[-1]
+            nombre_archivo = re.sub(r"([a-z])([A-Z])", r"\1 \2", nombre_archivo)
+            tokens_archivo = set(_normalizar_nombre_empresa(nombre_archivo).split())
+            tokens_empresa_archivo = {t for t in _clave_nombre_empresa(nombre_empresa).split() if len(t) >= 5}
+            ruido_archivo = {
+                "logo", "logos", "logotipo", "brand", "marca", "image", "imagen", "img",
+                "png", "jpg", "jpeg", "svg", "webp", "gif", "company", "corporate",
+                "col", "ingles", "english", "02", "default", "max", "files", "sites",
+                "public", "styles", "desktop", "mobile", "header", "footer", "main",
+            }
+            distintivos_archivo = tokens_archivo - tokens_empresa_archivo - ruido_archivo
+            if distintivos_archivo:
+                _log_busqueda_empresa(
+                    "LOGO WEB: candidato descartado porque el nombre del archivo identifica otra marca: "
+                    + ", ".join(sorted(distintivos_archivo)[:5])
+                )
+                return
         ruta = (partes.path + " " + partes.query).lower()
         if any(p in ruta for p in ("loader", "loading", "spinner", "placeholder", "tracking-pixel", "banner", "hero", "campaign", "avatar-placeholder")):
             return
@@ -4546,8 +4873,24 @@ def _extraer_logo_oficial_desde_sitio(url_sitio, permitir_og_social=False):
                or attrs.get("data-lazyload") or attrs.get("data-image") or attrs.get("src")
                or attrs.get("href") or attrs.get("data"))
         srcset = attrs.get("srcset") or attrs.get("data-srcset")
+        nombre_archivo_imagen = urlparse(src or "").path.rsplit("/", 1)[-1]
         señales = " ".join((attrs.get("alt", ""), attrs.get("title", ""), attrs.get("class", ""),
-                            attrs.get("id", ""), attrs.get("aria-label", ""), src or "")).lower()
+                            attrs.get("id", ""), attrs.get("aria-label", ""), nombre_archivo_imagen)).lower()
+        if nombre_empresa:
+            tokens_empresa = {t for t in _clave_nombre_empresa(nombre_empresa).split() if len(t) >= 5}
+            tokens_senal = set(_normalizar_nombre_empresa(señales).split())
+            ruido_senal = {
+                "logo", "logotipo", "brand", "marca", "image", "imagen", "img", "header",
+                "navbar", "site", "corporate", "identity", "wordmark", "isotipo", "png",
+                "jpg", "jpeg", "svg", "webp", "desktop", "mobile", "white", "black",
+                "color", "main", "primary", "footer", "menu", "icon", "col", "ingles",
+                "english", "02",
+            }
+            tokens_distintivos = tokens_senal - tokens_empresa - ruido_senal
+            # Si ALT/título/archivo identifica otra marca (p. ej. AMAZON),
+            # no se usa como logo corporativo de la empresa solicitada.
+            if tokens_distintivos and not (tokens_senal & tokens_empresa):
+                continue
         if src and any(p in señales for p in ("logo", "brand", "marca", "identity", "corporate", "wordmark", "isotipo", "logotipo")):
             agregar(src, 100)
         elif src and any(p in señales for p in ("site-header", "header-brand", "navbar-brand", "masthead-brand")):
@@ -4799,11 +5142,18 @@ def _buscar_logo_en_bing_images(nombre_empresa, dominios_corporativos):
             titulo = _celda_texto(datos.get("t", ""))
             if not pagina_origen or not imagen_url or not _pertenece_a_dominio_verificado(pagina_origen, dominios):
                 continue
-            if titulo and not _texto_coincide_empresa(nombre_empresa, titulo):
-                # Acepta títulos genéricos de logo únicamente cuando la consulta
-                # se limitó a un dominio oficial concreto.
-                if not any(f"site:{d}" in consulta for d in dominios):
-                    continue
+            tokens_empresa = [t for t in _clave_nombre_empresa(nombre_empresa).split() if len(t) >= 5]
+            texto_archivo = _normalizar_nombre_empresa(
+                urlparse(imagen_url).path.replace("/", " ").replace("-", " ").replace("_", " ")
+            )
+            coincide_titulo = bool(titulo and _texto_coincide_empresa(nombre_empresa, titulo))
+            coincide_archivo = bool(tokens_empresa and any(t in texto_archivo.split() for t in tokens_empresa))
+            # El dominio de origen no basta: impide aceptar marcas de producto
+            # como si fueran el logotipo institucional de la empresa.
+            if not (coincide_titulo or coincide_archivo):
+                continue
+            if re.search(r"\.pdf(?:$|[?#])", pagina_origen, re.I):
+                continue
             clave = (imagen_url, pagina_origen)
             if clave in vistos:
                 continue
@@ -4841,7 +5191,15 @@ def _buscar_logo_en_bing_images(nombre_empresa, dominios_corporativos):
             titulo = _celda_texto(item.get("title", ""))
             if not pagina_origen or not imagen_url or not _pertenece_a_dominio_verificado(pagina_origen, dominios):
                 continue
-            if titulo and not _texto_coincide_empresa(nombre_empresa, titulo):
+            tokens_empresa = [t for t in _clave_nombre_empresa(nombre_empresa).split() if len(t) >= 5]
+            texto_archivo = _normalizar_nombre_empresa(
+                urlparse(imagen_url).path.replace("/", " ").replace("-", " ").replace("_", " ")
+            )
+            coincide_titulo = bool(titulo and _texto_coincide_empresa(nombre_empresa, titulo))
+            coincide_archivo = bool(tokens_empresa and any(t in texto_archivo.split() for t in tokens_empresa))
+            if not (coincide_titulo or coincide_archivo):
+                continue
+            if re.search(r"\.pdf(?:$|[?#])", pagina_origen, re.I):
                 continue
             imagen = _descargar_candidato_logo(imagen_url, referer=pagina_origen)
             if imagen:
@@ -4850,21 +5208,129 @@ def _buscar_logo_en_bing_images(nombre_empresa, dominios_corporativos):
 
 
 def _buscar_logo_en_directorio_procolombia(nombre_empresa, nit_empresa):
-    """Busca una ficha ProColombia asociada al NIT y extrae su imagen empresarial.
+    """Busca el perfil B2B de ProColombia y obtiene su imagen de empresa.
 
-    No contiene NIT ni empresas hardcodeados. Solo acepta fichas del directorio
-    B2B de ProColombia cuyo contenido confirma simultáneamente nombre y NIT.
+    El sitio actual no siempre publica el NIT en el HTML visible. En ese caso,
+    exige coincidencia del nombre legal y un enlace a la web corporativa. La
+    identidad/NIT ya debe venir validada por la fuente registral anterior.
     """
     nit_base = _clave_nit(nit_empresa)
-    if not nit_base or len(nit_base) < 8 or not nombre_empresa:
-        _log_busqueda_empresa("LOGO ProColombia: omitido; falta nombre o NIT base válido.")
+    if not nombre_empresa:
+        _log_busqueda_empresa("LOGO ProColombia: omitido; falta nombre legal.")
         return None
 
+    dominios_procolombia = {
+        "b2bmarketplace.procolombia.co",
+        "b2bmarketplaceplus.procolombia.co",
+    }
     consultas = [
-        f'site:b2bmarketplace.procolombia.co "{nit_base}" "{nombre_empresa}"',
-        f'site:b2bmarketplace.procolombia.co "{nit_base}"',
+        f'site:b2bmarketplace.procolombia.co "{nombre_empresa}"',
+        f'site:b2bmarketplace.procolombia.co "{nombre_empresa}" "logo"',
+        f'site:b2bmarketplace.procolombia.co "{nombre_empresa}" "Company"',
     ]
+    if nit_base:
+        consultas.extend([
+            f'site:b2bmarketplaceplus.procolombia.co "{nombre_empresa}" "{nit_base}"',
+            f'site:b2bmarketplaceplus.procolombia.co "{nit_base}"',
+        ])
     paginas_vistas = set()
+    # Primera vía: buscador propio del B2B Marketplace de ProColombia.
+    # Su formulario público utiliza /es/search o /en/search y el parámetro query=.
+    for ruta_busqueda in (
+        "https://b2bmarketplace.procolombia.co/es/search",
+        "https://b2bmarketplace.procolombia.co/en/search",
+    ):
+        try:
+            respuesta_busqueda = requests.get(
+                ruta_busqueda,
+                params={"query": nombre_empresa, "tariff": ""},
+                headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122 Safari/537.36",
+                    "Accept": "text/html,application/xhtml+xml,*/*;q=0.8",
+                },
+                timeout=(8, 18), allow_redirects=True,
+            )
+            _log_busqueda_empresa(
+                f"LOGO ProColombia directo: {ruta_busqueda.rsplit('/',1)[-1]} HTTP {respuesta_busqueda.status_code}; "
+                f"bytes={len(respuesta_busqueda.content)}; URL={respuesta_busqueda.url[:280]}."
+            )
+            if respuesta_busqueda.ok and "text/html" in respuesta_busqueda.headers.get("Content-Type", "text/html").lower():
+                for item_directo in _extraer_enlaces_con_titulo_html(respuesta_busqueda.text[:5_000_000], respuesta_busqueda.url):
+                    host_directo = urlparse(item_directo.get("url", "")).netloc.lower().removeprefix("www.")
+                    titulo_directo = item_directo.get("titulo", "")
+                    if host_directo not in dominios_procolombia:
+                        continue
+                    if not _texto_coincide_empresa(nombre_empresa, titulo_directo):
+                        continue
+                    url_directa = item_directo["url"]
+                    clave_directa = url_directa.split("?", 1)[0].rstrip("/").lower()
+                    if clave_directa not in paginas_vistas:
+                        paginas_vistas.add(clave_directa)
+                        _log_busqueda_empresa(
+                            f"LOGO ProColombia directo: candidato de ficha encontrado: "
+                            f"{titulo_directo[:150]} | {url_directa[:280]}"
+                        )
+                        consultas_directas = [{"url": url_directa, "titulo": titulo_directo, "snippet": item_directo.get("snippet", "")}]
+                        # Inyecta la página encontrada en el mismo procesamiento de fichas.
+                        for item in consultas_directas:
+                            url_pagina = item.get("url", "")
+                            try:
+                                pagina = requests.get(
+                                    url_pagina,
+                                    headers={"User-Agent": "Mozilla/5.0 (compatible; CesantiasAlInstante/5.4)",
+                                             "Accept": "text/html,application/xhtml+xml,*/*;q=0.8"},
+                                    timeout=(8, 18), allow_redirects=True,
+                                )
+                                if not pagina.ok or "text/html" not in pagina.headers.get("Content-Type", "text/html").lower():
+                                    continue
+                                html_pagina = pagina.text[:5_000_000]
+                                texto_pagina = _texto_html_limpio(html_pagina)
+                                if not _texto_coincide_empresa(nombre_empresa, texto_pagina):
+                                    continue
+                                nit_coincide = bool(nit_base and _nit_coincide_con_texto(nit_empresa, texto_pagina))
+                                enlaces_externos = []
+                                for enlace in _extraer_enlaces_con_titulo_html(html_pagina, pagina.url):
+                                    host_enlace = urlparse(enlace.get("url", "")).netloc.lower().removeprefix("www.")
+                                    if host_enlace and host_enlace not in dominios_procolombia and not any(
+                                        red in host_enlace for red in ("facebook.com", "instagram.com", "linkedin.com", "youtube.com", "x.com")
+                                    ):
+                                        enlaces_externos.append(enlace["url"])
+                                web_coincide = any(_dominio_coincide_empresa(enlace, nombre_empresa) for enlace in enlaces_externos)
+                                if not nit_coincide and not web_coincide:
+                                    continue
+                                candidatos = []
+                                for match_img in re.finditer(r"<img\b[^>]*>", html_pagina, re.I | re.S):
+                                    attrs_img = _obtener_atributos_html(match_img.group(0))
+                                    src_img = (attrs_img.get("data-src") or attrs_img.get("data-original") or attrs_img.get("data-lazy-src") or attrs_img.get("src") or "").strip()
+                                    if not src_img:
+                                        continue
+                                    url_img = urljoin(pagina.url, src_img)
+                                    filename = urlparse(url_img).path.rsplit("/", 1)[-1]
+                                    senales_img = " ".join((attrs_img.get("alt", ""), attrs_img.get("title", ""), attrs_img.get("class", ""), attrs_img.get("id", ""), filename))
+                                    tokens_img = set(_normalizar_nombre_empresa(senales_img).split())
+                                    tokens_empresa = {t for t in _clave_nombre_empresa(nombre_empresa).split() if len(t) >= 5}
+                                    ruido_img = {"logo", "logos", "logotipo", "brand", "marca", "image", "imagen", "img", "png", "jpg", "jpeg", "svg", "webp", "company", "corporate", "col", "ingles", "english", "02", "default", "max", "325x325", "styles", "sites", "files", "public"}
+                                    distintivos_img = tokens_img - tokens_empresa - ruido_img
+                                    if distintivos_img and not (tokens_img & tokens_empresa):
+                                        _log_busqueda_empresa("LOGO ProColombia directo: imagen descartada por marca ajena: " + ", ".join(sorted(distintivos_img)[:5]))
+                                        continue
+                                    if any(k in senales_img.lower() for k in ("logo", "logotipo", "brand")):
+                                        candidatos.append((130, url_img))
+                                candidatos.sort(key=lambda x: x[0], reverse=True)
+                                for prioridad, url_img in candidatos:
+                                    imagen = _descargar_candidato_logo(url_img, referer=pagina.url)
+                                    if imagen:
+                                        _log_busqueda_empresa(
+                                            f"LOGO ProColombia directo: logo descargado; prioridad={prioridad}; "
+                                            f"URL={url_img[:280]}; bytes={len(imagen['bytes'])}."
+                                        )
+                                        return imagen, pagina.url
+                            except Exception as exc:
+                                _log_busqueda_empresa(f"LOGO ProColombia directo: error leyendo ficha: {type(exc).__name__}: {str(exc)[:220]}")
+        except Exception as exc:
+            _log_busqueda_empresa(f"LOGO ProColombia directo: error consultando {ruta_busqueda}: {type(exc).__name__}: {str(exc)[:220]}")
+
+    # Segunda vía: buscadores externos por si el índice interno no devuelve la ficha.
     for consulta in consultas:
         try:
             resultados = _buscar_resultados_empresa(consulta, max_resultados=10)
@@ -4874,12 +5340,13 @@ def _buscar_logo_en_directorio_procolombia(nombre_empresa, nit_empresa):
             )
             continue
         _log_busqueda_empresa(
-            f"LOGO ProColombia: consulta devolvió {len(resultados)} resultados candidatos."
+            f"LOGO ProColombia: consulta devolvió {len(resultados)} resultados candidatos "
+            "después de resolver redirecciones de Google/Bing."
         )
         for item in resultados:
             url_pagina = item.get("url", "")
             host = urlparse(url_pagina).netloc.lower().removeprefix("www.")
-            if host != "b2bmarketplace.procolombia.co":
+            if host not in dominios_procolombia:
                 continue
             clave = url_pagina.split("?")[0].rstrip("/").lower()
             if clave in paginas_vistas:
@@ -4902,12 +5369,34 @@ def _buscar_logo_en_directorio_procolombia(nombre_empresa, nit_empresa):
                     continue
                 html_pagina = pagina.text[:5_000_000]
                 texto_pagina = _texto_html_limpio(html_pagina)
-                if not _nit_coincide_con_texto(nit_empresa, texto_pagina):
-                    _log_busqueda_empresa("LOGO ProColombia: ficha descartada; no contiene el NIT buscado.")
-                    continue
                 if not _texto_coincide_empresa(nombre_empresa, texto_pagina):
                     _log_busqueda_empresa("LOGO ProColombia: ficha descartada; no coincide el nombre empresarial.")
                     continue
+
+                coincide_nit = bool(nit_base and _nit_coincide_con_texto(nit_empresa, texto_pagina))
+                enlaces_externos = []
+                for match_a in re.finditer(r"<a\b[^>]*href=[\"']([^\"']+)[\"'][^>]*>", html_pagina, re.I | re.S):
+                    href = urljoin(pagina.url, html.unescape(match_a.group(1)))
+                    host_href = urlparse(href).netloc.lower().removeprefix("www.")
+                    if not host_href or host_href in dominios_procolombia:
+                        continue
+                    if any(x in host_href for x in ("facebook.com", "instagram.com", "linkedin.com", "youtube.com", "x.com")):
+                        continue
+                    enlaces_externos.append(href)
+                web_coincidente = any(
+                    _dominio_coincide_empresa(href, nombre_empresa)
+                    for href in enlaces_externos
+                )
+                if not coincide_nit and not web_coincidente:
+                    _log_busqueda_empresa(
+                        "LOGO ProColombia: ficha descartada; no contiene el NIT y tampoco enlaza "
+                        "una web corporativa coherente con el nombre legal."
+                    )
+                    continue
+                _log_busqueda_empresa(
+                    "LOGO ProColombia: identidad de ficha confirmada por "
+                    + ("NIT + nombre legal." if coincide_nit else "nombre legal + web corporativa enlazada (ficha actual sin NIT visible).")
+                )
 
                 candidatos = []
                 for match in re.finditer(r"<img\b[^>]*>", html_pagina, re.I | re.S):
@@ -4918,8 +5407,24 @@ def _buscar_logo_en_directorio_procolombia(nombre_empresa, nit_empresa):
                         continue
                     url_imagen = urljoin(pagina.url, src)
                     path_digitos = _normalizar_nit(url_imagen)
+                    nombre_archivo_imagen = urlparse(src).path.rsplit("/", 1)[-1]
                     señales = " ".join((attrs.get("alt", ""), attrs.get("title", ""),
-                                        attrs.get("class", ""), attrs.get("id", ""), src)).lower()
+                                        attrs.get("class", ""), attrs.get("id", ""), nombre_archivo_imagen)).lower()
+                    tokens_empresa = {t for t in _clave_nombre_empresa(nombre_empresa).split() if len(t) >= 5}
+                    tokens_senal = set(_normalizar_nombre_empresa(señales).split())
+                    ruido_senal = {
+                        "logo", "logotipo", "brand", "marca", "image", "imagen", "img", "company",
+                        "corporate", "col", "ingles", "english", "public", "companies", "sites",
+                        "files", "styles", "png", "jpg", "jpeg", "svg", "webp", "02", "max",
+                        "325x325", "default", "col", "ingles", "english",
+                    }
+                    distintivos = tokens_senal - tokens_empresa - ruido_senal
+                    if distintivos and not (tokens_senal & tokens_empresa):
+                        _log_busqueda_empresa(
+                            "LOGO ProColombia: imagen descartada por identificar otra marca "
+                            f"({', '.join(sorted(distintivos)[:5])})."
+                        )
+                        continue
                     contexto = html_pagina[max(0, match.start()-2200):match.end()+2200]
                     contexto_txt = _texto_html_limpio(contexto)
                     score = 0
@@ -4929,10 +5434,10 @@ def _buscar_logo_en_directorio_procolombia(nombre_empresa, nit_empresa):
                         score = 140
                     elif nit_base in path_digitos:
                         score = 125
-                    elif any(x in señales for x in ("logo", "logotipo", "brand", "empresa", "marca")):
-                        score = 100
-                    elif _nit_coincide_con_texto(nit_empresa, contexto_txt) and _texto_coincide_empresa(nombre_empresa, contexto_txt):
-                        score = 75
+                    elif any(x in señales for x in ("logo", "logotipo", "brand-logo", "company-logo")):
+                        score = 125
+                    elif any(x in señales for x in ("logo", "logotipo", "brand")):
+                        score = 110
                     if score:
                         candidatos.append((score, url_imagen))
 
@@ -4942,8 +5447,21 @@ def _buscar_logo_en_directorio_procolombia(nombre_empresa, nit_empresa):
                     href = urljoin(pagina.url, html.unescape(match.group(1)))
                     if re.search(r"\.(?:png|jpe?g|gif|webp|svg)(?:[?#]|$)", href, re.I):
                         digitos = _normalizar_nit(href)
-                        if nit_base in digitos:
+                        archivo_href = urlparse(href).path.rsplit("/", 1)[-1]
+                        tokens_href = set(_normalizar_nombre_empresa(archivo_href).split())
+                        tokens_empresa_href = {t for t in _clave_nombre_empresa(nombre_empresa).split() if len(t) >= 5}
+                        ruido_href = {"logo", "logos", "logotipo", "brand", "png", "jpg", "jpeg", "svg", "webp", "col", "ingles", "english", "02", "default", "max", "325x325", "styles", "sites", "files", "public"}
+                        distintivos_href = tokens_href - tokens_empresa_href - ruido_href
+                        marca_ajena = bool(distintivos_href and not (tokens_href & tokens_empresa_href))
+                        if marca_ajena:
+                            _log_busqueda_empresa(
+                                "LOGO ProColombia: enlace de imagen descartado por marca ajena: "
+                                + ", ".join(sorted(distintivos_href)[:5])
+                            )
+                        elif nit_base in digitos:
                             candidatos.append((130, href))
+                        elif "logo" in urlparse(href).path.lower():
+                            candidatos.append((125, href))
 
                 candidatos.sort(key=lambda x: x[0], reverse=True)
                 _log_busqueda_empresa(
@@ -5120,7 +5638,9 @@ def _buscar_logo_en_dominio_derivado(nombre_empresa):
                 f"LOGO WEB DIRECTA: sitio aceptado por coincidencia de nombre; sitio={pagina.url[:250]}"
             )
             try:
-                logo = _extraer_logo_oficial_desde_sitio(pagina.url, permitir_og_social=False)
+                logo = _extraer_logo_oficial_desde_sitio(
+                    pagina.url, permitir_og_social=False, nombre_empresa=nombre_empresa
+                )
             except Exception as exc:
                 _log_busqueda_empresa(
                     f"LOGO WEB DIRECTA: extracción de HTML falló en {dominio_final}: "
@@ -5178,18 +5698,29 @@ def buscar_empresa_y_logo_python(nombre_empresa="", nit_empresa=""):
     urls_priorizadas = []
     _log_busqueda_empresa(f"LOGO: inicia búsqueda para nombre={nombre_oficial} | NIT={nit_oficial}.")
 
+    # Primero consulta el directorio B2B de ProColombia. Su ficha actual publica
+    # un logo corporativo explícito y un enlace a la web de la empresa. Se prioriza
+    # antes de buscadores de imágenes que pueden devolver logos de productos.
+    hallazgo_procolombia = _buscar_logo_en_directorio_procolombia(nombre_oficial, nit_oficial)
+    if hallazgo_procolombia:
+        resultado["logo"], pagina_logo = hallazgo_procolombia
+        resultado["sitio"] = pagina_logo
+        resultado["fuente_logo"] = "logo explícito en ficha empresarial de ProColombia"
+        resultado["diagnostico"] = "Logo recuperado de ficha empresarial de ProColombia con nombre legal y web corporativa coincidentes."
+
     # Primero prueba el dominio que puede derivarse del nombre legal. Esta ruta
     # evita depender exclusivamente de Bing RSS, que en el diagnóstico 5.2
     # respondió HTTP 200 pero no entregó ningún resultado.
-    logo_directo, sitio_directo, dominios_directos = _buscar_logo_en_dominio_derivado(nombre_oficial)
-    for dominio_directo in dominios_directos:
-        if dominio_directo not in dominios_verificados:
-            dominios_verificados.append(dominio_directo)
-    if logo_directo:
-        resultado["logo"] = logo_directo
-        resultado["sitio"] = sitio_directo
-        resultado["fuente_logo"] = "página corporativa localizada por dominio derivado y validada por el nombre de la empresa"
-        resultado["diagnostico"] = "Logo descargado directamente del sitio corporativo tras validar que su contenido corresponde a la razón social."
+    if not resultado.get("logo"):
+        logo_directo, sitio_directo, dominios_directos = _buscar_logo_en_dominio_derivado(nombre_oficial)
+        for dominio_directo in dominios_directos:
+            if dominio_directo not in dominios_verificados:
+                dominios_verificados.append(dominio_directo)
+        if logo_directo:
+            resultado["logo"] = logo_directo
+            resultado["sitio"] = sitio_directo
+            resultado["fuente_logo"] = "página corporativa localizada por dominio derivado y validada por el nombre de la empresa"
+            resultado["diagnostico"] = "Logo descargado directamente del sitio corporativo tras validar que su contenido corresponde a la razón social."
 
     # Si el dominio derivado no funcionó, recurre al buscador web (RSS + HTML).
     if not resultado.get("logo"):
@@ -5268,7 +5799,7 @@ def buscar_empresa_y_logo_python(nombre_empresa="", nit_empresa=""):
                 if base not in dominios_verificados:
                     dominios_verificados.append(base)
             logo = _extraer_logo_oficial_desde_sitio(
-                pagina.url or url, permitir_og_social=es_social
+                pagina.url or url, permitir_og_social=es_social, nombre_empresa=nombre_oficial
             )
             if logo:
                 resultado["logo"] = logo
@@ -5303,7 +5834,9 @@ def buscar_empresa_y_logo_python(nombre_empresa="", nit_empresa=""):
                                 timeout=(4, 9), allow_redirects=True,
                             )
                             if pagina.ok and "text/html" in pagina.headers.get("Content-Type", "text/html").lower():
-                                logo = _extraer_logo_oficial_desde_sitio(pagina.url, permitir_og_social=False)
+                                logo = _extraer_logo_oficial_desde_sitio(
+                                    pagina.url, permitir_og_social=False, nombre_empresa=nombre_oficial
+                                )
                                 if logo:
                                     resultado["logo"] = logo
                                     resultado["sitio"] = pagina.url
@@ -5332,16 +5865,6 @@ def buscar_empresa_y_logo_python(nombre_empresa="", nit_empresa=""):
                 resultado["diagnostico"] = "Identidad confirmada en RUES; logo recuperado de una imagen vinculada a la web corporativa."
         except Exception as exc:
             errores.append(str(exc)[:180])
-
-    # Respaldo adicional: ficha empresarial de ProColombia. Se acepta únicamente
-    # cuando la página contiene el mismo NIT y la misma razón social.
-    if not resultado.get("logo"):
-        hallazgo_procolombia = _buscar_logo_en_directorio_procolombia(nombre_oficial, nit_oficial)
-        if hallazgo_procolombia:
-            resultado["logo"], pagina_logo = hallazgo_procolombia
-            resultado["sitio"] = pagina_logo
-            resultado["fuente_logo"] = "ficha empresarial de ProColombia verificada por NIT y razón social"
-            resultado["diagnostico"] = "Logo recuperado de una ficha empresarial de ProColombia que coincide con el NIT y el nombre oficial."
 
     # Último respaldo: favicon corporativo de alta resolución. Se etiqueta como icono,
     # no como logo oficial, para distinguir la calidad de la imagen recuperada.
@@ -5603,8 +6126,8 @@ def insertar_logo_en_plantilla(document_id, logo, solicitud_id, carpeta_destino_
                         "location": loc,
                         "uri": uri,
                         "objectSize": {
-                            "width": {"magnitude": 95, "unit": "PT"},
-                            "height": {"magnitude": 45, "unit": "PT"},
+                            "width": {"magnitude": 125, "unit": "PT"},
+                            "height": {"magnitude": 59, "unit": "PT"},
                         },
                     }},
                 ]},
@@ -5887,6 +6410,7 @@ def preparar_empresa_nueva_y_template(nombre_ingresado="", nit_ingresado=""):
     nit_guardado = ""
     doc_guardado = ""
     estado_guardado = ""
+    plantilla_guardada_v56 = False
     if fila_existente is not None:
         fila = df.loc[fila_existente]
         nombre_guardado = _celda_texto(fila.get("Nombre_Empresa", ""))
@@ -5904,21 +6428,36 @@ def preparar_empresa_nueva_y_template(nombre_ingresado="", nit_ingresado=""):
     nombre_busqueda = nombre_guardado or nombre_original
     nit_busqueda = nit_guardado or nit_original
 
-    # Reutilizar sin crear otra plantilla cuando ya existe una plantilla personalizada
-    # y el logo está insertado. La validación conjunta de identidad ocurrió arriba.
-    if doc_guardado and doc_guardado != doc_id_base and estado_guardado.lower() == "logo-insertado":
-        info = obtener_info_plantilla(doc_guardado)
-        st.session_state.empresa = nombre_guardado or nombre_original
-        st.session_state.nit = nit_guardado or nit_original
-        st.session_state.doc_id_plantilla = info["id"]
-        st.session_state.nombre_plantilla = info.get("name", "Plantilla de empresa")
-        st.session_state.plantilla_url = info.get("webViewLink", "")
-        st.session_state.logo_empresa_en_template = True
-        st.session_state.logo_empresa_pendiente = None
-        st.session_state.estado_logo_empresa = "logo-insertado"
-        st.session_state.busqueda_otra_completada = True
-        st.session_state.empresa_seleccionada = "Otra"
-        return st.session_state.empresa, st.session_state.nit, doc_guardado
+    # Solo reutiliza plantillas creadas con la lógica actual. Las anteriores se
+    # renuevan una vez para retirar logos erróneos o plantillas que no guardaron
+    # el nombre/NIT. La misma fila de Empresas se actualiza con el nuevo Doc_ID.
+    if doc_guardado and doc_guardado != doc_id_base:
+        info_guardada = obtener_info_plantilla(doc_guardado)
+        nombre_esperado = _clave_template_empresa(
+            nombre_guardado or nombre_original, nit_guardado or nit_original
+        )
+        plantilla_guardada_v56 = _celda_texto(info_guardada.get("name", "")) == nombre_esperado
+        if not plantilla_guardada_v56:
+            _log_busqueda_empresa(
+                "PLANTILLA EMPRESA: se detectó una plantilla de versión anterior; "
+                "se creará una copia renovada desde la plantilla universal."
+            )
+
+        if plantilla_guardada_v56 and estado_guardado.lower() == "logo-insertado":
+            rellenar_identidad_en_plantilla_empresa(
+                doc_guardado, nombre_guardado or nombre_original, nit_guardado or nit_original
+            )
+            st.session_state.empresa = nombre_guardado or nombre_original
+            st.session_state.nit = nit_guardado or nit_original
+            st.session_state.doc_id_plantilla = info_guardada["id"]
+            st.session_state.nombre_plantilla = info_guardada.get("name", "Plantilla de empresa")
+            st.session_state.plantilla_url = info_guardada.get("webViewLink", "")
+            st.session_state.logo_empresa_en_template = True
+            st.session_state.logo_empresa_pendiente = None
+            st.session_state.estado_logo_empresa = "logo-insertado"
+            st.session_state.busqueda_otra_completada = True
+            st.session_state.empresa_seleccionada = "Otra"
+            return st.session_state.empresa, st.session_state.nit, doc_guardado
 
     # Si ya hay una pareja completa en Sheets, buscar el logo por nombre usando
     # la razón social guardada. Si falta uno de los datos, validar ambos en una
@@ -5951,7 +6490,7 @@ def preparar_empresa_nueva_y_template(nombre_ingresado="", nit_ingresado=""):
 
     # Si el registro ya existe y tiene una plantilla, se actualiza esa misma.
     # Si existe pero no tiene Doc_ID, se crea una copia desde la plantilla universal.
-    if doc_guardado and doc_guardado != doc_id_base:
+    if doc_guardado and doc_guardado != doc_id_base and plantilla_guardada_v56:
         doc_id_empresa = doc_guardado
         carpeta_templates_id = obtener_id_carpeta_plantillas_empresas()
     else:
@@ -5963,6 +6502,21 @@ def preparar_empresa_nueva_y_template(nombre_ingresado="", nit_ingresado=""):
             raise ValueError("La plantilla universal no contiene el marcador {{LOGO_EMPRESA}}. Agrégalo en el lugar del logo y vuelve a probar.")
         copia, carpeta_templates_id, _ = copiar_template_empresa(doc_id_base, nombre_final, nit_final)
         doc_id_empresa = copia["id"]
+
+    # La plantilla específica de empresa conserva su propio nombre y NIT.
+    # La plantilla universal «Otra» nunca se modifica.
+    _log_busqueda_empresa(
+        f"PLANTILLA EMPRESA: se guardará identidad en Doc_ID={doc_id_empresa}; "
+        f"empresa={nombre_final}; NIT={nit_final}."
+    )
+    identidad_plantilla_ok = rellenar_identidad_en_plantilla_empresa(
+        doc_id_empresa, nombre_final, nit_final
+    )
+    if not identidad_plantilla_ok:
+        raise RuntimeError(
+            "No se pudo confirmar el nombre y NIT dentro de la plantilla reutilizable. "
+            "No se actualizará la fila Empresas con una plantilla incompleta."
+        )
 
     docs = obtener_servicio_docs()
     documento_copia = docs.documents().get(documentId=doc_id_empresa).execute()
@@ -6813,7 +7367,16 @@ def render_generando():
             fecha_documento = datetime.now(ZoneInfo("America/Bogota")).strftime("%d/%m/%Y")
             valores = {
                 "{{NOMBRE EMPRESA}}": str(st.session_state.empresa).upper(),
+                "{{NOMBRE_EMPRESA}}": str(st.session_state.empresa).upper(),
+                "{{NOMBRE_DE_LA_EMPRESA}}": str(st.session_state.empresa).upper(),
+                "{{EMPRESA_NOMBRE}}": str(st.session_state.empresa).upper(),
+                "{{RAZON_SOCIAL}}": str(st.session_state.empresa).upper(),
+                "{{RAZON SOCIAL}}": str(st.session_state.empresa).upper(),
+                "{{NIT}}": str(st.session_state.nit).upper(),
+                "{{NUMERO_NIT}}": str(st.session_state.nit).upper(),
                 "{{NIT_EMPRESA}}": str(st.session_state.nit).upper(),
+                "{{NIT EMPRESA}}": str(st.session_state.nit).upper(),
+                "{{NIT_DE_LA_EMPRESA}}": str(st.session_state.nit).upper(),
                 "{{FONDO_CESANTIAS}}": str(st.session_state.fondo).upper(),
                 "{{NOMBRE_TRABAJADOR}}": str(st.session_state.nombre).upper(),
                 "{{CEDULA}}": str(st.session_state.cedula),
