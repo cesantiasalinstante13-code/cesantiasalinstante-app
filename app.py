@@ -25,7 +25,7 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
 
 # Identificador de compilación para comprobar qué archivo ejecuta Streamlit.
-APP_BUILD_ID = "CESANTIAS_MARCA_AGUA_COMFORTAA_6.3_2026-11-22"
+APP_BUILD_ID = "CESANTIAS_MARCA_AGUA_COMFORTAA_TABS_6.4_2026-11-22"
 
 GOOGLE_DRIVE_SCOPE = "https://www.googleapis.com/auth/drive"
 
@@ -2781,7 +2781,7 @@ def _clave_template_empresa(nombre, nit):
     # El sufijo permite renovar plantillas antiguas creadas por buscadores de
     # logos menos estrictos. La fila existente en Sheets se actualiza al nuevo
     # Doc_ID; no se crea una segunda empresa.
-    return f"Plantilla_Empresa_{slug}_{resumen}_v63"
+    return f"Plantilla_Empresa_{slug}_{resumen}_v64"
 
 
 def copiar_template_empresa(doc_id_base, nombre, nit):
@@ -2794,7 +2794,7 @@ def copiar_template_empresa(doc_id_base, nombre, nit):
     folder_id = obtener_id_carpeta_plantillas_empresas()
     _log_busqueda_empresa(
         f"PLANTILLA COPIA: origen=plantilla universal Doc_ID={doc_id_base}; "
-        f"destino={_clave_template_empresa(nombre, nit)}; revisión=v63."
+        f"destino={_clave_template_empresa(nombre, nit)}; revisión=v64."
     )
     # Busca primero por la identidad actual (NIT si existe) y después por nombre.
     # Esto permite recuperar una copia previa si Drive la creó pero Sheets falló,
@@ -2874,7 +2874,7 @@ def rellenar_plantilla_google_docs(document_id, valores):
 
 
 def _texto_plano_documento_google_docs(documento):
-    """Extrae texto de body, tablas, encabezados y pies de un documento Docs."""
+    """Extrae texto de todas las pestañas (incluidas hijas), cuerpo, tablas, encabezados y pies."""
     partes = []
 
     def recorrer_bloque(contenido):
@@ -2893,18 +2893,38 @@ def _texto_plano_documento_google_docs(documento):
                     for celda in fila.get("tableCells", []) or []:
                         recorrer_bloque(celda.get("content", []))
 
-    recorrer_bloque((documento.get("body") or {}).get("content", []))
-    for encabezado in (documento.get("headers") or {}).values():
-        recorrer_bloque(encabezado.get("content", []))
-    for pie in (documento.get("footers") or {}).values():
-        recorrer_bloque(pie.get("content", []))
+    def recorrer_segmentos_contenido(contenido_doc):
+        if not isinstance(contenido_doc, dict):
+            return
+        recorrer_bloque((contenido_doc.get("body") or {}).get("content", []))
+        for encabezado in (contenido_doc.get("headers") or {}).values():
+            recorrer_bloque(encabezado.get("content", []))
+        for pie in (contenido_doc.get("footers") or {}).values():
+            recorrer_bloque(pie.get("content", []))
+        for nota in (contenido_doc.get("footnotes") or {}).values():
+            recorrer_bloque(nota.get("content", []))
+
+    def recorrer_tabs(tabs):
+        for tab in tabs or []:
+            if not isinstance(tab, dict):
+                continue
+            recorrer_segmentos_contenido(tab.get("documentTab") or {})
+            recorrer_tabs(tab.get("childTabs") or [])
+
+    tabs = documento.get("tabs") or []
+    if tabs:
+        # Con includeTabsContent=True Google deja body/headers/footers vacíos
+        # en la raíz y entrega el contenido real en tabs[].documentTab.
+        recorrer_tabs(tabs)
+    else:
+        recorrer_segmentos_contenido(documento)
     return "".join(partes)
 
 
 def rellenar_identidad_en_plantilla_empresa(document_id, nombre_empresa, nit_empresa):
     """Fija nombre y NIT en la plantilla específica y verifica el resultado."""
     docs = obtener_servicio_docs()
-    documento = docs.documents().get(documentId=document_id).execute()
+    documento = _obtener_documento_docs_completo(docs, document_id)
     texto_antes = _texto_plano_documento_google_docs(documento)
     habia_marcador_logo = _documento_contiene_marcador(documento, "{{LOGO_EMPRESA}}")
     if habia_marcador_logo:
@@ -3007,7 +3027,7 @@ def rellenar_identidad_en_plantilla_empresa(document_id, nombre_empresa, nit_emp
     )
     rellenar_plantilla_google_docs(document_id, reemplazos)
 
-    documento_despues = docs.documents().get(documentId=document_id).execute()
+    documento_despues = _obtener_documento_docs_completo(docs, document_id)
     texto_despues = _texto_plano_documento_google_docs(documento_despues)
     pendientes = [marcador for marcador in reemplazos if marcador in texto_despues]
     if habia_marcador_logo and not _documento_contiene_marcador(documento_despues, "{{LOGO_EMPRESA}}"):
@@ -6254,13 +6274,12 @@ def _longitud_indice_google_docs(texto):
     return len(str(texto).encode("utf-16-le")) // 2
 
 
-def _buscar_marcador_en_bloque(contenido, marcador, segment_id=None):
-    """Busca un marcador en párrafos y tablas, incluso si está partido en varios TextRun."""
+def _buscar_marcador_en_bloque(contenido, marcador, segment_id=None, tab_id=None):
+    """Busca marcadores en párrafos/tablas y devuelve índice, segmento y pestaña."""
     for elemento in contenido or []:
         if not isinstance(elemento, dict):
             continue
 
-        # Los marcadores suelen estar en párrafos de encabezado, cuerpo o pie.
         parrafo = elemento.get("paragraph")
         if isinstance(parrafo, dict):
             grupos = []
@@ -6293,17 +6312,15 @@ def _buscar_marcador_en_bloque(contenido, marcador, segment_id=None):
                 for inicio_run, texto_run in grupo:
                     if desplazamiento < len(texto_run):
                         indice = inicio_run + _longitud_indice_google_docs(texto_run[:desplazamiento])
-                        return {"index": indice, "segmentId": segment_id}
+                        return {"index": indice, "segmentId": segment_id, "tabId": tab_id}
                     desplazamiento -= len(texto_run)
 
-        # Google Docs puede ubicar el marcador dentro de una tabla (p. ej. la
-        # celda del membrete). Cada celda contiene su propio arreglo content.
         tabla = elemento.get("table")
         if isinstance(tabla, dict):
             for fila in tabla.get("tableRows", []) or []:
                 for celda in fila.get("tableCells", []) or []:
                     encontrado = _buscar_marcador_en_bloque(
-                        celda.get("content", []), marcador, segment_id
+                        celda.get("content", []), marcador, segment_id, tab_id
                     )
                     if encontrado:
                         return encontrado
@@ -6311,23 +6328,75 @@ def _buscar_marcador_en_bloque(contenido, marcador, segment_id=None):
 
 
 def _buscar_marcador_en_documento(documento, marcador="{{LOGO_EMPRESA}}"):
-    """Busca el marcador en cuerpo, encabezados y pies del Google Doc."""
+    """Busca el marcador en el esquema clásico y en todas las pestañas de Google Docs."""
     if not isinstance(documento, dict):
         return None
+
+    def buscar_en_document_tab(document_tab, tab_id):
+        if not isinstance(document_tab, dict):
+            return None
+        encontrado = _buscar_marcador_en_bloque(
+            (document_tab.get("body") or {}).get("content", []), marcador, None, tab_id
+        )
+        if encontrado:
+            return encontrado
+        for segmento_id, encabezado in (document_tab.get("headers") or {}).items():
+            encontrado = _buscar_marcador_en_bloque(
+                encabezado.get("content", []), marcador, segmento_id, tab_id
+            )
+            if encontrado:
+                return encontrado
+        for segmento_id, pie in (document_tab.get("footers") or {}).items():
+            encontrado = _buscar_marcador_en_bloque(
+                pie.get("content", []), marcador, segmento_id, tab_id
+            )
+            if encontrado:
+                return encontrado
+        for segmento_id, nota in (document_tab.get("footnotes") or {}).items():
+            encontrado = _buscar_marcador_en_bloque(
+                nota.get("content", []), marcador, segmento_id, tab_id
+            )
+            if encontrado:
+                return encontrado
+        return None
+
+    def recorrer_tabs(tabs):
+        for tab in tabs or []:
+            if not isinstance(tab, dict):
+                continue
+            propiedades = tab.get("tabProperties") or {}
+            tab_id = propiedades.get("tabId")
+            encontrado = buscar_en_document_tab(tab.get("documentTab") or {}, tab_id)
+            if encontrado:
+                return encontrado
+            encontrado = recorrer_tabs(tab.get("childTabs") or [])
+            if encontrado:
+                return encontrado
+        return None
+
+    # Cuando includeTabsContent=True, la API deja document.body vacío y coloca
+    # el contenido real dentro de document.tabs[].documentTab. Revisar primero tabs.
+    tabs = documento.get("tabs") or []
+    if tabs:
+        encontrado = recorrer_tabs(tabs)
+        if encontrado:
+            return encontrado
+
+    # Compatibilidad con respuestas clásicas (sin includeTabsContent).
     encontrado = _buscar_marcador_en_bloque(
-        documento.get("body", {}).get("content", []), marcador, None
+        (documento.get("body") or {}).get("content", []), marcador, None, None
     )
     if encontrado:
         return encontrado
     for segmento_id, encabezado in (documento.get("headers") or {}).items():
         encontrado = _buscar_marcador_en_bloque(
-            encabezado.get("content", []), marcador, segmento_id
+            encabezado.get("content", []), marcador, segmento_id, None
         )
         if encontrado:
             return encontrado
     for segmento_id, pie in (documento.get("footers") or {}).items():
         encontrado = _buscar_marcador_en_bloque(
-            pie.get("content", []), marcador, segmento_id
+            pie.get("content", []), marcador, segmento_id, None
         )
         if encontrado:
             return encontrado
@@ -6336,6 +6405,49 @@ def _buscar_marcador_en_documento(documento, marcador="{{LOGO_EMPRESA}}"):
 
 def _documento_contiene_marcador(documento, marcador="{{LOGO_EMPRESA}}"):
     return _buscar_marcador_en_documento(documento, marcador) is not None
+
+
+def _crear_rango_marcador_google_docs(ubicacion, marcador="{{LOGO_EMPRESA}}"):
+    """Construye un Range de Docs conservando segmentId y tabId."""
+    if not ubicacion:
+        return None
+    rango = {
+        "startIndex": int(ubicacion["index"]),
+        "endIndex": int(ubicacion["index"]) + _longitud_indice_google_docs(marcador),
+    }
+    if ubicacion.get("segmentId"):
+        rango["segmentId"] = ubicacion["segmentId"]
+    if ubicacion.get("tabId"):
+        rango["tabId"] = ubicacion["tabId"]
+    return rango
+
+
+def _crear_location_marcador_google_docs(ubicacion):
+    """Construye una Location de Docs conservando segmentId y tabId."""
+    if not ubicacion:
+        return None
+    location = {"index": int(ubicacion["index"])}
+    if ubicacion.get("segmentId"):
+        location["segmentId"] = ubicacion["segmentId"]
+    if ubicacion.get("tabId"):
+        location["tabId"] = ubicacion["tabId"]
+    return location
+
+
+def _obtener_ids_inline_documento(documento):
+    """Obtiene los IDs de imágenes inline desde estructura clásica o pestañas."""
+    ids = set((documento.get("inlineObjects") or {}).keys())
+
+    def recorrer_tabs(tabs):
+        for tab in tabs or []:
+            if not isinstance(tab, dict):
+                continue
+            doc_tab = tab.get("documentTab") or {}
+            ids.update((doc_tab.get("inlineObjects") or {}).keys())
+            recorrer_tabs(tab.get("childTabs") or [])
+
+    recorrer_tabs(documento.get("tabs") or [])
+    return ids
 
 
 def _crear_png_marca_agua(datos_logo, relacion_aspecto=1.0, opacidad=0.13):
@@ -6587,10 +6699,10 @@ def insertar_logo_en_plantilla(document_id, logo, solicitud_id, carpeta_destino_
     st.session_state["marca_agua_empresa_insertada"] = False
     marcador = "{{LOGO_EMPRESA}}"
     docs = obtener_servicio_docs()
-    documento = docs.documents().get(documentId=document_id).execute()
+    documento = _obtener_documento_docs_completo(docs, document_id)
     ubicacion = _buscar_marcador_en_documento(documento, marcador)
     if not ubicacion:
-        mensaje = "No se encontró {{LOGO_EMPRESA}} en cuerpo, encabezados, pies ni tablas del documento."
+        mensaje = "Google Docs no devolvió {{LOGO_EMPRESA}} en el cuerpo, encabezados, pies, tablas ni pestañas consultadas con includeTabsContent=True."
         st.session_state["error_insercion_logo_empresa"] = mensaje
         _log_busqueda_empresa("LOGO INSERCIÓN: " + mensaje)
         return False
@@ -6599,23 +6711,17 @@ def insertar_logo_en_plantilla(document_id, logo, solicitud_id, carpeta_destino_
     segment_id = ubicacion.get("segmentId")
 
     def rango_actual(documento_actual=None):
-        doc = documento_actual or docs.documents().get(documentId=document_id).execute()
+        doc = documento_actual or _obtener_documento_docs_completo(docs, document_id)
         ubicacion_actual = _buscar_marcador_en_documento(doc, marcador)
         if not ubicacion_actual:
             return None
-        rango = {
-            "startIndex": int(ubicacion_actual["index"]),
-            "endIndex": int(ubicacion_actual["index"]) + _longitud_indice_google_docs(marcador),
-        }
-        if ubicacion_actual.get("segmentId"):
-            rango["segmentId"] = ubicacion_actual["segmentId"]
-        return rango
+        return _crear_rango_marcador_google_docs(ubicacion_actual, marcador)
 
     def limpiar_marcador_final():
         if not limpiar_marcador_si_falla:
             return
         try:
-            actual = docs.documents().get(documentId=document_id).execute()
+            actual = _obtener_documento_docs_completo(docs, document_id)
             rango = rango_actual(actual)
             if rango:
                 docs.documents().batchUpdate(
@@ -6683,13 +6789,13 @@ def insertar_logo_en_plantilla(document_id, logo, solicitud_id, carpeta_destino_
     error_final = "No se obtuvo una URL pública para insertar la imagen."
     for uri, etiqueta in uris_unicas:
         try:
-            documento_actual = docs.documents().get(documentId=document_id).execute()
+            documento_actual = _obtener_documento_docs_completo(docs, document_id)
             ubi = _buscar_marcador_en_documento(documento_actual, marcador)
             if not ubi:
                 # En caso de que una tentativa anterior insertara la imagen
                 # correctamente, valida el objeto antes de marcar fallo.
-                inline_antes = set((documento.get("inlineObjects") or {}).keys())
-                inline_ahora = set((documento_actual.get("inlineObjects") or {}).keys())
+                inline_antes = _obtener_ids_inline_documento(documento)
+                inline_ahora = _obtener_ids_inline_documento(documento_actual)
                 if inline_ahora - inline_antes:
                     st.session_state["error_insercion_logo_empresa"] = ""
                     _log_busqueda_empresa("LOGO DOCS: el documento ya contiene el objeto de imagen insertado.")
@@ -6697,20 +6803,13 @@ def insertar_logo_en_plantilla(document_id, logo, solicitud_id, carpeta_destino_
                 error_final = "El marcador ya no está disponible en el documento para insertar el logo."
                 break
 
-            loc = {"index": int(ubi["index"])}
-            if ubi.get("segmentId"):
-                loc["segmentId"] = ubi["segmentId"]
-            rango = {
-                "startIndex": int(ubi["index"]),
-                "endIndex": int(ubi["index"]) + _longitud_indice_google_docs(marcador),
-            }
-            if ubi.get("segmentId"):
-                rango["segmentId"] = ubi["segmentId"]
+            loc = _crear_location_marcador_google_docs(ubi)
+            rango = _crear_rango_marcador_google_docs(ubi, marcador)
 
-            inline_antes = set((documento_actual.get("inlineObjects") or {}).keys())
+            inline_antes = _obtener_ids_inline_documento(documento_actual)
             _log_busqueda_empresa(
                 f"LOGO DOCS: intentando insertar desde {etiqueta}; documento={document_id}; "
-                f"segmento={'encabezado/pie' if ubi.get('segmentId') else 'cuerpo'}; índice={ubi['index']}."
+                f"segmento={'encabezado/pie' if ubi.get('segmentId') else 'cuerpo'}; tab_id={ubi.get('tabId') or 'principal'}; índice={ubi['index']}."
             )
             respuesta = docs.documents().batchUpdate(
                 documentId=document_id,
@@ -6728,8 +6827,8 @@ def insertar_logo_en_plantilla(document_id, logo, solicitud_id, carpeta_destino_
                 ]},
             ).execute()
 
-            documento_verificacion = docs.documents().get(documentId=document_id).execute()
-            inline_despues = set((documento_verificacion.get("inlineObjects") or {}).keys())
+            documento_verificacion = _obtener_documento_docs_completo(docs, document_id)
+            inline_despues = _obtener_ids_inline_documento(documento_verificacion)
             nuevos_objetos = inline_despues - inline_antes
             replies = respuesta.get("replies", []) if isinstance(respuesta, dict) else []
             reply_objeto = bool(
@@ -7037,7 +7136,7 @@ def preparar_empresa_nueva_y_template(nombre_ingresado="", nit_ingresado=""):
     doc_id_base = _celda_texto(filas_base.iloc[0].get("Doc_ID", "")) if not filas_base.empty else ""
 
     _log_busqueda_empresa(
-        f"PLANTILLA REVISION 6.3: plantilla universal Doc_ID={doc_id_base or 'NO_CONFIGURADA'}; "
+        f"PLANTILLA REVISION 6.4: plantilla universal Doc_ID={doc_id_base or 'NO_CONFIGURADA'}; "
         "las plantillas de empresa anteriores se renovarán para heredar el formato actualizado."
     )
 
@@ -7058,7 +7157,7 @@ def preparar_empresa_nueva_y_template(nombre_ingresado="", nit_ingresado=""):
         plantilla_guardada_actual = _celda_texto(info_guardada.get("name", "")) == nombre_esperado
         if not plantilla_guardada_actual:
             _log_busqueda_empresa(
-                "PLANTILLA EMPRESA: se detectó una plantilla anterior a v6.3; "
+                "PLANTILLA EMPRESA: se detectó una plantilla anterior a v6.4; "
                 "se creará una copia nueva desde la plantilla universal actual para heredar sus fuentes, tamaños y negritas."
             )
 
@@ -7085,7 +7184,7 @@ def preparar_empresa_nueva_y_template(nombre_ingresado="", nit_ingresado=""):
                 st.session_state.busqueda_otra_completada = True
                 st.session_state.empresa_seleccionada = "Otra"
                 _log_busqueda_empresa(
-                    f"PLANTILLA EMPRESA: reutilizada v63; marca de agua comprobada en Docs; "
+                    f"PLANTILLA EMPRESA: reutilizada v64; marca de agua comprobada en Docs; "
                     f"objetos_BEHIND_TEXT={len(marcas_existentes)}."
                 )
                 return st.session_state.empresa, st.session_state.nit, doc_guardado
@@ -7169,8 +7268,27 @@ def preparar_empresa_nueva_y_template(nombre_ingresado="", nit_ingresado=""):
             raise ValueError("No se encontró la fila 'Otra' con el Doc_ID de la plantilla universal en la hoja Empresas.")
         docs = obtener_servicio_docs()
         documento_base = _obtener_documento_docs_completo(docs, doc_id_base)
-        if not _documento_contiene_marcador(documento_base):
-            raise ValueError("La plantilla universal no contiene el marcador {{LOGO_EMPRESA}}. Agrégalo en el lugar del logo y vuelve a probar.")
+        ubicacion_marcador_base = _buscar_marcador_en_documento(documento_base, "{{LOGO_EMPRESA}}")
+        _log_busqueda_empresa(
+            "PLANTILLA UNIVERSAL: lectura Docs API; "
+            f"documentId={doc_id_base}; título={documento_base.get('title', 'sin título')}; "
+            f"tabs={len(documento_base.get('tabs') or [])}; "
+            f"body_raiz_elementos={len((documento_base.get('body') or {}).get('content', []))}; "
+            f"marcador_encontrado={bool(ubicacion_marcador_base)}."
+        )
+        if not ubicacion_marcador_base:
+            raise ValueError(
+                "Google Docs no devolvió {{LOGO_EMPRESA}} en el documento universal leído. "
+                f"Documento: {documento_base.get('title', doc_id_base)}. "
+                "Se revisaron el contenido clásico y todas las pestañas devueltas por includeTabsContent=True. "
+                "No se modificó la plantilla ni se creó una copia."
+            )
+        _log_busqueda_empresa(
+            "PLANTILLA UNIVERSAL: marcador confirmado en "
+            f"tab_id={ubicacion_marcador_base.get('tabId') or 'estructura clásica'}; "
+            f"segmento={ubicacion_marcador_base.get('segmentId') or 'cuerpo'}; "
+            f"índice={ubicacion_marcador_base.get('index')}."
+        )
         marcas_base = _obtener_objetos_marca_agua(documento_base)
         _log_busqueda_empresa(
             f"PLANTILLA UNIVERSAL: objetos de marca de agua detectados por Docs API="
