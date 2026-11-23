@@ -25,7 +25,7 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
 
 # Identificador de compilación para comprobar qué archivo ejecuta Streamlit.
-APP_BUILD_ID = "CESANTIAS_FORMATO_PLANTILLA_6.2_2026-11-22"
+APP_BUILD_ID = "CESANTIAS_FORMATO_PLANTILLA_6.2_REEMPLAZO_MARCA_AGUA_2026-11-22"
 
 GOOGLE_DRIVE_SCOPE = "https://www.googleapis.com/auth/drive"
 
@@ -6373,17 +6373,20 @@ def _crear_png_marca_agua(datos_logo, relacion_aspecto=1.0, opacidad=0.13):
     ancho_canvas = 1600
     alto_canvas = int(round(ancho_canvas / relacion_aspecto))
     alto_canvas = max(500, min(2400, alto_canvas))
-    # El logo ocupa más superficie dentro del marco de marca de agua ya configurado en Google Docs.
+    # El logo debe ocupar casi todo el marco de la marca de agua. Image.thumbnail()
+    # solo reduce imágenes grandes; no amplía logos pequeños descargados de la web.
+    # Calculamos una escala que también puede ser mayor que 1, sin deformar la imagen.
     max_ancho = int(ancho_canvas * 0.96)
     max_alto = int(alto_canvas * 0.90)
-    # thumbnail() no amplía imágenes pequeñas; se calcula una escala que también puede ampliar,
-    # respetando siempre los límites y la proporción del logo.
-    escala = min(max_ancho / imagen.width, max_alto / imagen.height)
+    if imagen.width <= 0 or imagen.height <= 0:
+        raise RuntimeError("El logo descargado tiene dimensiones inválidas.")
+    escala = min(max_ancho / float(imagen.width), max_alto / float(imagen.height))
     nuevo_tamano = (
         max(1, int(round(imagen.width * escala))),
         max(1, int(round(imagen.height * escala))),
     )
-    imagen = imagen.resize(nuevo_tamano, Image.Resampling.LANCZOS)
+    if nuevo_tamano != imagen.size:
+        imagen = imagen.resize(nuevo_tamano, Image.Resampling.LANCZOS)
 
     lienzo = Image.new("RGBA", (ancho_canvas, alto_canvas), (255, 255, 255, 0))
     x = (ancho_canvas - imagen.width) // 2
@@ -6499,9 +6502,17 @@ def insertar_marca_agua_desde_logo(document_id, logo, solicitud_id, carpeta_dest
     props_actualizadas = (actualizado or {}).get("positionedObjectProperties") or {}
     posicion_actualizada = props_actualizadas.get("positioning") or {}
     imagen_actualizada = (props_actualizadas.get("embeddedObject") or {}).get("imageProperties") or {}
+    uri_actualizada = str(imagen_actualizada.get("sourceUri") or "")
     if not actualizado or posicion_actualizada.get("layout") != "BEHIND_TEXT" or not imagen_actualizada:
         raise RuntimeError(
             "Google Docs no confirmó que la marca de agua siga detrás del texto después del reemplazo."
+        )
+    # No basta con que siga existiendo una imagen: confirmamos que Google Docs
+    # ahora apunta al archivo PNG recién creado con el logo de ESTA empresa.
+    if not marca_id or marca_id not in uri_actualizada:
+        raise RuntimeError(
+            "Google Docs conservó una imagen detrás del texto, pero no confirmó que fuera el logo "
+            "empresarial recién cargado. Se mantiene la marca como pendiente para no generar una carta incorrecta."
         )
 
     st.session_state["marca_agua_empresa_insertada"] = True
@@ -6993,23 +7004,62 @@ def preparar_empresa_nueva_y_template(nombre_ingresado="", nit_ingresado=""):
                 "se creará una copia nueva desde la plantilla universal actual para heredar sus fuentes, tamaños y negritas."
             )
 
+        # Verificar siempre la plantilla guardada, no solo cuando Sheets dice
+        # logo-insertado. Una plantilla antigua sin imagen BEHIND_TEXT no puede
+        # heredar la marca de agua provisional que el usuario acaba de poner en la universal.
+        marcas_existentes = []
+        if plantilla_guardada_actual:
+            try:
+                docs_existente = obtener_servicio_docs()
+                documento_existente = docs_existente.documents().get(
+                    documentId=doc_guardado
+                ).execute()
+                marcas_existentes = _obtener_objetos_marca_agua(documento_existente)
+            except Exception as exc_verificacion:
+                plantilla_guardada_actual = False
+                _log_busqueda_empresa(
+                    "PLANTILLA EMPRESA: no se pudo verificar la imagen BEHIND_TEXT de la plantilla guardada; "
+                    f"se renovará desde la universal actual. {type(exc_verificacion).__name__}: "
+                    f"{str(exc_verificacion)[:250]}"
+                )
+            if plantilla_guardada_actual and not marcas_existentes:
+                plantilla_guardada_actual = False
+                _log_busqueda_empresa(
+                    "PLANTILLA EMPRESA: la copia guardada no contiene una imagen BEHIND_TEXT reemplazable. "
+                    "Se creará una copia nueva desde la plantilla universal actualizada."
+                )
+
         if plantilla_guardada_actual and estado_guardado.lower().startswith("logo-insertado"):
-            rellenar_identidad_en_plantilla_empresa(
-                doc_guardado, nombre_guardado or nombre_original, nit_guardado or nit_original
-            )
-            st.session_state.empresa = nombre_guardado or nombre_original
-            st.session_state.nit = nit_guardado or nit_original
-            st.session_state.doc_id_plantilla = info_guardada["id"]
-            st.session_state.nombre_plantilla = info_guardada.get("name", "Plantilla de empresa")
-            st.session_state.plantilla_url = info_guardada.get("webViewLink", "")
-            st.session_state.logo_empresa_en_template = True
-            st.session_state.marca_agua_empresa_insertada = True
-            st.session_state.marca_agua_empresa_pendiente = False
-            st.session_state.logo_empresa_pendiente = None
-            st.session_state.estado_logo_empresa = "logo-insertado"
-            st.session_state.busqueda_otra_completada = True
-            st.session_state.empresa_seleccionada = "Otra"
-            return st.session_state.empresa, st.session_state.nit, doc_guardado
+            estado_marca_pendiente = "marca-agua-pendiente" in estado_guardado.lower()
+            # Una plantilla con estado pendiente se renueva incluso si conserva
+            # una imagen detrás del texto: esa imagen puede seguir siendo el logo genérico.
+            if estado_marca_pendiente:
+                plantilla_guardada_actual = False
+                _log_busqueda_empresa(
+                    "PLANTILLA EMPRESA: la fila de Empresas indica marca-agua-pendiente; "
+                    "se creará una copia nueva desde la universal para sustituir el logo genérico."
+                )
+            else:
+                rellenar_identidad_en_plantilla_empresa(
+                    doc_guardado, nombre_guardado or nombre_original, nit_guardado or nit_original
+                )
+                st.session_state.empresa = nombre_guardado or nombre_original
+                st.session_state.nit = nit_guardado or nit_original
+                st.session_state.doc_id_plantilla = info_guardada["id"]
+                st.session_state.nombre_plantilla = info_guardada.get("name", "Plantilla de empresa")
+                st.session_state.plantilla_url = info_guardada.get("webViewLink", "")
+                st.session_state.logo_empresa_en_template = True
+                st.session_state.marca_agua_empresa_insertada = True
+                st.session_state.marca_agua_empresa_pendiente = False
+                st.session_state.logo_empresa_pendiente = None
+                st.session_state.estado_logo_empresa = "logo-insertado"
+                st.session_state.busqueda_otra_completada = True
+                st.session_state.empresa_seleccionada = "Otra"
+                _log_busqueda_empresa(
+                    f"PLANTILLA EMPRESA: reutilizada; marca BEHIND_TEXT verificada="
+                    f"{len(marcas_existentes)} objeto(s)."
+                )
+                return st.session_state.empresa, st.session_state.nit, doc_guardado
 
     # Si ya hay una pareja completa en Sheets, buscar el logo por nombre usando
     # la razón social guardada. Si falta uno de los datos, validar ambos en una
@@ -7087,6 +7137,16 @@ def preparar_empresa_nueva_y_template(nombre_ingresado="", nit_ingresado=""):
         documento_base = docs.documents().get(documentId=doc_id_base).execute()
         if not _documento_contiene_marcador(documento_base):
             raise ValueError("La plantilla universal no contiene el marcador {{LOGO_EMPRESA}}. Agrégalo en el lugar del logo y vuelve a probar.")
+        marcas_base = _obtener_objetos_marca_agua(documento_base)
+        _log_busqueda_empresa(
+            f"PLANTILLA UNIVERSAL: imágenes reemplazables detrás del texto={len(marcas_base)}."
+        )
+        if not marcas_base:
+            raise RuntimeError(
+                "La plantilla universal todavía no muestra una imagen normal detrás del texto en Google Docs API. "
+                "Selecciona la imagen provisional, elige Detrás del texto y guarda el documento. "
+                "No se creó una plantilla de empresa."
+            )
         copia, carpeta_templates_id, _ = copiar_template_empresa(doc_id_base, nombre_final, nit_final)
         doc_id_empresa = copia["id"]
 
@@ -7156,7 +7216,11 @@ def preparar_empresa_nueva_y_template(nombre_ingresado="", nit_ingresado=""):
     st.session_state.logo_empresa_en_template = bool(logo_insertado)
     st.session_state.marca_agua_empresa_insertada = bool(marca_agua_insertada)
     st.session_state.marca_agua_empresa_pendiente = bool(logo_insertado and not marca_agua_insertada)
-    st.session_state.logo_empresa_pendiente = None if logo_insertado else resultado.get("logo")
+    # No descartar el logo recuperado cuando la cabecera se insertó pero la marca
+    # de agua no: la misma imagen se necesita para reintentar el reemplazo en la copia final.
+    st.session_state.logo_empresa_pendiente = (
+        None if (logo_insertado and marca_agua_insertada) else resultado.get("logo")
+    )
     st.session_state.estado_logo_empresa = estado_logo
     st.session_state.estado_empresa_web = "Verificada" if resultado.get("empresa_verificada") else "revision manual"
     st.session_state.diagnostico_logo_empresa = resultado.get("diagnostico", "")
@@ -7901,7 +7965,9 @@ def render_generando():
                             st.session_state.logo_empresa_en_template = True
                             st.session_state.marca_agua_empresa_insertada = marca_agua_insertada
                             st.session_state.marca_agua_empresa_pendiente = not marca_agua_insertada
-                            st.session_state.logo_empresa_pendiente = None
+                            st.session_state.logo_empresa_pendiente = (
+                                None if marca_agua_insertada else resultado_busqueda.get("logo")
+                            )
                             estado_logo_final = "logo-insertado" if marca_agua_insertada else "logo-insertado; marca-agua-pendiente"
                             st.session_state.estado_logo_empresa = estado_logo_final
                             guardar_empresa_en_sheets(
@@ -7937,8 +8003,38 @@ def render_generando():
     if not st.session_state.get("logo_marcador_procesado", False):
         try:
             if st.session_state.get("logo_empresa_en_template", False):
-                # La copia de la solicitud ya hereda el logo insertado en la plantilla de empresa.
+                # La copia hereda el logo pequeño de la plantilla empresarial.
                 logo_insertado = True
+                # Si la plantilla todavía tenía pendiente el fondo, intentar sustituirlo
+                # también en ESTA copia con los mismos bytes del logo ya capturado.
+                if st.session_state.get("marca_agua_empresa_pendiente", False):
+                    logo_marca = st.session_state.get("logo_empresa_pendiente")
+                    if logo_marca and logo_marca.get("bytes"):
+                        try:
+                            marca_ok = insertar_marca_agua_desde_logo(
+                                st.session_state.doc_id_copia,
+                                logo_marca,
+                                st.session_state.solicitud_id,
+                                carpeta_destino_id=obtener_id_carpeta_solicitudes(),
+                            )
+                            st.session_state.marca_agua_empresa_insertada = bool(marca_ok)
+                            st.session_state.marca_agua_empresa_pendiente = not bool(marca_ok)
+                            if marca_ok:
+                                st.session_state.logo_empresa_pendiente = None
+                        except Exception as exc_marca_copia:
+                            st.session_state.marca_agua_empresa_insertada = False
+                            st.session_state.marca_agua_empresa_pendiente = True
+                            st.session_state.error_marca_agua_empresa = (
+                                f"{type(exc_marca_copia).__name__}: {str(exc_marca_copia)[:500]}"
+                            )
+                            _log_busqueda_empresa(
+                                "MARCA DE AGUA: reintento en copia de solicitud falló: "
+                                + st.session_state.error_marca_agua_empresa
+                            )
+                    else:
+                        _log_busqueda_empresa(
+                            "MARCA DE AGUA: sigue pendiente y no hay bytes del logo en sesión para reintentar."
+                        )
             else:
                 logo_insertado = insertar_logo_en_plantilla(
                     st.session_state.doc_id_copia,
@@ -7946,6 +8042,11 @@ def render_generando():
                     st.session_state.solicitud_id,
                     limpiar_marcador_si_falla=True
                 )
+                if logo_insertado:
+                    marca_ok = bool(st.session_state.get("marca_agua_empresa_insertada", False))
+                    st.session_state.marca_agua_empresa_pendiente = not marca_ok
+                    if marca_ok:
+                        st.session_state.logo_empresa_pendiente = None
             st.session_state.logo_empresa_insertado = bool(logo_insertado)
             st.session_state.logo_marcador_procesado = True
             error_logo = str(st.session_state.get("error_insercion_logo_empresa", "") or "").strip()
@@ -7984,6 +8085,30 @@ def render_generando():
                     conn.update(worksheet="Solicitudes", data=df_estado)
         except Exception:
             pass
+
+    # No entregar una solicitud con la marca genérica si ya existe un logo empresarial
+    # capturado pero Google Docs no confirmó su sustitución en la copia final.
+    if st.session_state.get("marca_agua_empresa_pendiente", False):
+        detalle_marca = str(st.session_state.get("error_marca_agua_empresa", "") or "").strip()
+        _log_busqueda_empresa(
+            "SOLICITUD DETENIDA: no se generó el documento porque la marca de agua empresarial "
+            "no quedó verificada en la copia final. " + (detalle_marca[:600] if detalle_marca else "")
+        )
+        st.error(
+            "No se generó la carta porque la marca de agua de la empresa no pudo sustituirse y verificarse. "
+            "Se evitó entregar un documento con el logo genérico de la plantilla."
+        )
+        if detalle_marca:
+            st.caption("Detalle técnico: " + detalle_marca[:500])
+        st.download_button(
+            "Descargar diagnóstico de la marca de agua (.txt)",
+            data=_texto_log_busqueda_empresa(),
+            file_name=f"diagnostico_marca_agua_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
+            mime="text/plain",
+            use_container_width=True,
+            key="descargar_log_marca_agua_pendiente",
+        )
+        st.stop()
 
     # ---------- RELLENAR LA COPIA (NUNCA LA PLANTILLA ORIGINAL) ----------
     if not st.session_state.documento_rellenado:
