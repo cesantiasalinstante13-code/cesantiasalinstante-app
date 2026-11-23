@@ -25,7 +25,7 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
 
 # Identificador de compilación para comprobar qué archivo ejecuta Streamlit.
-APP_BUILD_ID = "CESANTIAS_LOGO_CORPORATIVO_5.8_2026-11-22"
+APP_BUILD_ID = "CESANTIAS_LOGO_DEFINITIVA_6.0_2026-11-22"
 
 GOOGLE_DRIVE_SCOPE = "https://www.googleapis.com/auth/drive"
 
@@ -5253,6 +5253,207 @@ def _buscar_logo_en_bing_images(nombre_empresa, dominios_corporativos):
     return None
 
 
+
+def _tokens_distintivos_empresa_logo(nombre_empresa):
+    # Tokens de marca, sin sufijos legales ni términos genéricos.
+    ignorar = {
+        "grupo", "empresa", "empresas", "compania", "nacional", "sociedad",
+        "anonima", "sas", "sa", "s", "a", "bic", "ltda", "limitada",
+        "esp", "e", "u", "eu", "de", "del", "la", "el", "los", "las",
+        "y", "and", "the", "colombia", "colombiana",
+    }
+    return [t for t in _normalizar_nombre_empresa(nombre_empresa).split()
+            if len(t) >= 4 and t not in ignorar]
+
+
+def _procolombia_url_coincide_nombre(url, nombre_empresa):
+    parsed = urlparse(str(url or ""))
+    host = parsed.netloc.lower().removeprefix("www.")
+    if host not in {"b2bmarketplace.procolombia.co", "b2bmarketplaceplus.procolombia.co"}:
+        return False
+    path = unquote(parsed.path or "")
+    if not re.search(r"\.aspx$", path, re.I):
+        return False
+    if re.search(r"/(search|user|login|node)(/|$)", path, re.I):
+        return False
+    tokens_empresa = set(_tokens_distintivos_empresa_logo(nombre_empresa))
+    tokens_ruta = set(_normalizar_nombre_empresa(path).split())
+    coincidencias = tokens_empresa & tokens_ruta
+    if not coincidencias:
+        return False
+    minimo = 1 if len(tokens_empresa) <= 2 else 2
+    return len(coincidencias) >= minimo
+
+
+def _extraer_perfiles_procolombia_robusto(html_busqueda, url_base, nombre_empresa):
+    # Lee href/data-href y URLs dentro de JSON/JavaScript, además del HTMLParser existente.
+    texto = html.unescape(str(html_busqueda or ""))
+    texto = (texto.replace(r"\/", "/").replace(r"\u002F", "/")
+                  .replace(r"\u003A", ":").replace(r"\u0026", "&"))
+    candidatos = set()
+    patron_atributos = re.compile(r"(?:href|data-href|data-url|data-link)\s*=\s*[\"']([^\"']+)[\"']", re.I | re.S)
+    for m in patron_atributos.finditer(texto):
+        candidatos.add(html.unescape(m.group(1).strip()))
+    patron_absoluto = re.compile(r"(?:https?:)?//b2bmarketplace(?:plus)?\.procolombia\.co/(?:es|en)/[^\s\"'<>\\]+?\.aspx(?:\?[^\s\"'<>\\]*)?", re.I)
+    for m in patron_absoluto.finditer(texto):
+        candidatos.add(m.group(0))
+    patron_relativo = re.compile(r"/(?:es|en)/[^\s\"'<>\\]+?\.aspx(?:\?[^\s\"'<>\\]*)?", re.I)
+    for m in patron_relativo.finditer(texto):
+        candidatos.add(m.group(0))
+
+    resultados, vistos = [], set()
+    for candidato in candidatos:
+        candidato = candidato.strip().rstrip("),;]")
+        url = urljoin(url_base, candidato)
+        if not _procolombia_url_coincide_nombre(url, nombre_empresa):
+            continue
+        clave = url.split("?", 1)[0].rstrip("/").lower()
+        if clave in vistos:
+            continue
+        vistos.add(clave)
+        slug = unquote(urlparse(url).path.rsplit("/", 1)[-1]).replace(".aspx", "")
+        resultados.append({"url": url, "titulo": slug.replace("-", " ").title(),
+                           "snippet": "Perfil extraído del HTML/JSON del directorio ProColombia"})
+    return resultados
+
+
+def _buscar_perfiles_procolombia_en_sitemap(nombre_empresa):
+    # Índice de perfiles independiente de los buscadores web.
+    sitemap_base = "https://b2bmarketplace.procolombia.co/sitemap.xml"
+    headers = {"User-Agent": "Mozilla/5.0 (compatible; CesantiasAlInstante/6.0)",
+               "Accept": "application/xml,text/xml,*/*;q=0.8"}
+    try:
+        resp = requests.get(sitemap_base, headers=headers, timeout=(6, 12), allow_redirects=True)
+        _log_busqueda_empresa(f"LOGO ProColombia sitemap: HTTP {resp.status_code}; bytes={len(resp.content)}.")
+        if not resp.ok or "xml" not in resp.headers.get("Content-Type", "").lower():
+            return []
+        locs = re.findall(r"<loc[^>]*>\s*(.*?)\s*</loc>", resp.text, re.I | re.S)
+    except Exception as exc:
+        _log_busqueda_empresa(f"LOGO ProColombia sitemap: error {type(exc).__name__}: {str(exc)[:180]}")
+        return []
+
+    urls, hijos = [], []
+    for raw in locs:
+        u = html.unescape(raw.strip())
+        if u.lower().endswith(".xml") or "sitemap" in urlparse(u).path.lower():
+            hijos.append(u)
+        else:
+            urls.append(u)
+    for hijo_url in hijos[:12]:
+        try:
+            hijo = requests.get(hijo_url, headers=headers, timeout=(6, 12), allow_redirects=True)
+            if hijo.ok and "xml" in hijo.headers.get("Content-Type", "").lower():
+                urls.extend(html.unescape(x.strip()) for x in re.findall(r"<loc[^>]*>\s*(.*?)\s*</loc>", hijo.text, re.I | re.S))
+        except Exception as exc:
+            _log_busqueda_empresa(f"LOGO ProColombia sitemap hijo: {type(exc).__name__}: {str(exc)[:140]}")
+
+    resultados, vistos = [], set()
+    for u in urls:
+        if not _procolombia_url_coincide_nombre(u, nombre_empresa):
+            continue
+        clave = u.split("?", 1)[0].rstrip("/").lower()
+        if clave in vistos:
+            continue
+        vistos.add(clave)
+        slug = unquote(urlparse(u).path.rsplit("/", 1)[-1]).replace(".aspx", "")
+        resultados.append({"url": u, "titulo": slug.replace("-", " ").title(),
+                           "snippet": "Perfil localizado en sitemap oficial ProColombia"})
+    _log_busqueda_empresa(f"LOGO ProColombia sitemap: {len(resultados)} perfiles que coinciden con {nombre_empresa}.")
+    return resultados
+
+
+def _prioridad_imagen_procolombia(url_imagen, senales, nombre_empresa, nit_empresa):
+    # Si el NIT exacto aparece en la ruta de la imagen, es la señal más fuerte.
+    nit_base = _clave_nit(nit_empresa)
+    if nit_base and nit_base in _normalizar_nit(url_imagen):
+        return 260
+    tokens_empresa = {t for t in _clave_nombre_empresa(nombre_empresa).split() if len(t) >= 5}
+    tokens_senales = set(_normalizar_nombre_empresa(senales).split())
+    ruido = {"logo", "logos", "logotipo", "brand", "marca", "image", "imagen", "img",
+             "company", "corporate", "col", "ingles", "english", "public", "companies",
+             "sites", "files", "styles", "png", "jpg", "jpeg", "svg", "webp", "02",
+             "max", "325x325", "default", "es", "en", "empresaid"}
+    distintivos = tokens_senales - tokens_empresa - ruido
+    if distintivos and not (tokens_senales & tokens_empresa):
+        return 0
+    texto = " ".join((str(senales or ""), str(url_imagen or ""))).lower()
+    if any(x in texto for x in ("logo", "logotipo", "brand")):
+        return 150 if (tokens_senales & tokens_empresa) else 130
+    return 0
+
+
+def _logoapi_resultado_coincide(nombre_empresa, dominio_oficial, item):
+    # No acepta fuzzy, dominios aproximados ni nombres de otra marca.
+    if not isinstance(item, dict) or item.get("fuzzy") is True:
+        return False
+    esperado = _host_dominio_base(dominio_oficial)
+    dominio = _host_dominio_base(item.get("domain", ""))
+    if not esperado or dominio != esperado:
+        return False
+    tokens_empresa = set(_tokens_distintivos_empresa_logo(nombre_empresa))
+    tokens_api = set(_tokens_distintivos_empresa_logo(str(item.get("name", ""))))
+    if not tokens_empresa or not (tokens_empresa & tokens_api):
+        return False
+    host_fuente = _host_dominio_base(urlparse(str(item.get("source", ""))).netloc)
+    return host_fuente == esperado
+
+
+def _validar_png_logoapi(respuesta):
+    # fallback=404 y X-Logo-Fallback impiden que un favicon o mosaico pase como logo.
+    try:
+        if not getattr(respuesta, "ok", False):
+            return None
+        headers = getattr(respuesta, "headers", {}) or {}
+        if headers.get("X-Logo-Fallback"):
+            return None
+        tipo = headers.get("Content-Type", "").lower().split(";", 1)[0].strip()
+        datos = bytes(getattr(respuesta, "content", b""))
+        if tipo != "image/png" or not datos.startswith(b"\x89PNG\r\n\x1a\n") or len(datos) < 500 or len(datos) > 5_000_000:
+            return None
+        import struct
+        if len(datos) < 24:
+            return None
+        ancho, alto = struct.unpack(">II", datos[16:24])
+        if ancho < 64 or alto < 32 or ancho > 5000 or alto > 5000:
+            return None
+        return {"url": getattr(respuesta, "url", ""), "bytes": datos, "mime": "image/png"}
+    except Exception:
+        return None
+
+
+def _buscar_logo_logoapi(nombre_empresa, dominios_verificados):
+    # Catálogo auxiliar: coincidencia de nombre + dominio y PNG sin fallback.
+    for dominio_bruto in dominios_verificados or []:
+        dominio = _host_dominio_base(dominio_bruto)
+        if not re.fullmatch(r"[a-z0-9.-]+\.[a-z]{2,}", dominio or ""):
+            continue
+        try:
+            busqueda = requests.get("https://logoapi.sh/search", params={"q": dominio},
+                headers={"User-Agent": "CesantiasAlInstante/6.0", "Accept": "application/json"},
+                timeout=(5, 10), allow_redirects=True)
+            _log_busqueda_empresa(f"LOGO API: búsqueda de dominio {dominio}; HTTP {busqueda.status_code}.")
+            if not busqueda.ok:
+                continue
+            payload = busqueda.json()
+            items = payload.get("results", []) if isinstance(payload, dict) else []
+            coincidencias = [x for x in items if _logoapi_resultado_coincide(nombre_empresa, dominio, x)]
+            if not coincidencias:
+                _log_busqueda_empresa(f"LOGO API: sin coincidencia exacta de marca y dominio para {dominio}.")
+                continue
+            item = sorted(coincidencias, key=lambda x: (bool(x.get("wordmark")), int(x.get("score", 0))), reverse=True)[0]
+            url_png = f"https://logoapi.sh/{dominio}.png?size=512&bg=white&fallback=404"
+            imagen = requests.get(url_png, headers={"User-Agent": "CesantiasAlInstante/6.0", "Accept": "image/png"},
+                                  timeout=(5, 15), allow_redirects=True)
+            validada = _validar_png_logoapi(imagen)
+            if validada:
+                _log_busqueda_empresa(f"LOGO API: PNG corporativo validado para {nombre_empresa} ({dominio}); bytes={len(validada['bytes'])}.")
+                return validada, f"https://logoapi.sh/brand/{dominio}"
+            _log_busqueda_empresa(f"LOGO API: PNG rechazado para {dominio}; HTTP={imagen.status_code}; fallback={imagen.headers.get('X-Logo-Fallback', '')}.")
+        except Exception as exc:
+            _log_busqueda_empresa(f"LOGO API: error con {dominio}: {type(exc).__name__}: {str(exc)[:180]}")
+    return None
+
+
 def _buscar_logo_en_directorio_procolombia(nombre_empresa, nit_empresa):
     """Busca el perfil B2B de ProColombia y obtiene su imagen de empresa.
 
@@ -5303,33 +5504,82 @@ def _buscar_logo_en_directorio_procolombia(nombre_empresa, nit_empresa):
             if respuesta_busqueda.ok and "text/html" in respuesta_busqueda.headers.get("Content-Type", "text/html").lower():
                 html_busqueda = respuesta_busqueda.text[:5_000_000]
                 items_directos = _extraer_enlaces_con_titulo_html(html_busqueda, respuesta_busqueda.url)
-                # Fallback: perfiles de empresa del marketplace actual usan rutas
-                # /es/<slug>-<id> o /en/<slug>-<id>. El título a veces se renderiza
-                # fuera del anchor y el parser convencional no lo detecta.
+                # El parser original no siempre reconoce tarjetas Drupal/JS.
+                items_robustos = _extraer_perfiles_procolombia_robusto(html_busqueda, respuesta_busqueda.url, nombre_empresa)
+                for item_robusto in items_robustos:
+                    if item_robusto.get("url") not in {x.get("url") for x in items_directos}:
+                        items_directos.append(item_robusto)
+                # Si el buscador interno no devuelve tarjetas, usar el sitemap oficial.
+                if not any(_procolombia_url_coincide_nombre(x.get("url", ""), nombre_empresa) for x in items_directos):
+                    for item_sitemap in _buscar_perfiles_procolombia_en_sitemap(nombre_empresa):
+                        if item_sitemap.get("url") not in {x.get("url") for x in items_directos}:
+                            items_directos.append(item_sitemap)
+                # El perfil empresarial puede tener rutas anidadas, por ejemplo:
+                # /es/agroindustria/agroindustrial/colombina-sa.aspx.
+                # No se debe asumir que el nombre está en el segundo segmento ni
+                # que la ruta termina en un ID numérico.
                 tokens_nombre = [t for t in _clave_nombre_empresa(nombre_empresa).split() if len(t) >= 4]
-                for match_href in re.finditer(r'''<a\\b[^>]*href=[\\\"']([^\\\"']+)[\\\"'][^>]*>(.*?)</a>''', html_busqueda, re.I | re.S):
-                    href_raw = html.unescape(match_href.group(1)).strip()
-                    url_raw = urljoin(respuesta_busqueda.url, href_raw)
+                enlaces_directos_vistos = {
+                    (item.get("url", "") or "").split("?", 1)[0].rstrip("/").lower()
+                    for item in items_directos
+                }
+                for item_enlace in list(items_directos):
+                    url_raw = item_enlace.get("url", "")
                     host_raw = urlparse(url_raw).netloc.lower().removeprefix("www.")
-                    partes_raw = [p for p in urlparse(url_raw).path.split("/") if p]
-                    if host_raw not in dominios_procolombia or len(partes_raw) < 2 or partes_raw[0] not in ("es", "en"):
+                    if host_raw not in dominios_procolombia:
                         continue
-                    slug = unquote(partes_raw[1]).lower()
-                    slug_normalizado = _normalizar_nombre_empresa(slug)
-                    slug_tokens = set(slug_normalizado.split())
-                    nombre_en_slug = any(t in slug_tokens or t in slug_normalizado for t in tokens_nombre)
-                    parece_perfil = bool(re.search(r"-\\d+$", slug)) or (".." in slug)
-                    if nombre_en_slug and parece_perfil:
-                        titulo_raw = _texto_html_limpio(match_href.group(2)) or slug
-                        items_directos.append({"url": url_raw, "titulo": titulo_raw, "snippet": titulo_raw})
+                    partes_raw = [unquote(p) for p in urlparse(url_raw).path.split("/") if p]
+                    if not partes_raw or partes_raw[0].lower() not in ("es", "en"):
+                        continue
+                    ruta_normalizada = _normalizar_nombre_empresa(" ".join(partes_raw[1:]))
+                    titulo_raw = item_enlace.get("titulo", "") or item_enlace.get("snippet", "")
+                    nombre_en_ruta = any(t in set(ruta_normalizada.split()) for t in tokens_nombre)
+                    nombre_en_titulo = _texto_coincide_empresa(nombre_empresa, titulo_raw)
+                    # Acepta rutas de ficha con cualquier profundidad siempre que
+                    # el nombre distintivo aparezca en el slug o en el título.
+                    parece_ficha = (
+                        nombre_en_ruta
+                        or (nombre_en_titulo and len(partes_raw) >= 3)
+                        or bool(re.search(r"-\d+$", partes_raw[-1]))
+                    )
+                    if parece_ficha:
+                        clave_url = url_raw.split("?", 1)[0].rstrip("/").lower()
+                        if clave_url not in enlaces_directos_vistos:
+                            enlaces_directos_vistos.add(clave_url)
+                            items_directos.append({
+                                "url": url_raw,
+                                "titulo": titulo_raw or " ".join(partes_raw[-2:]),
+                                "snippet": item_enlace.get("snippet", ""),
+                            })
+                # Segunda pasada explícita con HTMLParser: recoge enlaces aunque
+                # el título esté en un elemento hermano del anchor o el HTML tenga
+                # atributos en distinto orden. El helper ya resuelve entidades HTML.
+                for item_enlace in _extraer_enlaces_con_titulo_html(html_busqueda, respuesta_busqueda.url):
+                    url_raw = item_enlace.get("url", "")
+                    host_raw = urlparse(url_raw).netloc.lower().removeprefix("www.")
+                    if host_raw not in dominios_procolombia:
+                        continue
+                    partes_raw = [unquote(p) for p in urlparse(url_raw).path.split("/") if p]
+                    if not partes_raw or partes_raw[0].lower() not in ("es", "en"):
+                        continue
+                    ruta_normalizada = _normalizar_nombre_empresa(" ".join(partes_raw[1:]))
+                    texto_candidato = " ".join((item_enlace.get("titulo", ""), item_enlace.get("snippet", ""), ruta_normalizada))
+                    if not any(t in set(ruta_normalizada.split()) for t in tokens_nombre) and not _texto_coincide_empresa(nombre_empresa, texto_candidato):
+                        continue
+                    clave_url = url_raw.split("?", 1)[0].rstrip("/").lower()
+                    if clave_url not in enlaces_directos_vistos:
+                        enlaces_directos_vistos.add(clave_url)
+                        items_directos.append(item_enlace)
                 for item_directo in items_directos:
                     host_directo = urlparse(item_directo.get("url", "")).netloc.lower().removeprefix("www.")
                     titulo_directo = item_directo.get("titulo", "")
                     if host_directo not in dominios_procolombia:
                         continue
-                    if not _texto_coincide_empresa(nombre_empresa, titulo_directo):
+                    url_directa = item_directo.get("url", "")
+                    ruta_directa = _normalizar_nombre_empresa(unquote(urlparse(url_directa).path))
+                    texto_identidad_candidato = " ".join((titulo_directo, item_directo.get("snippet", ""), ruta_directa))
+                    if not _texto_coincide_empresa(nombre_empresa, texto_identidad_candidato) and not _procolombia_url_coincide_nombre(url_directa, nombre_empresa):
                         continue
-                    url_directa = item_directo["url"]
                     clave_directa = url_directa.split("?", 1)[0].rstrip("/").lower()
                     if clave_directa not in paginas_vistas:
                         paginas_vistas.add(clave_directa)
@@ -5366,6 +5616,7 @@ def _buscar_logo_en_directorio_procolombia(nombre_empresa, nit_empresa):
                                 if not nit_coincide and not web_coincide:
                                     continue
                                 candidatos = []
+                                # Primero conserva las imágenes declaradas por etiquetas <img>.
                                 for match_img in re.finditer(r"<img\b[^>]*>", html_pagina, re.I | re.S):
                                     attrs_img = _obtener_atributos_html(match_img.group(0))
                                     src_img = (attrs_img.get("data-src") or attrs_img.get("data-original") or attrs_img.get("data-lazy-src") or attrs_img.get("src") or "").strip()
@@ -5374,15 +5625,22 @@ def _buscar_logo_en_directorio_procolombia(nombre_empresa, nit_empresa):
                                     url_img = urljoin(pagina.url, src_img)
                                     filename = urlparse(url_img).path.rsplit("/", 1)[-1]
                                     senales_img = " ".join((attrs_img.get("alt", ""), attrs_img.get("title", ""), attrs_img.get("class", ""), attrs_img.get("id", ""), filename))
-                                    tokens_img = set(_normalizar_nombre_empresa(senales_img).split())
-                                    tokens_empresa = {t for t in _clave_nombre_empresa(nombre_empresa).split() if len(t) >= 5}
-                                    ruido_img = {"logo", "logos", "logotipo", "brand", "marca", "image", "imagen", "img", "png", "jpg", "jpeg", "svg", "webp", "company", "corporate", "col", "ingles", "english", "02", "default", "max", "325x325", "styles", "sites", "files", "public"}
-                                    distintivos_img = tokens_img - tokens_empresa - ruido_img
-                                    if distintivos_img and not (tokens_img & tokens_empresa):
-                                        _log_busqueda_empresa("LOGO ProColombia directo: imagen descartada por marca ajena: " + ", ".join(sorted(distintivos_img)[:5]))
+                                    prioridad_img = _prioridad_imagen_procolombia(url_img, senales_img, nombre_empresa, nit_empresa)
+                                    if prioridad_img:
+                                        candidatos.append((prioridad_img, url_img))
+                                    else:
+                                        _log_busqueda_empresa("LOGO ProColombia directo: imagen descartada; no coincide el NIT ni la marca: " + url_img[:240])
+                                # Algunas fichas publican el logo como enlace de imagen
+                                # y el parser de <img> no recibe el href original.
+                                for enlace_img in _extraer_enlaces_con_titulo_html(html_pagina, pagina.url):
+                                    url_img = enlace_img.get("url", "")
+                                    path_img = urlparse(url_img).path.lower()
+                                    if not re.search(r"\.(?:png|jpe?g|gif|webp|svg)(?:[?#].*)?$", path_img):
                                         continue
-                                    if any(k in senales_img.lower() for k in ("logo", "logotipo", "brand")):
-                                        candidatos.append((130, url_img))
+                                    nombre_img = path_img.rsplit("/", 1)[-1]
+                                    prioridad_href = _prioridad_imagen_procolombia(url_img, nombre_img, nombre_empresa, nit_empresa)
+                                    if prioridad_href:
+                                        candidatos.append((prioridad_href, url_img))
                                 candidatos.sort(key=lambda x: x[0], reverse=True)
                                 for prioridad, url_img in candidatos:
                                     imagen = _descargar_candidato_logo(url_img, referer=pagina.url)
@@ -5485,8 +5743,9 @@ def _buscar_logo_en_directorio_procolombia(nombre_empresa, nit_empresa):
                         "files", "styles", "png", "jpg", "jpeg", "svg", "webp", "02", "max",
                         "325x325", "default", "col", "ingles", "english",
                     }
+                    nit_en_url_imagen = bool(nit_base and nit_base in _normalizar_nit(url_imagen))
                     distintivos = tokens_senal - tokens_empresa - ruido_senal
-                    if distintivos and not (tokens_senal & tokens_empresa):
+                    if distintivos and not (tokens_senal & tokens_empresa) and not nit_en_url_imagen:
                         _log_busqueda_empresa(
                             "LOGO ProColombia: imagen descartada por identificar otra marca "
                             f"({', '.join(sorted(distintivos)[:5])})."
@@ -5495,9 +5754,9 @@ def _buscar_logo_en_directorio_procolombia(nombre_empresa, nit_empresa):
                     contexto = html_pagina[max(0, match.start()-2200):match.end()+2200]
                     contexto_txt = _texto_html_limpio(contexto)
                     score = 0
-                    # Algunas fichas B2B nombran el archivo con el ID empresarial
-                    # seguido del NIT; es la asociación más específica.
-                    if "empresaid" in src.lower() and nit_base in path_digitos:
+                    if nit_en_url_imagen:
+                        score = 260
+                    elif "empresaid" in src.lower() and nit_base in path_digitos:
                         score = 140
                     elif nit_base in path_digitos:
                         score = 125
@@ -5518,15 +5777,16 @@ def _buscar_logo_en_directorio_procolombia(nombre_empresa, nit_empresa):
                         tokens_href = set(_normalizar_nombre_empresa(archivo_href).split())
                         tokens_empresa_href = {t for t in _clave_nombre_empresa(nombre_empresa).split() if len(t) >= 5}
                         ruido_href = {"logo", "logos", "logotipo", "brand", "png", "jpg", "jpeg", "svg", "webp", "col", "ingles", "english", "02", "default", "max", "325x325", "styles", "sites", "files", "public"}
+                        nit_en_href = bool(nit_base and nit_base in _normalizar_nit(href))
                         distintivos_href = tokens_href - tokens_empresa_href - ruido_href
                         marca_ajena = bool(distintivos_href and not (tokens_href & tokens_empresa_href))
-                        if marca_ajena:
+                        if nit_en_href:
+                            candidatos.append((260, href))
+                        elif marca_ajena:
                             _log_busqueda_empresa(
                                 "LOGO ProColombia: enlace de imagen descartado por marca ajena: "
                                 + ", ".join(sorted(distintivos_href)[:5])
                             )
-                        elif nit_base in digitos:
-                            candidatos.append((130, href))
                         elif "logo" in urlparse(href).path.lower():
                             candidatos.append((125, href))
 
@@ -5764,7 +6024,7 @@ def buscar_empresa_y_logo_python(nombre_empresa="", nit_empresa=""):
     dominios_verificados = []
     urls_priorizadas = []
     _log_busqueda_empresa(f"LOGO: inicia búsqueda para nombre={nombre_oficial} | NIT={nit_oficial}.")
-    _log_busqueda_empresa("LOGO_POLICY=v5.8: acepta logo declarado en cabecera/meta/JSON-LD aunque el archivo sea hasheado; bloquea favicons genéricos.")
+    _log_busqueda_empresa("LOGO_POLICY=v6.0: ProColombia prioriza coincidencia exacta NIT↔archivo; LogoAPI exige dominio+marca y PNG sin fallback.")
 
     # Primero consulta el directorio B2B de ProColombia. Su ficha actual publica
     # un logo corporativo explícito y un enlace a la web de la empresa. Se prioriza
@@ -5789,6 +6049,15 @@ def buscar_empresa_y_logo_python(nombre_empresa="", nit_empresa=""):
             resultado["sitio"] = sitio_directo
             resultado["fuente_logo"] = "página corporativa localizada por dominio derivado y validada por el nombre de la empresa"
             resultado["diagnostico"] = "Logo descargado directamente del sitio corporativo tras validar que su contenido corresponde a la razón social."
+
+    # Catálogo estructurado auxiliar: dominio exacto + nombre coincidente + PNG sin fallback.
+    if not resultado.get("logo") and dominios_verificados:
+        hallazgo_logoapi = _buscar_logo_logoapi(nombre_oficial, dominios_verificados)
+        if hallazgo_logoapi:
+            resultado["logo"], pagina_logoapi = hallazgo_logoapi
+            resultado["sitio"] = pagina_logoapi
+            resultado["fuente_logo"] = "LogoAPI: dominio y nombre de marca coincidentes; PNG sin fallback"
+            resultado["diagnostico"] = "Logo recuperado mediante catálogo de logos tras validar nombre y dominio corporativo."
 
     # Si el dominio derivado no funcionó, recurre al buscador web (RSS + HTML).
     if not resultado.get("logo"):
@@ -5920,6 +6189,15 @@ def buscar_empresa_y_logo_python(nombre_empresa="", nit_empresa=""):
             if resultado.get("logo"):
                 break
 
+    # Si el dominio se identificó solo después de la búsqueda general, reintenta LogoAPI.
+    if not resultado.get("logo") and dominios_verificados:
+        hallazgo_logoapi = _buscar_logo_logoapi(nombre_oficial, dominios_verificados)
+        if hallazgo_logoapi:
+            resultado["logo"], pagina_logoapi = hallazgo_logoapi
+            resultado["sitio"] = pagina_logoapi
+            resultado["fuente_logo"] = "LogoAPI: dominio y nombre de marca coincidentes; PNG sin fallback"
+            resultado["diagnostico"] = "Logo recuperado mediante catálogo de logos tras validar nombre y dominio corporativo."
+
     # Tercera pasada: buscadores de imágenes. Se aceptan imágenes alojadas en
     # CDNs externos siempre que su página de origen sea un dominio corporativo
     # ya identificado; así funcionan los kits de prensa servidos desde CDN.
@@ -5949,8 +6227,8 @@ def buscar_empresa_y_logo_python(nombre_empresa="", nit_empresa=""):
         )
     else:
         _log_busqueda_empresa(
-            "LOGO: no se descargó ninguna imagen válida después de probar dominios derivados del nombre, "
-            "páginas corporativas, Bing RSS/HTML, imágenes y ProColombia."
+            "LOGO: no se descargó ninguna imagen válida después de probar ProColombia (perfil/sitemap), "
+            "sitio corporativo, LogoAPI sin fallback y fuentes de imágenes."
         )
     if not resultado.get("logo"):
         resultado["diagnostico"] = (
